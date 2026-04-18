@@ -307,7 +307,7 @@ class Transcriber:
             logger.exception("failed to write diarize crash dump")
             return None
 
-    def _run_diarization_subprocess(
+    def _launch_diarization_subprocess(
         self,
         audio_path: str,
         hf_token: str | None,
@@ -317,49 +317,49 @@ class Transcriber:
         voice_lib_path: str | None = None,
         on_progress=None,
         on_status=None,
-        cancel_event=None,
-    ) -> list[tuple[float, float, str]]:
+    ) -> dict:
         """
-        Run diarization in an isolated Python subprocess.
+        Spawn the diarization subprocess in WAIT mode and return a handle.
 
-        Necessary because ctranslate2's WhisperModel and pyannote's CUDA state
-        conflict on destruction, crashing the main process with a C-level
-        abort. Running pyannote in a fresh interpreter sidesteps the
-        interaction entirely — the OS cleans up all CUDA resources when the
+        The subprocess starts immediately but blocks on stdin for a "GO\\n"
+        line before doing any GPU work, so it can be launched in parallel
+        with Whisper transcription. While waiting it imports pyannote,
+        downloads/loads weights to CPU, and decodes the audio file — all
+        CPU+RAM only. Once we send GO it does VRAM preflight, moves the
+        pipeline to CUDA, and runs inference.
+
+        Why subprocess at all: ctranslate2's WhisperModel and pyannote's
+        CUDA state conflict on destruction, crashing the main process with
+        a C-level abort. Running pyannote in a fresh interpreter sidesteps
+        the interaction — the OS cleans up all CUDA resources when the
         subprocess exits.
 
-        Uses Popen so we can stream stderr line-by-line and forward pyannote's
-        step progress to the GUI in real time. Two daemon threads consume
-        stdout and stderr to avoid deadlocking on full pipe buffers.
-
-        Returns: list of (start, end, speaker) tuples.
-        Raises: RuntimeError if the subprocess fails.
+        Returns a handle dict consumed by ``_await_diarization_subprocess``:
+        proc, audio_path, stdout/stderr buffers, consumer threads.
         """
         worker = os.path.join(
             os.path.dirname(os.path.abspath(__file__)), "diarize_worker.py",
         )
         env = dict(os.environ)
+        env["DIARIZE_WAIT"] = "1"
         if hf_token:
             env["HF_TOKEN"] = hf_token
         # Speaker-count hints travel as env vars (optional, each independent).
-        # Passing them via env rather than argv keeps the diarize_worker.py CLI
-        # stable (positional audio_path + device only) and makes absent hints
-        # indistinguishable from unset, which is what pyannote's API expects.
+        # Env rather than argv keeps the worker CLI stable and makes absent
+        # hints indistinguishable from unset (what pyannote's API expects).
         if num_speakers is not None:
             env["DIARIZE_NUM_SPEAKERS"] = str(num_speakers)
         if min_speakers is not None:
             env["DIARIZE_MIN_SPEAKERS"] = str(min_speakers)
         if max_speakers is not None:
             env["DIARIZE_MAX_SPEAKERS"] = str(max_speakers)
-        # Voice library path is a filesystem path to a JSON file written by
-        # the caller (see transcribe()). The worker reads it on demand; we
-        # don't need to inline the library contents into the env.
         if voice_lib_path:
             env["DIARIZE_VOICE_LIB"] = voice_lib_path
 
         proc = subprocess.Popen(
             [sys.executable, worker, audio_path, "cuda"],
             env=env,
+            stdin=subprocess.PIPE,    # for the GO signal
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -404,11 +404,53 @@ class Transcriber:
         t_out.start()
         t_err.start()
 
-        # Poll for completion in 0.25s ticks instead of one big wait, so a
-        # cancel_event set from the GUI thread is acted on within ~250 ms
-        # instead of after the diarization subprocess finishes (which on a
-        # 60-min file can be 5+ minutes). On cancel we kill the subprocess
-        # and raise TranscriptionCancelled — the OS reclaims its CUDA context.
+        return {
+            "proc": proc,
+            "audio_path": audio_path,
+            "stdout_chunks": stdout_chunks,
+            "stderr_chunks": stderr_chunks,
+            "t_out": t_out,
+            "t_err": t_err,
+        }
+
+    def _await_diarization_subprocess(
+        self,
+        handle: dict,
+        cancel_event=None,
+    ) -> list[tuple[float, float, str]]:
+        """
+        Send the GO signal, wait for completion, return parsed speaker turns.
+
+        Polls in 0.25s ticks so a cancel_event set from the GUI thread is
+        acted on within ~250 ms instead of after the diarization subprocess
+        finishes (5+ min on a 60-min file). On cancel we kill the subprocess
+        and raise TranscriptionCancelled — the OS reclaims its CUDA context.
+
+        If the subprocess has already exited at GO time (crashed during
+        pyannote load), we skip the write and fall through to the exit-code
+        handling below — its stderr already explains why.
+        """
+        proc = handle["proc"]
+        stdout_chunks = handle["stdout_chunks"]
+        stderr_chunks = handle["stderr_chunks"]
+        audio_path = handle["audio_path"]
+
+        if proc.poll() is None and proc.stdin is not None:
+            try:
+                proc.stdin.write("GO\n")
+                proc.stdin.flush()
+            except (BrokenPipeError, OSError):
+                # Subprocess died between our poll and our write — its stderr
+                # carries the cause; fall through to the exit-code handler.
+                pass
+        # Close stdin so a stuck readline() in the worker (shouldn't happen
+        # but defensive) gets EOF. Safe — we never write again.
+        if proc.stdin is not None:
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+
         deadline = 3600.0
         elapsed = 0.0
         while True:
@@ -420,16 +462,16 @@ class Transcriber:
                 if cancel_event is not None and cancel_event.is_set():
                     proc.kill()
                     proc.wait()
-                    t_out.join()
-                    t_err.join()
+                    handle["t_out"].join()
+                    handle["t_err"].join()
                     raise TranscriptionCancelled()
                 if elapsed >= deadline:
                     proc.kill()
                     proc.wait()
-                    raise
+                    raise subprocess.TimeoutExpired(proc.args, deadline)
 
-        t_out.join()
-        t_err.join()
+        handle["t_out"].join()
+        handle["t_err"].join()
 
         if proc.returncode != 0:
             # Persist full stderr/stdout to disk for post-mortem before
@@ -438,7 +480,7 @@ class Transcriber:
             stderr_text = "".join(stderr_chunks)
             stdout_text = "".join(stdout_chunks)
             log_path = self._write_crash_log(
-                audio_path, proc.returncode, stderr_text, stdout_text
+                audio_path, proc.returncode, stderr_text, stdout_text,
             )
             log_hint = f"\n\nПолный лог: {log_path}" if log_path else ""
 
@@ -531,6 +573,7 @@ class Transcriber:
             )
         wav_path, wav_is_temp = ensure_wav(audio_path, normalize=normalize_audio)
         chunks_dir = None
+        diarize_handle: dict | None = None
         try:
             _check_cancelled(cancel_event)
             # Now safe to load Whisper — ffmpeg has already done any DLL
@@ -539,6 +582,24 @@ class Transcriber:
                 on_status("Загрузка модели...")
             self.load_model()
             _check_cancelled(cancel_event)
+
+            # Launch the diarization subprocess in WAIT mode RIGHT NOW so it
+            # can import pyannote, load weights to CPU, and decode the audio
+            # in parallel with Whisper inference. We send "GO\n" later (after
+            # offload_to_cpu) and it then takes only ~1 s to move the
+            # pipeline to CUDA. Without this, the user sees a 10-15 s dead
+            # zone at 70 % between Whisper finishing and the first pyannote
+            # progress line.
+            if diarize:
+                diarize_handle = self._launch_diarization_subprocess(
+                    wav_path, hf_token,
+                    num_speakers=num_speakers,
+                    min_speakers=min_speakers,
+                    max_speakers=max_speakers,
+                    voice_lib_path=voice_lib_path,
+                    on_progress=on_progress, on_status=on_status,
+                )
+
             if on_status:
                 on_status("Транскрипция...")
 
@@ -698,22 +759,17 @@ class Transcriber:
             if on_status:
                 on_status("Диаризация (определение спикеров)...")
 
-            # Isolated subprocess so pyannote's CUDA state never meets
-            # ctranslate2's. See _run_diarization_subprocess and
-            # diarize_worker.py. on_progress advances the bar in real time
-            # within the 70-90% range; on_status surfaces worker lifecycle
-            # messages so the GUI has text feedback during dead zones.
-            logger.debug("phase=before_subprocess_start")
+            # Send GO to the already-running subprocess and wait for it to
+            # finish. The subprocess has been loading pyannote in parallel
+            # with our Whisper transcription; after GO it does the GPU-only
+            # work (preflight, pipeline.to(cuda), inference).
+            logger.debug("phase=before_subprocess_go")
             _check_cancelled(cancel_event)
-            speaker_turns = self._run_diarization_subprocess(
-                wav_path, hf_token,
-                num_speakers=num_speakers,
-                min_speakers=min_speakers,
-                max_speakers=max_speakers,
-                voice_lib_path=voice_lib_path,
-                on_progress=on_progress, on_status=on_status,
-                cancel_event=cancel_event,
+            assert diarize_handle is not None  # set above when diarize=True
+            speaker_turns = self._await_diarization_subprocess(
+                diarize_handle, cancel_event=cancel_event,
             )
+            diarize_handle = None  # consumed; suppress finally-cleanup
 
             if on_progress:
                 on_progress(90.0)
@@ -726,6 +782,17 @@ class Transcriber:
             self.last_segments = labeled
             return format_diarized(labeled)
         finally:
+            # If we launched the diarization subprocess but never sent GO
+            # (transcription failed mid-loop, or cancel fired before await),
+            # kill it so it doesn't outlive the parent waiting on stdin.
+            if diarize_handle is not None:
+                proc = diarize_handle["proc"]
+                if proc.poll() is None:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        logger.exception("failed to clean up diarize subprocess")
             if wav_is_temp:
                 try:
                     os.unlink(wav_path)

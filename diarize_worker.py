@@ -372,27 +372,69 @@ def main() -> int:
 
     audio_path = sys.argv[1]
     # sys.argv[2] (device) is accepted for CLI-compat with transcriber.py but
-    # ignored — diarization is GPU-only now. See plans/woolly-skipping-scroll.md.
+    # ignored — diarization is GPU-only now.
     hf_token = os.environ.get("HF_TOKEN") or None
 
     if not os.path.isfile(audio_path):
         print(f"audio file not found: {audio_path}", file=sys.stderr)
         return 2
 
-    _emit_status("Запуск диаризации...")
-    _emit_progress("startup", 1, 3)
+    # When DIARIZE_WAIT=1 is set, the parent will run Whisper transcription
+    # AFTER spawning us. We do all CPU-side setup (pyannote import, weights
+    # download/load to CPU, audio decode) in parallel with that transcription,
+    # then block on a "GO\n" line on stdin. This collapses the 10-15 s
+    # dead-zone the user sees at 70 % between Whisper finishing and
+    # pipeline.to(cuda) returning.
+    wait_mode = bool(os.environ.get("DIARIZE_WAIT"))
 
-    # Preflight: refuse to start without a usable GPU with enough free VRAM.
-    # Doing this BEFORE the pyannote import saves ~10s of weight loading when
-    # we'd just fail anyway, and gives the user an actionable Russian message
-    # instead of a cryptic CUBLAS_STATUS_NOT_INITIALIZED 10s in.
-    # Exit code 3 is reserved for preflight failures; transcriber.py turns it
-    # into a user-facing RuntimeError. See plans/woolly-skipping-scroll.md.
+    # Cheap preflight: surface "no GPU at all" before importing pyannote,
+    # so the user gets a fast, actionable error if they're on a CPU-only
+    # machine. The meaningful VRAM check happens AFTER GO (see below) when
+    # Whisper has had a chance to free its weights.
     if not torch.cuda.is_available():
         print("CUDA недоступна — для диаризации нужен Nvidia GPU",
               file=sys.stderr, flush=True)
         return 3
 
+    # Import pyannote lazily so the import-cost is only paid in the subprocess.
+    from pyannote.audio import Pipeline
+
+    # Pyannote weights load to CPU memory (~700 MB), not VRAM, so this is
+    # safe to run while the parent's Whisper still owns the GPU.
+    with _suppress_inspect_stack():
+        pipeline = Pipeline.from_pretrained(
+            "pyannote/speaker-diarization-3.1",
+            token=hf_token,
+        )
+
+    # Pyannote's built-in file loader (Audio() class) requires torchcodec,
+    # which is broken on this Windows machine (libtorchcodec_core*.dll not
+    # loadable). The supported fallback is preloaded waveform as a dict.
+    # Loading is CPU+RAM only — runs in parallel with Whisper inference.
+    waveform, sample_rate = _load_audio(audio_path)
+    audio_input = {"waveform": waveform, "sample_rate": sample_rate}
+
+    # Block until parent has freed VRAM (offloaded Whisper to CPU). Until
+    # GO, no STATUS/PROGRESS messages have been emitted — the parent's UI
+    # is showing Whisper progress and would be visually disturbed by a
+    # diarization status overwriting the label. After GO we surface the
+    # full lifecycle as before.
+    if wait_mode:
+        line = sys.stdin.readline()
+        if not line:
+            # stdin closed before GO — parent died or cancelled; abort cleanly.
+            print("parent closed stdin before GO; aborting", file=sys.stderr, flush=True)
+            return 4
+        if line.strip() != "GO":
+            print(f"unexpected stdin line {line!r}; expected 'GO'",
+                  file=sys.stderr, flush=True)
+            return 4
+
+    _emit_status("Запуск диаризации...")
+
+    # Re-check VRAM now that the parent has offloaded Whisper. Done AFTER
+    # the GO signal because the pre-GO check would see Whisper's weights
+    # still resident and fail the launch unnecessarily.
     _MIN_FREE_VRAM_GB = 1.2
     free_bytes, _ = torch.cuda.mem_get_info()
     free_gb = free_bytes / 1024**3
@@ -402,22 +444,9 @@ def main() -> int:
             f"нужно >= {_MIN_FREE_VRAM_GB} GB. Закройте другие приложения, "
             f"использующие GPU (браузер, Discord), или выберите меньшую "
             f"модель Whisper.",
-            file=sys.stderr,
-            flush=True,
+            file=sys.stderr, flush=True,
         )
         return 3
-
-    # Import pyannote lazily so the import-cost is only paid in the subprocess,
-    # not at module import time if this file is ever accidentally imported.
-    from pyannote.audio import Pipeline
-
-    _emit_status("Загрузка модели диаризации...")
-    _emit_progress("startup", 2, 3)
-    with _suppress_inspect_stack():
-        pipeline = Pipeline.from_pretrained(
-            "pyannote/speaker-diarization-3.1",
-            token=hf_token,
-        )
 
     target = torch.device("cuda")
     pipeline.to(target)
@@ -439,18 +468,6 @@ def main() -> int:
     mode = f"cuda/batch={_BATCH_SIZE} (free {free_gb:.1f} GB)"
     print(f"diarization mode: {mode}", file=sys.stderr, flush=True)
     _emit_status(f"Режим: {mode}")
-
-    _emit_status("Загрузка аудио...")
-    _emit_progress("startup", 3, 3)
-
-    # Pyannote's built-in file loader (Audio() class) requires torchcodec,
-    # which is broken on this Windows machine (libtorchcodec_core*.dll not
-    # loadable — see the UserWarning from pyannote.audio.core.io at import
-    # time). The supported fallback is preloaded waveform as a dict. We use
-    # _load_audio's chunked torch pre-allocation to dodge the numpy
-    # contiguous-allocation failure mode documented in its docstring.
-    waveform, sample_rate = _load_audio(audio_path)
-    audio_input = {"waveform": waveform, "sample_rate": sample_rate}
 
     # Speaker-count hints (optional, env-supplied by transcriber.py).
     # Pyannote accepts num_speakers=K OR (min_speakers, max_speakers); passing
