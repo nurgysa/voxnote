@@ -250,6 +250,24 @@ class App(ctk.CTk):
             value=self._config.get("cloud_api_key", ""),
         )
 
+        # Tasks pipeline (Phase 6.0+) — OpenRouter API key + default model slug.
+        # The default model is persisted on every change via trace_add (the
+        # CTk OptionMenu doesn't expose a `command=` for option selection that
+        # reaches App's save_config, so a Var-level write trace is the cleanest
+        # hook). The slug is stored as-is — Phase 6.4 may extend the curated
+        # list with custom user-typed slugs prefixed `(custom) `.
+        self._openrouter_key_var = ctk.StringVar(
+            value=self._config.get("openrouter_api_key", ""),
+        )
+        self._openrouter_default_model_var = ctk.StringVar(
+            value=self._config.get(
+                "tasks_default_model", "anthropic/claude-sonnet-4.5",
+            ),
+        )
+        self._openrouter_default_model_var.trace_add(
+            "write", lambda *_: self._on_openrouter_default_model_changed(),
+        )
+
         # Appearance mode (light/dark/system). The actual ctk.set_appearance_mode
         # call already happened above with the saved value; this StringVar
         # just drives the Settings dialog dropdown and the change callback.
@@ -574,6 +592,16 @@ class App(ctk.CTk):
 
     def _on_cloud_provider_changed(self, value: str) -> None:
         self._config["cloud_provider"] = value
+        save_config(self._config)
+
+    def _on_openrouter_default_model_changed(self) -> None:
+        """Persist the OpenRouter default model slug on dropdown change.
+
+        Triggered via StringVar `trace_add` because the CTk OptionMenu used
+        in the OpenRouter section doesn't take a `command=` callback that we
+        wire here directly. No arguments — we read the var inside.
+        """
+        self._config["tasks_default_model"] = self._openrouter_default_model_var.get()
         save_config(self._config)
 
     def _on_appearance_changed(self, value: str) -> None:

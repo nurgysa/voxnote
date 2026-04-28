@@ -23,6 +23,19 @@ from theme import (
 from ui.widgets import (
     card, label, option_menu, primary_button, tonal_button,
 )
+from utils import save_config
+
+
+# Curated dropdown for OpenRouter default model. Slug → display label.
+# Display label keeps the slug visible — power users recognize 'sonnet-4.5'
+# faster than 'Anthropic Claude Sonnet 4.5 (latest)'.
+_CURATED_MODELS = {
+    "anthropic/claude-sonnet-4.5":   "anthropic/claude-sonnet-4.5",
+    "anthropic/claude-haiku-4.5":    "anthropic/claude-haiku-4.5",
+    "openai/gpt-4o":                  "openai/gpt-4o",
+    "google/gemini-2.5-pro":          "google/gemini-2.5-pro",
+    "deepseek/deepseek-v3":           "deepseek/deepseek-v3",
+}
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -66,6 +79,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_audio_section(body)
         self._build_cloud_section(body)
         self._build_dictionaries_section(body)
+        self._build_openrouter_section(body)
 
         # --- Footer ---
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -304,3 +318,68 @@ class SettingsDialog(ctk.CTkToplevel):
             self._voices_summary.configure(text=preview)
         else:
             self._voices_summary.configure(text="Голоса не записаны")
+
+    # ── OpenRouter section (Phase 6.0 Task 13) ────────────────────────
+
+    def _build_openrouter_section(self, parent) -> None:
+        """OpenRouter API key + default model.
+
+        Layout: title, [api_key field][Вставить], [Проверить ключ][status],
+        default model dropdown.
+        """
+        section = self._section_card(parent, "OpenRouter", row=6)
+
+        # API key row — entry + paste button
+        label(section, "API ключ").grid(
+            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
+        )
+        ctk.CTkEntry(
+            section, textvariable=self._parent._openrouter_key_var, height=36,
+            corner_radius=10, border_color=BORDER, border_width=1,
+            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT, size=12),
+            placeholder_text="sk-or-...",
+            show="•",  # Mask the key visually — same UX as cloud API key field.
+        ).grid(row=0, column=1, padx=4, pady=6, sticky="ew")
+        tonal_button(
+            section, text="Вставить",
+            command=self._paste_openrouter_key, width=100,
+        ).grid(row=0, column=2, padx=(4, 4), pady=6)
+
+        # Validate row — button + status label
+        tonal_button(
+            section, text="Проверить ключ",
+            command=self._validate_openrouter, width=140,
+        ).grid(row=1, column=0, padx=4, pady=6, sticky="w")
+        self._openrouter_status = label(section, "", anchor="w")
+        self._openrouter_status.grid(
+            row=1, column=1, columnspan=2, padx=(8, 4), pady=6, sticky="ew",
+        )
+
+        # Default model dropdown
+        label(section, "Модель по умолчанию").grid(
+            row=2, column=0, padx=(4, 8), pady=6, sticky="w",
+        )
+        option_menu(
+            section, self._parent._openrouter_default_model_var,
+            list(_CURATED_MODELS.keys()),
+        ).grid(row=2, column=1, columnspan=2, padx=4, pady=6, sticky="ew")
+
+    def _paste_openrouter_key(self) -> None:
+        """Paste-from-clipboard helper. Mirrors HF Token paste pattern but
+        the handler lives on the dialog rather than App since the var is
+        OpenRouter-specific (not yet used outside the Settings flow)."""
+        try:
+            text = self.clipboard_get().strip()
+            self._parent._openrouter_key_var.set(text)
+            if text:
+                self._parent._config["openrouter_api_key"] = text
+                save_config(self._parent._config)
+        except Exception:
+            pass
+
+    def _validate_openrouter(self) -> None:
+        """Stub — wired to a real OpenRouter /auth/key call in Task 14."""
+        self._openrouter_status.configure(
+            text="(не реализовано)", text_color=TEXT_SECONDARY,
+        )
