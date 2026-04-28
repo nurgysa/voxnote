@@ -78,6 +78,8 @@ class OpenRouterClient:
             raise OpenRouterError(f"Нет соединения с OpenRouter: {e}") from e
         except requests.exceptions.Timeout as e:
             raise OpenRouterError("Таймаут подключения к OpenRouter") from e
+        except requests.exceptions.RequestException as e:
+            raise OpenRouterError(f"Ошибка сети OpenRouter: {e}") from e
 
         if resp.status_code != 200:
             raise OpenRouterError(
@@ -92,4 +94,69 @@ class OpenRouterClient:
             "usage": usage,
             "limit": float(limit) if limit is not None else None,
             "balance_remaining": (float(limit) - usage) if limit is not None else None,
+        }
+
+    def complete(
+        self,
+        model: str,
+        messages: list[dict],
+        json_mode: bool = True,
+        temperature: float = 0.2,
+        timeout: float = _DEFAULT_TIMEOUT_S,
+    ) -> dict:
+        """POST /chat/completions and return the parsed response.
+
+        Args:
+            model: OpenRouter model slug (e.g. 'anthropic/claude-sonnet-4.5').
+            messages: standard OpenAI-style chat messages.
+            json_mode: if True, request response_format=json_object. Some models
+                reject this with 400; in that case caller should retry with
+                json_mode=False and rely on prompt-level instruction.
+            temperature: low value (0.2) keeps extraction deterministic.
+            timeout: seconds before requests raises Timeout.
+
+        Returns dict:
+            - content: str (the assistant message)
+            - usage: dict with prompt_tokens / completion_tokens
+            - model: str (echoed model slug, useful for logging)
+
+        Raises OpenRouterError on any HTTP or network failure. 429 errors
+        include the Retry-After value in the message string for caller-side
+        parsing.
+        """
+        body: dict = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+
+        try:
+            resp = self._session.post(
+                f"{_BASE_URL}/chat/completions",
+                json=body,
+                timeout=timeout,
+            )
+        except requests.exceptions.ConnectionError as e:
+            raise OpenRouterError(f"Нет соединения с OpenRouter: {e}") from e
+        except requests.exceptions.Timeout as e:
+            raise OpenRouterError(f"Таймаут OpenRouter (>{timeout}s)") from e
+        except requests.exceptions.RequestException as e:
+            raise OpenRouterError(f"Ошибка сети OpenRouter: {e}") from e
+
+        if resp.status_code == 429:
+            retry_after = resp.headers.get("Retry-After", "?")
+            raise OpenRouterError(f"OpenRouter 429 rate-limit (retry after {retry_after}s)")
+        if resp.status_code != 200:
+            raise OpenRouterError(
+                f"OpenRouter вернул {resp.status_code}: {resp.text[:200]}"
+            )
+
+        data = resp.json()
+        choice = data["choices"][0]
+        return {
+            "content": choice["message"]["content"],
+            "usage": data.get("usage", {}),
+            "model": data.get("model", model),
         }
