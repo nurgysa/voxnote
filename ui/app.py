@@ -486,6 +486,7 @@ class App(ctk.CTk):
 
         # Lazy import — pulls in tasks/extractor and (transitively) requests.
         # Same pattern as Settings dialog's lazy validate-button imports.
+        # ExtractTasksDialog(parent, *, transcript, history_folder, transcript_lang, config)
         from ui.dialogs.extract_tasks import ExtractTasksDialog
         ExtractTasksDialog(
             self,
@@ -787,6 +788,7 @@ class App(ctk.CTk):
         self._textbox.delete("1.0", "end")
         self._btn_save.configure(state="disabled")
         self._btn_copy.configure(state="disabled")
+        self._btn_extract_tasks.configure(state="disabled")
         self._progress.configure(mode="indeterminate", progress_color=BLUE)
         self._progress.start()
         self._lbl_status.configure(text="Загрузка модели...", text_color=TEXT_SECONDARY)
@@ -1018,7 +1020,6 @@ class App(ctk.CTk):
         self._lbl_status.configure(text="Готово!", text_color=GREEN)
         self._btn_save.configure(state="normal")
         self._btn_copy.configure(state="normal")
-        self._btn_extract_tasks.configure(state="normal")
         self._set_running(False)
 
         if self._audio_path:
@@ -1028,6 +1029,12 @@ class App(ctk.CTk):
                 language=LANGUAGES.get(self._lang_var.get()),
                 model=MODELS.get(self._model_var.get(), ""),
             )
+
+        # Enable extract button only when we actually have a target folder.
+        # Mirrors the conditional enable in _load_history_into_main.
+        self._btn_extract_tasks.configure(
+            state="normal" if self._last_history_folder else "disabled",
+        )
 
     def _on_error(self, error_msg: str):
         self._lbl_status.configure(text="Ошибка", text_color=RED)
