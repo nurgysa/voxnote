@@ -268,6 +268,14 @@ class App(ctk.CTk):
             "write", lambda *_: self._on_openrouter_default_model_changed(),
         )
 
+        # Linear API key (Phase 6.0+). No team picker here — that's per-run
+        # in the ExtractTasksDialog (Phase 6.1). Settings only persists the
+        # key. The key is saved on Validate success, not on every keystroke
+        # (same pattern as OpenRouter above and HF token below).
+        self._linear_key_var = ctk.StringVar(
+            value=self._config.get("linear_api_key", ""),
+        )
+
         # Appearance mode (light/dark/system). The actual ctk.set_appearance_mode
         # call already happened above with the saved value; this StringVar
         # just drives the Settings dialog dropdown and the change callback.
