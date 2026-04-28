@@ -98,3 +98,57 @@ def test_task_label_ids_default_is_independent_per_instance():
     b = Task(title="B")
     a.label_ids.append("label-1")
     assert b.label_ids == []   # if default leaked, this would also have label-1
+
+
+# ── Serialization round-trip ──────────────────────────────────────────
+
+
+def test_task_round_trip_minimal():
+    """Task → dict → Task preserves all fields when minimal."""
+    from tasks.schema import Task
+    original = Task(title="Hello")
+    restored = Task.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_task_round_trip_full():
+    """Round-trip with every field populated."""
+    from tasks.schema import Task, Priority, TaskStatus
+    original = Task(
+        title="Починить login",
+        description="Многострочное\nописание",
+        priority=Priority.HIGH,
+        assignee_id="user-uuid",
+        assignee_name="Айдар",
+        label_ids=["lbl-1", "lbl-2"],
+        label_names=["bug", "mobile"],
+        due_date="2026-05-15",
+        local_id="custom-id",
+        selected=False,
+        status=TaskStatus.SENT,
+        linear_issue_id="ENG-1234",
+        linear_issue_url="https://linear.app/x/issue/ENG-1234",
+        send_error=None,
+    )
+    restored = Task.from_dict(original.to_dict())
+    assert restored == original
+
+
+def test_task_to_dict_uses_string_values_for_enums():
+    """JSON file must contain 'high' (string), not 2 (int) for priority."""
+    from tasks.schema import Task, Priority, TaskStatus
+    t = Task(title="X", priority=Priority.HIGH, status=TaskStatus.SENT)
+    d = t.to_dict()
+    assert d["priority"] == "high"
+    assert d["status"] == "sent"
+
+
+def test_task_from_dict_tolerates_missing_optional_keys():
+    """Old tasks_raw.json (pre-Phase-6.3) won't have status/linear_*. Use defaults."""
+    from tasks.schema import Task, TaskStatus
+    minimal = {"title": "Old task", "local_id": "uid"}
+    t = Task.from_dict(minimal)
+    assert t.title == "Old task"
+    assert t.local_id == "uid"
+    assert t.status is TaskStatus.PENDING
+    assert t.linear_issue_id is None

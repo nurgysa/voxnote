@@ -66,6 +66,49 @@ class Task:
     linear_issue_url: Optional[str] = None
     send_error: Optional[str] = None
 
+    def to_dict(self) -> dict:
+        """Serialize to JSON-friendly dict. Enums become their .value (str)."""
+        return {
+            "local_id": self.local_id,
+            "title": self.title,
+            "description": self.description,
+            "priority": self.priority.name.lower(),    # 'high', not 2
+            "assignee_id": self.assignee_id,
+            "assignee_name": self.assignee_name,
+            "label_ids": list(self.label_ids),
+            "label_names": list(self.label_names),
+            "due_date": self.due_date,
+            "selected": self.selected,
+            "status": self.status.value,
+            "linear_issue_id": self.linear_issue_id,
+            "linear_issue_url": self.linear_issue_url,
+            "send_error": self.send_error,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "Task":
+        """Inverse of to_dict. Tolerant of missing optional fields.
+
+        Older tasks.json files (pre-Phase-6.3) may lack status/linear_*;
+        we apply defaults rather than raising.
+        """
+        return cls(
+            title=d["title"],
+            description=d.get("description", ""),
+            priority=priority_from_string(d.get("priority")),
+            assignee_id=d.get("assignee_id"),
+            assignee_name=d.get("assignee_name"),
+            label_ids=list(d.get("label_ids", [])),
+            label_names=list(d.get("label_names", [])),
+            due_date=d.get("due_date"),
+            local_id=d.get("local_id") or str(uuid.uuid4()),
+            selected=d.get("selected", True),
+            status=TaskStatus(d.get("status", "pending")),
+            linear_issue_id=d.get("linear_issue_id"),
+            linear_issue_url=d.get("linear_issue_url"),
+            send_error=d.get("send_error"),
+        )
+
 
 def priority_from_string(name: str | None) -> Priority:
     """Map LLM-returned priority strings to Priority enum.
