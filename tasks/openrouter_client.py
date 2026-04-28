@@ -57,3 +57,39 @@ class OpenRouterClient:
         from another thread (closes sockets immediately).
         """
         self._session.close()
+
+    def validate_key(self) -> dict:
+        """Cheap GET /auth/key — returns label, usage, balance_remaining.
+
+        On success: returns dict with keys:
+            - label: str (human-readable key label)
+            - usage: float (USD spent so far)
+            - limit: float | None (USD cap, or None for unlimited)
+            - balance_remaining: float | None (limit - usage, or None)
+
+        On any HTTP error or network failure, raises OpenRouterError.
+        """
+        try:
+            resp = self._session.get(
+                f"{_BASE_URL}/auth/key",
+                timeout=10.0,
+            )
+        except requests.exceptions.ConnectionError as e:
+            raise OpenRouterError(f"Нет соединения с OpenRouter: {e}") from e
+        except requests.exceptions.Timeout as e:
+            raise OpenRouterError("Таймаут подключения к OpenRouter") from e
+
+        if resp.status_code != 200:
+            raise OpenRouterError(
+                f"OpenRouter вернул {resp.status_code}: {resp.text[:200]}"
+            )
+
+        data = resp.json().get("data", {})
+        usage = float(data.get("usage", 0.0))
+        limit = data.get("limit")  # may be None
+        return {
+            "label": data.get("label", ""),
+            "usage": usage,
+            "limit": float(limit) if limit is not None else None,
+            "balance_remaining": (float(limit) - usage) if limit is not None else None,
+        }
