@@ -428,10 +428,52 @@ class SettingsDialog(ctk.CTkToplevel):
             pass
 
     def _validate_linear(self) -> None:
-        """Stub — wired to a real Linear viewer query in Task 16."""
+        """Make a single viewer GraphQL query. Show display name on success.
+
+        Same threading pattern as _validate_openrouter. Saves the key to
+        config.json only on successful validation.
+        """
+        key = self._parent._linear_key_var.get().strip()
+        if not key:
+            self._linear_status.configure(
+                text="Введите API ключ", text_color=RED,
+            )
+            return
+
         self._linear_status.configure(
-            text="(не реализовано)", text_color=TEXT_SECONDARY,
+            text="Проверка...", text_color=TEXT_SECONDARY,
         )
+
+        def worker():
+            try:
+                # Lazy import — same rationale as _validate_openrouter.
+                from tasks.linear_client import LinearClient, LinearError
+                client = LinearClient(key)
+                try:
+                    viewer = client.validate_key()
+                finally:
+                    client.close()
+            except LinearError as e:
+                self.after(0, self._linear_status.configure, {
+                    "text": f"✗ {e}", "text_color": RED,
+                })
+                return
+            except Exception as e:
+                self.after(0, self._linear_status.configure, {
+                    "text": f"✗ {e}", "text_color": RED,
+                })
+                return
+
+            # Key works — persist it.
+            self._parent._config["linear_api_key"] = key
+            save_config(self._parent._config)
+
+            name = viewer.get("name") or viewer.get("email") or "(unknown)"
+            self.after(0, self._linear_status.configure, {
+                "text": f"✓ Подключено: {name}", "text_color": GREEN,
+            })
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _validate_openrouter(self) -> None:
         """Make a single GET /auth/key. Show balance on success, error on fail.
