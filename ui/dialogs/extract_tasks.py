@@ -167,6 +167,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # Undo stack (5 deep) of deepcopy(self._tasks) snapshots before destructive ops.
         self._undo_stack: deque = deque(maxlen=5)
 
+        # If tasks.json exists in the history folder (e.g., user re-opened the
+        # dialog after a half-finished edit), load it instead of waiting for a
+        # fresh extract.
+        self._try_load_existing_tasks()
+
         self.title("Извлечение задач")
         self.geometry("640x520")
         self.configure(fg_color=BG)
@@ -175,6 +180,16 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self.grab_set()
 
         self._build_ui()
+
+        # Bind undo (both lower and upper case — tkinter distinguishes them).
+        self.bind("<Control-z>", self._undo)
+        self.bind("<Control-Z>", self._undo)
+
+        # If we loaded existing tasks above, render them now that widgets exist.
+        if self._tasks:
+            self._render_task_list()
+            self._set_selection(0)
+
         self._load_teams_async()
 
     # ── UI construction ──────────────────────────────────────────
@@ -563,6 +578,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
     def _on_close(self) -> None:
         """Cancel any in-flight worker, release the grab, destroy the toplevel."""
+        # Persist any pending form edits before tearing down.
+        try:
+            self._persist_current_task()
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("persist on close failed")
         self._cancel_event.set()
         # Closing the requests.Session sockets interrupts any blocked .post()
         # in the worker; it raises ConnectionError, which the worker catches
@@ -679,19 +700,42 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             except Exception:
                 pass
 
-    # ── Editor handlers (stubs — filled in Task 4) ───────────────
+    # ── Editor handlers ──────────────────────────────────────────
 
     def _on_add_task(self) -> None:
-        pass
+        from tasks.schema import Task
+        self._push_undo_snapshot()
+        new_task = Task(title="")
+        self._tasks.append(new_task)
+        self._render_task_list()
+        self._set_selection(len(self._tasks) - 1)
+        self._save_tasks_to_disk()
 
     def _on_select_all(self) -> None:
-        pass
+        self._push_undo_snapshot()
+        for t in self._tasks:
+            t.selected = True
+        for r in getattr(self, "_task_rows", []):
+            r.refresh_from_task()
+        self._save_tasks_to_disk()
 
     def _on_select_none(self) -> None:
-        pass
+        self._push_undo_snapshot()
+        for t in self._tasks:
+            t.selected = False
+        for r in getattr(self, "_task_rows", []):
+            r.refresh_from_task()
+        self._save_tasks_to_disk()
 
     def _on_delete_task(self) -> None:
-        pass
+        if self._selected_index is None:
+            return
+        self._push_undo_snapshot()
+        del self._tasks[self._selected_index]
+        new_index = min(self._selected_index, len(self._tasks) - 1) if self._tasks else None
+        self._render_task_list()
+        self._set_selection(new_index)
+        self._save_tasks_to_disk()
 
     # ── List rendering and selection ─────────────────────────────
 
@@ -901,3 +945,43 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         except Exception:
             import logging
             logging.getLogger(__name__).exception("auto-save tasks.json failed")
+
+    # ── Undo stack ────────────────────────────────────────────────
+
+    def _push_undo_snapshot(self) -> None:
+        """Snapshot _tasks BEFORE a destructive op. Capped at 5 deep."""
+        import copy
+        self._undo_stack.append(copy.deepcopy(self._tasks))
+
+    def _undo(self, _event=None) -> None:
+        """Ctrl+Z handler. Restore the last snapshot if any."""
+        if not self._undo_stack:
+            return
+        prior = self._undo_stack.pop()
+        # Persist current selection first so it isn't lost mid-restore.
+        self._persist_current_task()
+        self._tasks = prior
+        self._render_task_list()
+        self._set_selection(0 if self._tasks else None)
+        self._save_tasks_to_disk()
+
+    # ── Load existing tasks on dialog open ───────────────────────
+
+    def _try_load_existing_tasks(self) -> None:
+        from pathlib import Path
+        from tasks.persistence import MUTABLE_FILENAME, load_tasks
+        path = Path(self._history_folder) / MUTABLE_FILENAME
+        if not path.is_file():
+            return
+        try:
+            loaded = load_tasks(self._history_folder)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("could not load existing tasks.json")
+            return
+        self._tasks = list(loaded.get("tasks", []))
+        self._meta = {k: v for k, v in loaded.items() if k != "tasks"}
+        # We don't have team_context for an offline-loaded session; leave
+        # _cached_members/_cached_labels empty. The form will still work for
+        # title/priority/description/due_date — assignee/labels just show what
+        # was saved without re-resolving.
