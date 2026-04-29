@@ -1,7 +1,7 @@
 """On-disk persistence for the tasks pipeline.
 
 Phase 6.1 writes ``tasks_raw.json`` — the immutable LLM-extraction snapshot —
-into the active history-entry folder. Phase 6.2 will add ``tasks.json`` for
+into the active history-entry folder. Phase 6.2 adds ``tasks.json`` for
 the editable, user-state-bearing version.
 
 Atomic write: dump JSON to ``<folder>/.tasks_raw.json.tmp`` then ``os.replace``
@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+from datetime import datetime
 from pathlib import Path
 
 from tasks.schema import Task
@@ -96,8 +97,6 @@ def save_tasks(folder: str, tasks: list[Task], meta: dict) -> None:
 
     ``meta`` keys: extracted_at, model, team_id, team_name, transcript_lang.
     """
-    from datetime import datetime
-
     target_dir = Path(folder)
     target_dir.mkdir(parents=True, exist_ok=True)
 

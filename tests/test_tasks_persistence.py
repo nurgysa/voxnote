@@ -8,8 +8,9 @@ import pytest
 
 from tasks.persistence import (
     PersistenceError, load_tasks_raw, save_tasks_raw, RAW_FILENAME,
+    MUTABLE_FILENAME, load_tasks, save_tasks,
 )
-from tasks.schema import Priority, Task
+from tasks.schema import Priority, Task, TaskStatus
 
 
 def _sample_tasks() -> list[Task]:
@@ -121,12 +122,6 @@ def test_load_raises_persistence_error_on_malformed_json(tmp_path: Path):
 # ── save_tasks / load_tasks ──────────────────────────────────────────
 
 
-from tasks.persistence import (
-    MUTABLE_FILENAME, load_tasks, save_tasks,
-)
-from tasks.schema import TaskStatus
-
-
 def _full_state_tasks() -> list[Task]:
     return [
         Task(
@@ -200,4 +195,10 @@ def test_load_tasks_round_trips_full_state(tmp_path: Path):
 
 def test_load_tasks_raises_on_missing_file(tmp_path: Path):
     with pytest.raises(PersistenceError, match="not found"):
+        load_tasks(str(tmp_path))
+
+
+def test_load_tasks_raises_on_malformed_json(tmp_path: Path):
+    (tmp_path / MUTABLE_FILENAME).write_text("not json", encoding="utf-8")
+    with pytest.raises(PersistenceError, match="malformed"):
         load_tasks(str(tmp_path))
