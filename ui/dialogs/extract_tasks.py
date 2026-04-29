@@ -957,9 +957,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         """Ctrl+Z handler. Restore the last snapshot if any."""
         if not self._undo_stack:
             return
-        prior = self._undo_stack.pop()
-        # Persist current selection first so it isn't lost mid-restore.
+        # Persist current selection first so any pending form edits flush
+        # to disk before we restore the prior snapshot.
         self._persist_current_task()
+        prior = self._undo_stack.pop()
         self._tasks = prior
         self._render_task_list()
         self._set_selection(0 if self._tasks else None)
