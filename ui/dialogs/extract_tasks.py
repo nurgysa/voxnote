@@ -267,9 +267,24 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
         self._build_ui()
 
-        # Bind undo (both lower and upper case — tkinter distinguishes them).
+        # ── Keyboard shortcuts (Phase 6.5 C) ──
+        # tkinter case-quirk: <Control-z> ловит lat-raskladka без CapsLock,
+        # <Control-Z> нужен с CapsLock-ON или Shift'ом — биндим обе формы.
         self.bind("<Control-z>", self._undo)
         self.bind("<Control-Z>", self._undo)
+        # Esc — закрыть диалог (через _on_close → cancel_event + grab_release)
+        self.bind("<Escape>", lambda _e: self._on_close())
+        # F5 — обновить teams/boards (мнемоника как в Files Explorer)
+        self.bind("<F5>", lambda _e: self._refresh_containers())
+        # Ctrl+N — + Добавить новую пустую задачу
+        self.bind("<Control-n>", lambda _e: self._on_add_task())
+        self.bind("<Control-N>", lambda _e: self._on_add_task())
+        # Ctrl+Shift+E — Извлечь из транскрипта (если кнопка активна)
+        self.bind("<Control-Shift-E>", self._kbd_extract)
+        self.bind("<Control-Shift-e>", self._kbd_extract)
+        # Ctrl+Shift+S — Отправить выбранные (Send mnemonic)
+        self.bind("<Control-Shift-S>", self._kbd_send)
+        self.bind("<Control-Shift-s>", self._kbd_send)
 
         # If we loaded existing tasks above, render them now that widgets exist.
         if self._tasks:
@@ -277,6 +292,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             self._set_selection(0)
 
         self._load_containers_async()
+
+        # Ctrl+Enter в Söyle textbox → autofill (widget-scoped, чтобы
+        # обычный Enter мог делать перенос строки, а Ctrl+Enter — submit).
+        self._textbox_autofill_hint.bind(
+            "<Control-Return>", lambda _e: (self._on_autofill_clicked(), "break")[1],
+        )
 
     def _compute_enabled_backends(self) -> list[str]:
         """Read Settings checkboxes (Phase 6.4) → list of enabled names.
@@ -782,6 +803,30 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 raw_response[:2000],
             )
 
+    # ── Keyboard shortcut handlers (Phase 6.5 C) ──────────────────
+
+    def _kbd_extract(self, _event=None) -> str:
+        """Ctrl+Shift+E → trigger Извлечь if the button is currently
+        enabled. Returns 'break' so the default Tk bindings don't also
+        fire (e.g., a focused textbox would get a literal 'E')."""
+        try:
+            state = str(self._btn_extract.cget("state"))
+        except Exception:
+            state = "disabled"
+        if state == "normal":
+            self._on_extract()
+        return "break"
+
+    def _kbd_send(self, _event=None) -> str:
+        """Ctrl+Shift+S → trigger Отправить выбранные if enabled."""
+        try:
+            state = str(self._btn_send.cget("state"))
+        except Exception:
+            state = "disabled"
+        if state == "normal":
+            self._on_send_clicked()
+        return "break"
+
     def _set_busy(self, busy: bool) -> None:
         state = "disabled" if busy else "normal"
         for btn in (self._btn_extract, self._btn_refresh,
@@ -1056,13 +1101,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 self._task_list,
                 text=(
                     "📋  Список задач пуст\n\n"
-                    "• Нажмите «Извлечь» сверху, чтобы\n"
-                    "  получить задачи из транскрипта\n\n"
-                    "• Или «+ Добавить» снизу для\n"
-                    "  ручного ввода\n\n"
-                    "• Либо надиктуйте через Söyle\n"
-                    "  в поле «Подсказка для AI» справа\n"
-                    "  и нажмите «Заполнить из текста»"
+                    "• «Извлечь» из транскрипта\n"
+                    "  (Ctrl+Shift+E)\n\n"
+                    "• «+ Добавить» вручную\n"
+                    "  (Ctrl+N)\n\n"
+                    "• Или надиктуйте через Söyle\n"
+                    "  в «Подсказка для AI» справа\n"
+                    "  (Ctrl+Enter в textbox'e)"
                 ),
                 font=ctk.CTkFont(family=FONT, size=12),
                 text_color=TEXT_SECONDARY,
