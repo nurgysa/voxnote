@@ -17,6 +17,7 @@ that way) and for Windows machines with broken NVML installs.
 
 from __future__ import annotations
 
+import time
 import tkinter as tk
 
 import customtkinter as ctk
@@ -128,6 +129,15 @@ class SystemMonitorDialog(ctk.CTkToplevel):
         self._after_id: str | None = None
         self._nvml_handle = None  # NVML device handle, lazy-initialized
         self._nvml_ready = False
+        # Auto-recovery state (Phase 6.5+): when _poll_gpu raises (e.g.,
+        # torch grabbed CUDA context and stale handle returns
+        # NVMLError_Unknown), we set _nvml_recovery_at to a future
+        # monotonic timestamp; the next tick at/after that time will
+        # call _shutdown_nvml + _init_nvml. Backoff doubles up to a cap
+        # so we don't spam re-init on persistently broken systems.
+        self._nvml_recovery_at: float | None = None
+        self._nvml_recovery_delay = 2.0   # seconds; doubles per failure, capped
+        self._NVML_RECOVERY_DELAY_CAP = 30.0
 
         # psutil's cpu_percent / net_io_counters are cumulative-since-
         # last-call. Initialize the baseline NOW so the very first tick
@@ -224,12 +234,38 @@ class SystemMonitorDialog(ctk.CTkToplevel):
         # Wrap each poller individually — a sensor going AWOL (e.g. NVML
         # losing the device on driver restart) shouldn't kill the whole
         # update loop or other sections.
+
+        # NVML auto-recovery: if a previous poll failed and the cooldown
+        # has elapsed, try shutdown+init to refresh the device handle.
+        # On GTX 1650 Ti / consumer GPUs, torch.cuda.init() during model
+        # load can invalidate our cached handle → recovery brings us back.
+        if (
+            not self._nvml_ready
+            and self._nvml_recovery_at is not None
+            and time.monotonic() >= self._nvml_recovery_at
+        ):
+            self._shutdown_nvml()  # clears any half-initialized state
+            self._init_nvml()
+            if self._nvml_ready:
+                # Success — reset backoff for next failure (if any).
+                self._nvml_recovery_at = None
+                self._nvml_recovery_delay = 2.0
+            else:
+                # Still broken; schedule another try with longer delay.
+                self._schedule_nvml_recovery()
+
         try:
             self._poll_gpu()
         except Exception as e:
+            # First failure (or first after a successful tick) shows
+            # «восстановление NVML…», kicks recovery on next eligible tick.
             self._gpu_section["primary"].configure(
-                text=f"GPU: ошибка ({type(e).__name__})",
+                text=f"GPU: восстановление NVML… ({type(e).__name__})",
             )
+            self._nvml_ready = False
+            if self._nvml_recovery_at is None:
+                self._schedule_nvml_recovery()
+
         try:
             self._poll_cpu()
         except Exception:
@@ -244,6 +280,16 @@ class SystemMonitorDialog(ctk.CTkToplevel):
             pass
 
         self._after_id = self.after(_TICK_MS, self._tick)
+
+    def _schedule_nvml_recovery(self) -> None:
+        """Set the next-attempt timestamp using current backoff, then
+        double the delay (capped). Called both on first failure and on
+        each unsuccessful recovery attempt."""
+        self._nvml_recovery_at = time.monotonic() + self._nvml_recovery_delay
+        self._nvml_recovery_delay = min(
+            self._nvml_recovery_delay * 2.0,
+            self._NVML_RECOVERY_DELAY_CAP,
+        )
 
     def _poll_gpu(self) -> None:
         if not self._nvml_ready:
