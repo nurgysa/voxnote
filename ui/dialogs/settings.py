@@ -83,6 +83,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_dictionaries_section(body)
         self._build_openrouter_section(body)
         self._build_linear_section(body)
+        self._build_glide_section(body)
 
         # --- Footer ---
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -471,6 +472,106 @@ class SettingsDialog(ctk.CTkToplevel):
             name = viewer.get("name") or viewer.get("email") or "(unknown)"
             self.after(0, self._linear_status.configure, {
                 "text": f"✓ Подключено: {name}", "text_color": GREEN,
+            })
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _build_glide_section(self, parent) -> None:
+        """Glide API key + connection status (Phase 6.4).
+
+        Glide is the parallel backend to Linear. Same pattern as the
+        Linear section above: paste, validate (saves on success), shows
+        ✓/✗ status next to the button.
+        """
+        section = self._section_card(parent, "Glide", row=8)
+
+        label(section, "API ключ").grid(
+            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
+        )
+        ctk.CTkEntry(
+            section, textvariable=self._parent._glide_key_var, height=36,
+            corner_radius=10, border_color=BORDER, border_width=1,
+            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT, size=12),
+            placeholder_text="glide_pk_<workspace>_...",
+            show="•",
+        ).grid(row=0, column=1, padx=4, pady=6, sticky="ew")
+        tonal_button(
+            section, text="Вставить",
+            command=self._paste_glide_key, width=100,
+        ).grid(row=0, column=2, padx=(4, 4), pady=6)
+
+        tonal_button(
+            section, text="Проверить ключ",
+            command=self._validate_glide, width=140,
+        ).grid(row=1, column=0, padx=4, pady=6, sticky="w")
+        self._glide_status = label(section, "", anchor="w")
+        self._glide_status.grid(
+            row=1, column=1, columnspan=2, padx=(8, 4), pady=6, sticky="ew",
+        )
+
+    def _paste_glide_key(self) -> None:
+        """Paste-from-clipboard. Mirrors _paste_linear_key."""
+        try:
+            text = self.clipboard_get().strip()
+            self._parent._glide_key_var.set(text)
+            if text:
+                self._parent._config["glide_api_key"] = text
+                save_config(self._parent._config)
+        except Exception:
+            pass
+
+    def _validate_glide(self) -> None:
+        """GET /boards via GlideClient.validate_key — proves the key works
+        and reports how many boards are visible to the integration token.
+
+        Saves the key to config.json only on success (mirrors Linear /
+        OpenRouter discipline — typing intermediate garbage doesn't persist).
+        """
+        key = self._parent._glide_key_var.get().strip()
+        if not key:
+            self._glide_status.configure(
+                text="Введите API ключ", text_color=RED,
+            )
+            return
+
+        self._glide_status.configure(
+            text="Проверка...", text_color=TEXT_SECONDARY,
+        )
+
+        def worker():
+            try:
+                # Lazy import — same rationale as _validate_linear.
+                from tasks.glide_client import GlideClient, GlideError
+                client = GlideClient(key)
+                try:
+                    info = client.validate_key()
+                finally:
+                    client.close()
+            except GlideError as e:
+                self.after(0, self._glide_status.configure, {
+                    "text": f"✗ {e}", "text_color": RED,
+                })
+                return
+            except Exception as e:
+                self.after(0, self._glide_status.configure, {
+                    "text": f"✗ {e}", "text_color": RED,
+                })
+                return
+
+            # Key works — persist it.
+            self._parent._config["glide_api_key"] = key
+            save_config(self._parent._config)
+
+            count = info["board_count"]
+            sample = info["sample_names"]
+            # "5 досок" / "1 доска" / "0 досок" — Russian noun-count is
+            # awkward; use a simple form that's correct for all sizes.
+            base = f"✓ Подключено: {count} досок"
+            if sample:
+                base += f" ({', '.join(sample)})"
+            self.after(0, self._glide_status.configure, {
+                "text": base, "text_color": GREEN,
             })
 
         threading.Thread(target=worker, daemon=True).start()

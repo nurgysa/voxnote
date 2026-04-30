@@ -11,5 +11,8 @@
   "cloud_enabled": false,
   "cloud_provider": "AssemblyAI",
   "cloud_api_key": "",
+  "openrouter_api_key": "",
+  "linear_api_key": "",
+  "glide_api_key": "",
   "appearance_mode": "Системная"
 }

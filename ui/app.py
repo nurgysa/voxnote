@@ -279,6 +279,13 @@ class App(ctk.CTk):
             value=self._config.get("linear_api_key", ""),
         )
 
+        # Glide API key (Phase 6.4). Parallel backend to Linear. The board
+        # picker lives in ExtractTasksDialog (Phase 6.4.1) — Settings just
+        # persists the key. Same save-on-Validate-success discipline.
+        self._glide_key_var = ctk.StringVar(
+            value=self._config.get("glide_api_key", ""),
+        )
+
         # Appearance mode (light/dark/system). The actual ctk.set_appearance_mode
         # call already happened above with the saved value; this StringVar
         # just drives the Settings dialog dropdown and the change callback.
