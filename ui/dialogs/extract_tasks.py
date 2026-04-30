@@ -564,9 +564,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._populate_container_dropdown()
 
     def _on_containers_error(self, msg: str) -> None:
+        from tasks.errors import humanize
         self._team_var.set("(ошибка)")
         self._team_menu.configure(values=["(ошибка)"])
-        self._status_label.configure(text=f"✗ {msg}", text_color=RED)
+        self._status_label.configure(
+            text=f"✗ {humanize(msg)}", text_color=RED,
+        )
 
     def _populate_container_dropdown(self) -> None:
         if not self._containers:
@@ -755,7 +758,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         )
 
     def _on_extract_error(self, msg: str, raw_response: Optional[str]) -> None:
-        self._status_label.configure(text=f"✗ {msg}", text_color=RED)
+        from tasks.errors import humanize
+        self._status_label.configure(text=f"✗ {humanize(msg)}", text_color=RED)
         if raw_response:
             import logging
             logging.getLogger(__name__).warning(
@@ -1353,8 +1357,9 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         )
 
     def _on_autofill_error(self, msg: str) -> None:
+        from tasks.errors import humanize
         self._set_busy(False)
-        self._status_label.configure(text=f"✗ {msg}", text_color=RED)
+        self._status_label.configure(text=f"✗ {humanize(msg)}", text_color=RED)
 
     def _teams_context_members(self) -> list:
         """Return the members list from the most recent team_context fetch.
@@ -1529,8 +1534,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._refresh_send_button_label()
         from tasks.schema import TaskStatus
         if error_msg:
+            from tasks.errors import humanize
             self._status_label.configure(
-                text=f"✗ Отправка прервана: {error_msg}", text_color=RED,
+                text=f"✗ Отправка прервана: {humanize(error_msg)}",
+                text_color=RED,
             )
             return
         sent = sum(1 for t in self._tasks if t.status is TaskStatus.SENT)

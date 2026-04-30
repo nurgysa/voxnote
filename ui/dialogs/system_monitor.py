@@ -256,11 +256,15 @@ class SystemMonitorDialog(ctk.CTkToplevel):
 
         try:
             self._poll_gpu()
-        except Exception as e:
+        except Exception:
             # First failure (or first after a successful tick) shows
-            # «восстановление NVML…», kicks recovery on next eligible tick.
+            # a friendly «восстанавливаем GPU-метрики…» message and
+            # kicks recovery on the next eligible tick. The technical
+            # exception class is not shown to the user — it's already
+            # in the underlying NVML state and (if the user asks) we
+            # can dump it to the log on the next failure.
             self._gpu_section["primary"].configure(
-                text=f"GPU: восстановление NVML… ({type(e).__name__})",
+                text="GPU занят моделью — восстанавливаем метрики…",
             )
             self._nvml_ready = False
             if self._nvml_recovery_at is None:
