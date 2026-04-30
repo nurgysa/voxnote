@@ -449,8 +449,23 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         ).grid(row=0, column=3, sticky="e")
 
     def _update_cost_hint(self) -> None:
-        """Heuristic: ~chars/4 input tokens × Sonnet pricing × 1.3 (output)."""
+        """Initial status: cost-of-extract heuristic if a transcript is
+        present, otherwise a welcome that points to the manual paths.
+
+        Phase 6.5 D — adaptive welcome. When the dialog is opened with
+        no transcript (e.g., user wants to add tasks by hand or via
+        Söyle dictation), the old «Стоимость ≈ $0.00 (≈ 1 токенов)»
+        line was both wrong and confusing. Now we show a one-liner
+        that mirrors the empty-state placeholder in the left pane.
+        """
         chars = len(self._transcript or "")
+        if chars < 50:
+            # No transcript → manual-only flow; skip the cost line.
+            self._status_label.configure(
+                text="Готов к работе. Извлеките из транскрипта или добавьте задачу вручную.",
+                text_color=TEXT_SECONDARY,
+            )
+            return
         approx_tokens = max(chars // 4, 1)
         cost = approx_tokens / 1_000_000 * _COST_PER_1M_INPUT_TOKENS_USD * 1.3
         self._status_label.configure(
@@ -1030,6 +1045,33 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         for child in self._task_list.winfo_children():
             child.destroy()
         self._task_rows: list = []
+
+        # Empty-state placeholder: when there are no tasks, show a hint
+        # pointing the user to the two manual-entry paths (Add button +
+        # Söyle dictation in the right form). Phase 6.5 D — first-time
+        # discoverability fix. Helps users who open the dialog without
+        # a prior extract realize that manual-add IS supported.
+        if not self._tasks:
+            placeholder = ctk.CTkLabel(
+                self._task_list,
+                text=(
+                    "📋  Список задач пуст\n\n"
+                    "• Нажмите «Извлечь» сверху, чтобы\n"
+                    "  получить задачи из транскрипта\n\n"
+                    "• Или «+ Добавить» снизу для\n"
+                    "  ручного ввода\n\n"
+                    "• Либо надиктуйте через Söyle\n"
+                    "  в поле «Подсказка для AI» справа\n"
+                    "  и нажмите «Заполнить из текста»"
+                ),
+                font=ctk.CTkFont(family=FONT, size=12),
+                text_color=TEXT_SECONDARY,
+                justify="left", anchor="w",
+            )
+            placeholder.grid(row=0, column=0, padx=14, pady=14, sticky="nw")
+            self._refresh_send_button_label()
+            return
+
         for task in self._tasks:
             row = _TaskRow(
                 self._task_list, task,
