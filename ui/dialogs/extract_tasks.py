@@ -829,13 +829,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._var_assignee    = ctk.StringVar(value="(нет)")
         self._var_due_date    = ctk.StringVar()
 
-        # ── Autofill-from-text section (Phase 6.5, Soyle-friendly) ──
-        # User dictates a free-form description (via Soyle or by typing)
+        # ── Autofill-from-text section (Phase 6.5, Söyle-friendly) ──
+        # User dictates a free-form description (via Söyle or by typing)
         # into this textbox; clicking the button below runs the text
         # through the LLM (extract_one_task) and overwrites the form
         # fields. Sits at the TOP of the form so it's the first thing
         # the user sees when they click + Добавить on a fresh task.
-        label(f, "Подсказка для AI (можно надиктовать через Soyle)").grid(
+        label(f, "Подсказка для AI (можно надиктовать через Söyle)").grid(
             row=0, column=0, padx=12, pady=(12, 2), sticky="w",
         )
         self._textbox_autofill_hint = ctk.CTkTextbox(
