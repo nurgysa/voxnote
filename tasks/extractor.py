@@ -321,7 +321,7 @@ def extract_one_task(
 ) -> Optional[Task]:
     """Extract ONE task from a short free-form description.
 
-    Mirrors ``extract()`` but for a single task — used by the WhisperFlow
+    Mirrors ``extract()`` but for a single task — used by the Soyle
     auto-fill flow (Phase 6.5). The prompt machinery doesn't care whether
     the input is a meeting transcript or 1-3 sentences; we just feed the
     free text in the user-message slot and take the first task from the
