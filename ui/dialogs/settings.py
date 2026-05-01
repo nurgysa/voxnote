@@ -259,21 +259,31 @@ class SettingsDialog(ctk.CTkToplevel):
         ).grid(row=2, column=2, padx=(4, 4), pady=6)
 
         # Disclosure. Cloud means audio leaves the user's machine and
-        # ends up on a third-party server (US-based for AssemblyAI),
-        # which has privacy/compliance implications. Surfacing this
-        # right next to the toggle is the cheapest mitigation.
+        # ends up on a third-party server, which has privacy/compliance
+        # implications. Surfacing this right next to the toggle is the
+        # cheapest mitigation.
         label(
             section,
             "⚠ При включении аудио загружается на сервер провайдера. "
             "Не используй для конфиденциальных записей.",
             anchor="w",
         ).grid(row=3, column=0, columnspan=3, padx=4, pady=(2, 6), sticky="w")
+        # Static price summary. Cheapest with diarization first.
+        # OpenAI Whisper sits on its own line because it is the only
+        # provider without speaker labels.
         label(
             section,
-            "ℹ Стоимость AssemblyAI: ~$0.37/час без диаризации, "
-            "~$0.65/час с диаризацией.",
+            "ℹ Цены с диаризацией: Deepgram ~$0.43/ч • "
+            "Gladia ~$0.61/ч • AssemblyAI ~$0.65/ч • "
+            "Speechmatics ~$1.04/ч.",
             anchor="w",
-        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
+        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w")
+        label(
+            section,
+            "ℹ OpenAI Whisper ~$0.36/ч — только транскрипция, "
+            "без определения спикеров.",
+            anchor="w",
+        ).grid(row=5, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
 
     def _build_dictionaries_section(self, parent) -> None:
         section = self._section_card(parent, "Словари", row=5)

@@ -10,6 +10,6 @@
   "diarize_device": "Авто",
   "cloud_enabled": false,
   "cloud_provider": "AssemblyAI",
-  "cloud_api_key": "",
+  "cloud_api_keys": {},
   "appearance_mode": "Системная"
 }

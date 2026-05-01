@@ -106,6 +106,20 @@ class App(ctk.CTk):
         self._is_running = False
         self._rec_timer_id: str | None = None
         self._config = load_config()
+        # One-time migration: collapse the old single ``cloud_api_key``
+        # string into a per-provider dict. Lets the user keep separate
+        # keys for AssemblyAI/Deepgram/Gladia/etc. without re-entering
+        # one when switching the dropdown. Old field is dropped.
+        if "cloud_api_keys" not in self._config:
+            legacy = self._config.pop("cloud_api_key", "")
+            current = self._config.get("cloud_provider", "AssemblyAI")
+            self._config["cloud_api_keys"] = (
+                {current: legacy} if legacy else {}
+            )
+            save_config(self._config)
+        self._cloud_api_keys: dict[str, str] = (
+            self._config["cloud_api_keys"]
+        )
         # Open Settings dialog reference (singleton). Lets terms/voices saves
         # refresh its summaries live; None when dialog is closed.
         self._settings_dialog: SettingsDialog | None = None
@@ -249,8 +263,14 @@ class App(ctk.CTk):
         self._cloud_provider_var = ctk.StringVar(
             value=self._config.get("cloud_provider", "AssemblyAI"),
         )
+        # Visible API-key field — populated from the per-provider dict
+        # for whichever provider is currently selected. _on_cloud_provider_changed
+        # swaps it on dropdown change; _paste_cloud_api_key writes it back
+        # into the dict for the active provider.
         self._cloud_api_key_var = ctk.StringVar(
-            value=self._config.get("cloud_api_key", ""),
+            value=self._cloud_api_keys.get(
+                self._cloud_provider_var.get(), ""
+            ),
         )
 
         # Tasks pipeline (Phase 6.0+) — OpenRouter API key + default model slug.
@@ -660,6 +680,11 @@ class App(ctk.CTk):
 
     def _on_cloud_provider_changed(self, value: str) -> None:
         self._config["cloud_provider"] = value
+        # Swap the visible key field to the one stored for this provider
+        # (empty if the user has never pasted one). The dict in
+        # self._cloud_api_keys is the source of truth — the StringVar
+        # only reflects the current selection.
+        self._cloud_api_key_var.set(self._cloud_api_keys.get(value, ""))
         save_config(self._config)
 
     def _on_openrouter_default_model_changed(self) -> None:
@@ -703,12 +728,15 @@ class App(ctk.CTk):
 
     def _paste_cloud_api_key(self) -> None:
         """Same paste-from-clipboard helper as the HF token, scoped to
-        the cloud API key field."""
+        the cloud API key field. Persists into the per-provider dict
+        under the *currently selected* provider name."""
         try:
             text = self.clipboard_get().strip()
             self._cloud_api_key_var.set(text)
             if text:
-                self._config["cloud_api_key"] = text
+                provider = self._cloud_provider_var.get()
+                self._cloud_api_keys[provider] = text
+                self._config["cloud_api_keys"] = self._cloud_api_keys
                 save_config(self._config)
         except Exception:
             pass
@@ -839,23 +867,45 @@ class App(ctk.CTk):
 
         # Resolve cloud-mode settings up front. cloud_provider is None when
         # the toggle is off — that's the signal Transcriber.transcribe() uses
-        # to pick the local pipeline. When on, persist the API key the same
-        # way HF Token is persisted (typed values aren't auto-saved).
+        # to pick the local pipeline. When on, also pick up any unsaved key
+        # the user typed directly into the field (paste-button auto-saves,
+        # manual typing doesn't) and store it under the active provider.
         cloud_enabled = bool(self._cloud_enabled_var.get())
+        cloud_provider_name = self._cloud_provider_var.get()
         cloud_api_key = self._cloud_api_key_var.get().strip()
-        cloud_provider = self._cloud_provider_var.get() if cloud_enabled else None
+        cloud_provider = cloud_provider_name if cloud_enabled else None
         if cloud_enabled and cloud_api_key:
-            self._config["cloud_api_key"] = cloud_api_key
-            save_config(self._config)
+            if self._cloud_api_keys.get(cloud_provider_name) != cloud_api_key:
+                self._cloud_api_keys[cloud_provider_name] = cloud_api_key
+                self._config["cloud_api_keys"] = self._cloud_api_keys
+                save_config(self._config)
 
         if cloud_enabled and not cloud_api_key:
             messagebox.showwarning(
                 "Нужен API-ключ",
-                "Облако включено, но API-ключ провайдера не задан.\n\n"
-                "Открой Настройки → Облако и вставь ключ, либо выключи облако.",
+                f"Облако включено, но API-ключ для {cloud_provider_name} "
+                f"не задан.\n\nОткрой Настройки → Облако и вставь ключ, "
+                f"либо выключи облако.",
             )
             self._set_running(False)
             return
+
+        # Diarization gate: some providers (e.g. OpenAI Whisper) don't
+        # return speaker labels. Ask the user whether to fall back to
+        # transcription-only rather than silently dropping the request.
+        if cloud_enabled and diarize:
+            from providers import PROVIDERS
+            provider_cls = PROVIDERS.get(cloud_provider_name)
+            if (provider_cls is not None
+                    and not provider_cls.supports_diarization):
+                if not messagebox.askokcancel(
+                    "Диаризация недоступна",
+                    f"Провайдер {cloud_provider_name} не поддерживает "
+                    f"определение спикеров. Продолжить без меток?",
+                ):
+                    self._set_running(False)
+                    return
+                diarize = False
 
         # HF Token is only required for the LOCAL diarization path. Cloud
         # providers (AssemblyAI, …) carry their own auth via cloud_api_key.
