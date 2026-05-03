@@ -21,7 +21,6 @@ from __future__ import annotations
 import os
 import threading
 import tkinter as tk
-import webbrowser
 from collections import deque
 from datetime import datetime, timedelta
 from tkinter import messagebox
@@ -30,7 +29,6 @@ import customtkinter as ctk
 
 from theme import (
     BG,
-    BLUE_DIM,
     BORDER,
     FONT,
     GREEN,
@@ -40,170 +38,18 @@ from theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
-
-# Note: BLUE_DIM is reserved for the _TaskRow checkbox accent in Task 6.2-3.
 from ui.widgets import label, primary_button, tonal_button
 from utils import save_config
 
-# Same curated list as Settings → OpenRouter section, kept in sync manually.
-# (Phase 6.4 may replace both with a live /models browser.)
-_CURATED_MODELS = [
-    "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-haiku-4.5",
-    "openai/gpt-4o",
-    "google/gemini-2.5-pro",
-    "deepseek/deepseek-v3",
-]
-
-_TEAMS_CACHE_KEY = "linear_teams_cache"
-_TEAMS_CACHE_TTL = timedelta(hours=24)
-_RECENT_MODELS_KEY = "tasks_recent_models"
-_RECENT_MODELS_LIMIT = 5
-
-# Sonnet-4.5 input price per 1M tokens. Used for the cost-estimate hint.
-# Imprecise (we don't know the actual model's price) but useful as a sanity-check.
-_COST_PER_1M_INPUT_TOKENS_USD = 3.0
-
-_PRIORITY_GLYPHS = {
-    "none":   "⚪",
-    "low":    "🔵",
-    "medium": "🟡",
-    "high":   "🟠",
-    "urgent": "🔴",
-}
-
-
-class _TaskRow(ctk.CTkFrame):
-    """One row in the left task list. Clicking the row body selects;
-    clicking the checkbox toggles selected without selecting.
-    """
-
-    def __init__(
-        self, parent, task, *, on_select, on_toggle,
-    ):
-        super().__init__(parent, fg_color="transparent", corner_radius=6)
-        self._task = task
-        self._on_select = on_select
-        self._on_toggle = on_toggle
-        self._selected_visual = False
-
-        self.grid_columnconfigure(1, weight=1)
-
-        self._var_checked = ctk.BooleanVar(value=task.selected)
-        self._check = ctk.CTkCheckBox(
-            self, text="", variable=self._var_checked,
-            command=self._handle_toggle,
-            checkbox_height=18, checkbox_width=18,
-            fg_color=BLUE_DIM, hover_color=BLUE_DIM, border_color=BORDER,
-        )
-        self._check.grid(row=0, column=0, padx=(8, 6), pady=4, sticky="w")
-
-        self._lbl_title = ctk.CTkLabel(
-            self, text=task.title or "(без заголовка)",
-            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
-            text_color=TEXT_PRIMARY, anchor="w",
-        )
-        self._lbl_title.grid(row=0, column=1, padx=2, pady=(4, 0), sticky="ew")
-
-        self._lbl_summary = ctk.CTkLabel(
-            self, text=self._summary_text(),
-            font=ctk.CTkFont(family=FONT, size=11),
-            text_color=TEXT_SECONDARY, anchor="w",
-        )
-        self._lbl_summary.grid(row=1, column=1, padx=2, pady=(0, 4), sticky="ew")
-
-        # Click anywhere on the body (except the checkbox) to select.
-        for w in (self, self._lbl_title, self._lbl_summary):
-            w.bind("<Button-1>", self._handle_click)
-
-    def _handle_click(self, _event=None):
-        # If the task has been sent to Linear, a click opens the issue page;
-        # the editor form is irrelevant at that point.
-        from tasks.schema import TaskStatus
-        if (
-            self._task.status is TaskStatus.SENT
-            and self._task.linear_issue_url
-        ):
-            webbrowser.open(self._task.linear_issue_url)
-            return
-        self._on_select(self._task)
-
-    def _handle_toggle(self):
-        self._task.selected = bool(self._var_checked.get())
-        self._on_toggle()
-
-    def set_selected_visual(self, selected: bool) -> None:
-        self._selected_visual = selected
-        self.configure(fg_color=SURFACE if selected else "transparent")
-
-    def refresh_from_task(self) -> None:
-        """Re-render summary + title from the underlying task. Called after
-        edits to keep the row in sync with the form."""
-        self._lbl_title.configure(text=self._task.title or "(без заголовка)")
-        self._lbl_summary.configure(text=self._summary_text())
-        self._var_checked.set(self._task.selected)
-        # Re-apply any status badge so the row stays consistent after a
-        # destructive op (delete + undo, in particular).
-        self.set_status_visual(
-            self._task.status,
-            identifier=self._task.linear_issue_id,
-            error_code=self._task.send_error,
-        )
-
-    def set_status_visual(
-        self, status, *,
-        identifier: str | None = None,
-        error_code: str | None = None,
-    ) -> None:
-        """Replace the checkbox with a status badge after send begins.
-
-        PENDING → restore checkbox; SENDING/SENT/FAILED/SKIPPED → badge.
-        Identifier (e.g. ``ENG-1234``) appended to the summary when SENT.
-        """
-        from tasks.schema import TaskStatus
-        if status is TaskStatus.PENDING:
-            if hasattr(self, "_status_badge"):
-                self._status_badge.grid_remove()
-            self._check.grid()
-            # Restore the plain summary in case it had ``· ENG-…`` appended.
-            self._lbl_summary.configure(text=self._summary_text())
-            return
-
-        if not hasattr(self, "_status_badge"):
-            self._status_badge = ctk.CTkLabel(
-                self, text="", width=28,
-                font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
-                anchor="center",
-            )
-            self._status_badge.grid(
-                row=0, column=0, padx=(8, 6), pady=4, sticky="w",
-            )
-
-        self._check.grid_remove()
-        self._status_badge.grid()
-
-        if status is TaskStatus.SENDING:
-            self._status_badge.configure(text="⏳", text_color=BLUE_DIM)
-            self._lbl_summary.configure(text=self._summary_text())
-        elif status is TaskStatus.SENT:
-            self._status_badge.configure(text="✓", text_color=GREEN)
-            base = self._summary_text()
-            if identifier:
-                self._lbl_summary.configure(text=f"{base}  ·  {identifier}")
-            else:
-                self._lbl_summary.configure(text=base)
-        elif status is TaskStatus.FAILED:
-            code = error_code or "?"
-            self._status_badge.configure(text=f"⚠{code}", text_color=RED)
-            self._lbl_summary.configure(text=self._summary_text())
-        elif status is TaskStatus.SKIPPED:
-            self._status_badge.configure(text="—", text_color=TEXT_SECONDARY)
-            self._lbl_summary.configure(text=self._summary_text())
-
-    def _summary_text(self) -> str:
-        glyph = _PRIORITY_GLYPHS.get(self._task.priority.name.lower(), "⚪")
-        assignee = self._task.assignee_name or "—"
-        return f"👤 {assignee}  ·  {glyph} {self._task.priority.name.lower()}"
+from .constants import (
+    _COST_PER_1M_INPUT_TOKENS_USD,
+    _CURATED_MODELS,
+    _RECENT_MODELS_KEY,
+    _RECENT_MODELS_LIMIT,
+    _TEAMS_CACHE_KEY,
+    _TEAMS_CACHE_TTL,
+)
+from .task_row import _TaskRow
 
 
 class ExtractTasksDialog(ctk.CTkToplevel):
