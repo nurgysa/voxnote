@@ -704,38 +704,52 @@ class App(ctk.CTk):
 
     def _on_appearance_changed(self, value: str) -> None:
         """
-        Persist the theme choice. Apply on NEXT LAUNCH only.
+        Live theme switch — close Settings dialog before applying.
 
-        Why not live-switch: ``ctk.set_appearance_mode`` triggers a
-        synchronous Tk repaint of every CTk widget in the process. On
-        Windows light→dark this takes 3-15 sec and the window appears
-        frozen (Tk does NOT yield the main loop during GDI palette
-        allocation). Even after_idle / two-phase tricks don't help —
-        the freeze is in C-level Tk code we can't preempt.
+        Background: earlier iterations made the user report the window
+        freezing after a light→dark switch. Profiling showed Python work
+        finishes in ~250ms, so set_appearance_mode itself is fast. The
+        perceived freeze comes from CustomTkinter dropdown + the open
+        Settings dialog struggling to repaint themselves in-place after
+        the palette swap.
 
-        The startup path is fast in either palette because the first
-        paint allocates the palette once and applies it to a fresh
-        widget tree. So the workaround: save the choice, tell the user
-        to restart, never run the slow runtime switch at all.
-
-        If a future CustomTkinter release fixes this (or we move off
-        Tk), we can replace this method with the live-switch
-        implementation kept in git history.
+        Workaround: destroy the Settings dialog before flipping the
+        appearance mode. The dialog holds no unsaved state — all its
+        controls bind to vars on App that already persist to config.json.
+        The user can reopen it; rendering fresh in the new theme is fast.
         """
-        # Persist immediately so the next launch picks up the new theme.
+        # Persist immediately so the choice survives even if Tk hits an
+        # exception during the rest of this method.
         self._config["appearance_mode"] = value
         save_config(self._config)
 
-        # Inform the user. Modal — they have to acknowledge before the
-        # dialog continues, which prevents click-spam on the dropdown.
-        messagebox.showinfo(
-            "Тема сохранена",
-            f"Тема «{value}» будет применена при следующем запуске.\n\n"
-            "Живое переключение временно отключено: на Windows оно "
-            "замораживает окно на 3-15 секунд (известная проблема "
-            "CustomTkinter + Tk при перерисовке палитры). Перезапуск "
-            "применяет тему мгновенно.",
-        )
+        # Force-close Settings dialog — its in-place repaint is the main
+        # contributor to the perceived freeze. Destroying it dismisses
+        # the dropdown the user just clicked too.
+        if self._settings_dialog is not None:
+            try:
+                self._settings_dialog.destroy()
+            except tk.TclError:
+                pass
+            self._settings_dialog = None
+
+        # Apply the actual theme change. Main window CTk widgets handle
+        # this through CTk's appearance tracker — no manual redraw needed.
+        ctk.set_appearance_mode(APPEARANCE_MODES.get(value, "system"))
+
+        # Notify Canvas-using children — plain tk.Canvas doesn't react
+        # to set_appearance_mode automatically.
+        if self._monitor_dialog is not None:
+            try:
+                self._monitor_dialog._apply_theme()
+            except tk.TclError:
+                pass
+        if self._cutter is not None:
+            try:
+                if self._cutter.winfo_exists():
+                    self._cutter._apply_theme()
+            except tk.TclError:
+                pass
 
     def _paste_cloud_api_key(self) -> None:
         """Same paste-from-clipboard helper as the HF token, scoped to
