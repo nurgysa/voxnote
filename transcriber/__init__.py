@@ -37,6 +37,20 @@ from .speaker_aligner import (
 logger = get_logger(__name__)
 
 
+# Path to the diarize_worker.py script spawned as a subprocess (see
+# Transcriber.diarize). The worker lives at the project root, ONE level
+# above this package — hence the double dirname. Pre-F4, when this code
+# was a flat ``transcriber.py`` on the root, a single dirname sufficed;
+# the package split shifted ``__file__`` one level deeper, so the path
+# has to climb one extra level. Computed once at import — covered by
+# tests/test_transcriber_paths.py to catch any future repackaging that
+# would silently break diarization.
+_DIARIZE_WORKER_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "diarize_worker.py",
+)
+
+
 # Public API. Most names are re-exported from helper submodules so existing
 # call sites (`from transcriber import Transcriber`, `from transcriber import
 # _build_initial_prompt`, etc.) keep working unchanged after the F4 split.
@@ -288,9 +302,7 @@ class Transcriber:
             device = "cuda" if _cuda_is_available() else "cpu"
         # device is now one of {"cuda", "cpu"} — passed to worker via argv.
 
-        worker = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)), "diarize_worker.py",
-        )
+        worker = _DIARIZE_WORKER_PATH
         env = dict(os.environ)
         env["DIARIZE_WAIT"] = "1"
         # Reduce CUDA allocator fragmentation. On 4 GB cards, pyannote's
