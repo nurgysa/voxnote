@@ -711,6 +711,14 @@ class App(ctk.CTk):
         covers the bulk of our UI. ``tk.Canvas`` instances (waveform,
         sparklines) don't speak tuples and need explicit redraw; we
         delegate that to each open child widget that knows about Canvas.
+
+        Known issue: light→dark on Windows can take 3-15 seconds during
+        which the window appears unresponsive. The Python work itself
+        is ~250ms (verified with timing prints); the lag is in Tk's
+        synchronous repaint of all widgets via Windows GDI (not in our
+        code). dark→light is much faster because GDI keeps the bright
+        palette warm. Pre-existing in CustomTkinter; documented here so
+        a future maintainer doesn't chase it as a regression.
         """
         self._config["appearance_mode"] = value
         save_config(self._config)
