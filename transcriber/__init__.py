@@ -1,3 +1,16 @@
+# isort: off
+# Order-sensitive bootstrap: cuda_utils loads ctranslate2, which MUST be
+# imported before torch on Windows (CUDA DLL conflict — see cuda_utils
+# docstring + logs/transcribe_crash_*.log for the STATUS_DLL_INIT_FAILED
+# trail). faster_whisper below pulls torch transitively, so cuda_utils
+# has to win the race. Do NOT let ruff/isort reorder this block.
+from .cuda_utils import (
+    TranscriptionCancelled,
+    _check_cancelled,
+    _cuda_is_available,
+)
+# isort: on
+
 import json
 import os
 import shutil
@@ -6,47 +19,41 @@ import sys
 import tempfile
 import threading
 
-# ctranslate2 must be imported before torch on Windows to avoid CUDA DLL conflicts.
-# audio_io is torch-free (see its module docstring), so importing it here is safe.
-import ctranslate2  # noqa: F401
 from faster_whisper import WhisperModel
 
 from audio_io import ensure_wav, get_duration_s, split_wav_into_chunks
 from logging_setup import crash_log_path, get_logger
 from transcript_format import format_diarized, format_timed
 
+from .progress import _parse_progress_line
+from .prompt import _build_initial_prompt
+from .speaker_aligner import (
+    _assign_speakers_word_level,
+    _find_speaker_by_overlap,
+    _flush_word_group,
+    _speaker_at_time,
+)
+
 logger = get_logger(__name__)
 
 
-class TranscriptionCancelled(Exception):
-    """Raised inside ``Transcriber.transcribe`` when the cancel event fires.
-
-    Caught in ``app._run_transcription`` and routed to a "cancelled" UI
-    state distinct from the "error" path — the user asked to stop, so
-    we don't show a scary error dialog.
-    """
-
-
-def _check_cancelled(cancel_event) -> None:
-    """Helper: raise ``TranscriptionCancelled`` if the event is set."""
-    if cancel_event is not None and cancel_event.is_set():
-        raise TranscriptionCancelled()
-
-
-def _cuda_is_available() -> bool:
-    """
-    Cheap CUDA-availability probe via ctranslate2.
-
-    We deliberately avoid `torch.cuda.is_available()` here — it would force
-    a torch import in the main process before ctranslate2 has finished
-    loading its DLLs, which on Windows triggers the CUDA DLL conflict that
-    motivates the import-order discipline at the top of this file.
-    Returns False on any error (no GPU, driver missing, broken CT2 install).
-    """
-    try:
-        return ctranslate2.get_cuda_device_count() > 0
-    except Exception:
-        return False
+# Public API. Most names are re-exported from helper submodules so existing
+# call sites (`from transcriber import Transcriber`, `from transcriber import
+# _build_initial_prompt`, etc.) keep working unchanged after the F4 split.
+# Tests in ``tests/test_transcriber_pure`` import the underscore-prefixed
+# helpers directly from this package.
+__all__ = [
+    "Transcriber",
+    "TranscriptionCancelled",
+    "_assign_speakers_word_level",
+    "_build_initial_prompt",
+    "_check_cancelled",
+    "_cuda_is_available",
+    "_find_speaker_by_overlap",
+    "_flush_word_group",
+    "_parse_progress_line",
+    "_speaker_at_time",
+]
 
 
 # Files longer than this are split into chunks before transcription. The
@@ -78,119 +85,6 @@ _CHUNK_DURATION_S = 15 * 60        # 15 minutes
 # inflating total inference time (3 s × N chunks ≈ 0.25% overhead on a
 # 2-hour file). Dedup lives in transcribe() below — see primary_start_abs.
 _CHUNK_OVERLAP_S = 3.0
-
-
-# Safe upper bound on initial_prompt length. Whisper enforces a 224-token
-# prompt limit; truncating at this many CHARS before tokenization keeps us
-# comfortably under even in worst-case Cyrillic BPE (2-3 bytes per token).
-# If the truncated string cuts a term in half the term is simply dropped
-# from the prompt — hotwords= still biases for it at token level.
-_MAX_PROMPT_CHARS = 400
-
-
-# Language-specific prompt frames. Whisper uses these as decode-time context:
-# mentioning the language and framing it as "transcript of a meeting" subtly
-# biases punctuation, capitalization and word choice toward that register.
-# Leaving a language out (e.g. "auto") yields None → prompt is skipped.
-_PROMPT_FRAMES: dict[str, dict[str, str]] = {
-    "ru": {
-        "prefix": "Расшифровка разговора на русском языке.",
-        "terms_label": "Упомянутые термины",
-    },
-    "kk": {
-        "prefix": "Қазақ тіліндегі әңгіменің жазбасы.",
-        "terms_label": "Аталған терминдер",
-    },
-    "en": {
-        "prefix": "Transcript of a spoken conversation in English.",
-        "terms_label": "Terms mentioned",
-    },
-}
-
-
-def _build_initial_prompt(
-    language: str | None,
-    hotwords_str: str | None,
-) -> str | None:
-    """
-    Assemble Whisper's ``initial_prompt`` from the language hint and the user's
-    hotword dictionary.
-
-    The prompt pairs two signals:
-      1) A natural-language frame ("Transcript of a conversation in X...") —
-         anchors stylistic register and orthography;
-      2) A comma-separated list of domain terms — biases spelling of names
-         and jargon (e.g. "Kubernetes" not "Kuber Netting", "Нургиса" not
-         "Нур Гиса"). This is redundant with the ``hotwords=`` parameter but
-         works via a different mechanism (decode context vs CTC-style biasing)
-         and is more reliable for proper-noun casing.
-
-    Returns None when neither signal is available, so the caller can pass None
-    straight through to faster-whisper (which treats None as "no prompt").
-    """
-    frame = _PROMPT_FRAMES.get(language) if language else None
-    has_terms = bool(hotwords_str and hotwords_str.strip())
-    if frame is None and not has_terms:
-        return None
-
-    parts: list[str] = []
-    if frame is not None:
-        parts.append(frame["prefix"])
-    if has_terms:
-        label = frame["terms_label"] if frame is not None else "Terms"
-        parts.append(f"{label}: {hotwords_str.strip()}.")
-
-    prompt = " ".join(parts)
-    if len(prompt) <= _MAX_PROMPT_CHARS:
-        return prompt
-
-    # Truncate on the last comma before the limit so we don't cut a term in
-    # half. If no comma is found (shouldn't happen for multi-term prompts),
-    # hard-truncate at the limit.
-    head = prompt[:_MAX_PROMPT_CHARS]
-    cut = head.rfind(",")
-    if cut > 0:
-        return head[:cut] + "."
-    return head
-
-
-# Weight of each pyannote step within the 70-90% GUI progress band.
-# Embeddings (ECAPA-TDNN per VAD chunk) dominates wall time, so it gets the
-# largest sub-range. "startup" is a synthetic step the worker emits during
-# subprocess cold start so the bar crawls forward instead of freezing at 70%
-# for ~20s while Python/torch/pyannote import.
-_DIARIZATION_STEP_RANGES = {
-    "startup":              (0.00, 0.10),
-    "segmentation":         (0.10, 0.25),
-    "embeddings":           (0.25, 0.85),
-    "discrete_diarization": (0.85, 1.00),
-}
-
-
-def _parse_progress_line(line: str) -> float | None:
-    """
-    Parse one `PROGRESS\\t<step>\\t<completed>\\t<total>` line from the worker.
-
-    Returns the overall percent in the 70-90% range, or None if the line is
-    malformed or refers to an unknown step (unknown steps are skipped so a
-    future pyannote version with new stages can't accidentally jump the bar).
-    """
-    parts = line.rstrip("\n").split("\t")
-    if len(parts) != 4 or parts[0] != "PROGRESS":
-        return None
-    step = parts[1]
-    if step not in _DIARIZATION_STEP_RANGES:
-        return None
-    try:
-        completed = int(parts[2])
-        total = int(parts[3])
-    except ValueError:
-        return None
-    sub_start, sub_end = _DIARIZATION_STEP_RANGES[step]
-    ratio = min(1.0, completed / total) if total > 0 else 0.0
-    sub_percent = sub_start + (sub_end - sub_start) * ratio
-    # Map 0..1 into the 70..90 GUI band, leaving 90..100 for post-processing.
-    return 70.0 + 20.0 * sub_percent
 
 
 class Transcriber:
@@ -979,146 +873,5 @@ class Transcriber:
                     shutil.rmtree(chunks_dir, ignore_errors=True)
                 except Exception:
                     pass
-
-
-def _assign_speakers_word_level(
-    segments: list[dict],
-    speaker_turns: list[tuple[float, float, str]],
-) -> list[dict]:
-    """
-    Split each Whisper segment into sub-segments along speaker-turn boundaries.
-
-    Fixes the dominant dialogue error in segment-level max-overlap assignment:
-    a single Whisper segment spanning two speakers ("— Да. — Согласен.") used
-    to be labeled with one speaker (max overlap wins). Here each WORD inside
-    the segment is placed on the pyannote timeline independently, and adjacent
-    same-speaker words are re-grouped into output sub-segments.
-
-    Input:  segments from Transcriber.transcribe() — dicts with
-            {start, end, text, words:[{start,end,word}, ...]}.
-    Output: flat list of {start, end, text, speaker} dicts in chronological
-            order, ready for _format_diarized (which does the numbering and
-            same-speaker merge across segments).
-
-    Segments with empty `words` (Whisper DTW pass skipped them) fall back to
-    whole-segment max-overlap — same behavior as before word-level path.
-    """
-    out: list[dict] = []
-    for seg in segments:
-        words = seg.get("words") or []
-        if not words:
-            # Fallback: no per-word times → keep the old behavior for this seg.
-            speaker = _find_speaker_by_overlap(
-                seg["start"], seg["end"], speaker_turns,
-            )
-            out.append({
-                "start": seg["start"],
-                "end": seg["end"],
-                "text": seg["text"],
-                "speaker": speaker,
-            })
-            continue
-
-        # Group consecutive same-speaker words into emitted sub-segments.
-        # We use the word midpoint as the probe time — more robust than
-        # start/end at boundaries where a word straddles a speaker change.
-        current_words: list[dict] = []
-        current_speaker: str | None = None
-
-        for w in words:
-            mid = (w["start"] + w["end"]) / 2.0
-            sp = _speaker_at_time(mid, speaker_turns)
-            if sp != current_speaker and current_words:
-                _flush_word_group(current_words, current_speaker, out)
-                current_words = []
-            current_speaker = sp
-            current_words.append(w)
-
-        _flush_word_group(current_words, current_speaker, out)
-
-    return out
-
-
-def _flush_word_group(
-    words: list[dict],
-    speaker: str | None,
-    out: list[dict],
-) -> None:
-    """Append one sub-segment ({start, end, text, speaker}) for a word run.
-
-    Module-level (not nested in :func:`_assign_speakers_word_level`'s loop)
-    to avoid B023 — a closure over the loop's mutable ``current_words`` /
-    ``current_speaker`` works only because callers invoke it synchronously
-    in the same iteration; making the dependency explicit via parameters
-    is clearer and ruff-clean.
-
-    Skips word groups that are empty or pure-whitespace (e.g. a leading
-    space token from Whisper's tokenizer that would render as "").
-    """
-    if not words:
-        return
-    text = "".join(w["word"] for w in words).strip()
-    if not text:
-        return
-    out.append({
-        "start": words[0]["start"],
-        "end": words[-1]["end"],
-        "text": text,
-        "speaker": speaker,
-    })
-
-
-def _speaker_at_time(
-    t: float,
-    speaker_turns: list[tuple[float, float, str]],
-) -> str:
-    """
-    Return the speaker active at time ``t``.
-
-    First checks for a turn whose [start, end] interval contains ``t``; if
-    none (common at turn edges or in VAD gaps that pyannote didn't fill),
-    falls back to the turn with the smallest edge distance. Guarantees a
-    non-None return even when speaker_turns is empty (SPEAKER_00), so the
-    caller never has to handle None.
-    """
-    best_speaker = "SPEAKER_00"
-    best_dist = float("inf")
-    for start, end, speaker in speaker_turns:
-        if start <= t <= end:
-            return speaker
-        dist = t - end if t > end else start - t
-        if dist < best_dist:
-            best_dist = dist
-            best_speaker = speaker
-    return best_speaker
-
-
-def _find_speaker_by_overlap(
-    seg_start: float,
-    seg_end: float,
-    speaker_turns: list[tuple[float, float, str]],
-) -> str:
-    """Find which speaker has the most temporal overlap with a segment."""
-    overlap_by_speaker: dict[str, float] = {}
-    for start, end, speaker in speaker_turns:
-        # Calculate overlap between segment and speaker turn
-        overlap_start = max(seg_start, start)
-        overlap_end = min(seg_end, end)
-        overlap = max(0.0, overlap_end - overlap_start)
-        if overlap > 0:
-            overlap_by_speaker[speaker] = overlap_by_speaker.get(speaker, 0.0) + overlap
-
-    if overlap_by_speaker:
-        return max(overlap_by_speaker, key=overlap_by_speaker.get)
-
-    # Fallback: find nearest speaker turn
-    min_dist = float("inf")
-    nearest = "SPEAKER_00"
-    for start, end, speaker in speaker_turns:
-        dist = min(abs(seg_start - end), abs(seg_end - start))
-        if dist < min_dist:
-            min_dist = dist
-            nearest = speaker
-    return nearest
 
 
