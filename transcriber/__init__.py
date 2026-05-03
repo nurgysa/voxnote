@@ -1,3 +1,16 @@
+# isort: off
+# Order-sensitive bootstrap: cuda_utils loads ctranslate2, which MUST be
+# imported before torch on Windows (CUDA DLL conflict — see cuda_utils
+# docstring + logs/transcribe_crash_*.log for the STATUS_DLL_INIT_FAILED
+# trail). faster_whisper below pulls torch transitively, so cuda_utils
+# has to win the race. Do NOT let ruff/isort reorder this block.
+from .cuda_utils import (
+    TranscriptionCancelled,
+    _check_cancelled,
+    _cuda_is_available,
+)
+# isort: on
+
 import json
 import os
 import shutil
@@ -6,9 +19,6 @@ import sys
 import tempfile
 import threading
 
-# ctranslate2 must be imported before torch on Windows to avoid CUDA DLL conflicts.
-# audio_io is torch-free (see its module docstring), so importing it here is safe.
-import ctranslate2  # noqa: F401
 from faster_whisper import WhisperModel
 
 from audio_io import ensure_wav, get_duration_s, split_wav_into_chunks
@@ -19,37 +29,6 @@ from .progress import _parse_progress_line
 from .prompt import _build_initial_prompt
 
 logger = get_logger(__name__)
-
-
-class TranscriptionCancelled(Exception):
-    """Raised inside ``Transcriber.transcribe`` when the cancel event fires.
-
-    Caught in ``app._run_transcription`` and routed to a "cancelled" UI
-    state distinct from the "error" path — the user asked to stop, so
-    we don't show a scary error dialog.
-    """
-
-
-def _check_cancelled(cancel_event) -> None:
-    """Helper: raise ``TranscriptionCancelled`` if the event is set."""
-    if cancel_event is not None and cancel_event.is_set():
-        raise TranscriptionCancelled()
-
-
-def _cuda_is_available() -> bool:
-    """
-    Cheap CUDA-availability probe via ctranslate2.
-
-    We deliberately avoid `torch.cuda.is_available()` here — it would force
-    a torch import in the main process before ctranslate2 has finished
-    loading its DLLs, which on Windows triggers the CUDA DLL conflict that
-    motivates the import-order discipline at the top of this file.
-    Returns False on any error (no GPU, driver missing, broken CT2 install).
-    """
-    try:
-        return ctranslate2.get_cuda_device_count() > 0
-    except Exception:
-        return False
 
 
 # Files longer than this are split into chunks before transcription. The
