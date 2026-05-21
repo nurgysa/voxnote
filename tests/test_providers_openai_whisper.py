@@ -154,3 +154,77 @@ def test_successful_round_trip(fake_audio):
     assert len(result.segments) == 1
     assert result.segments[0]["text"] == "Привет."
     assert "speaker" not in result.segments[0]
+
+
+# ── supports_mixed + language="mixed" branch ─────────────────────────
+
+
+def test_openai_whisper_supports_mixed_true():
+    """OpenAIWhisperProvider opts in to mixed-mode (class attribute).
+
+    whisper-1 has no native code-switching; supports_mixed=True means the
+    provider accepts the sentinel and applies its best-effort path (omit
+    the language field so OpenAI auto-detects).  The ABC default is False
+    (B.0 flipped it); we explicitly override it back to True here.
+    Verified: https://platform.openai.com/docs/api-reference/audio/createTranscription
+    — language is an optional field; omitting it enables auto-detection.
+    """
+    assert OpenAIWhisperProvider.supports_mixed is True
+
+
+def test_submit_mixed_omits_language_field(fake_audio):
+    """`whisper-1` has no native code-switching mode. When language='mixed',
+    we omit the language form field so OpenAI's server falls back to
+    auto-detect — best-effort, but better than forcing a single language.
+
+    Docs (verified 2026-05-21):
+      https://platform.openai.com/docs/api-reference/audio/createTranscription
+      "Supplying the input language in ISO-639-1 format can improve accuracy
+      and latency." — optional field; omission = auto-detect. No multilingual
+      or code_switching flag exists for whisper-1.
+    """
+    p = OpenAIWhisperProvider("test-key")
+
+    sent_form_keys: set[str] = set()
+
+    def capture_post(url, headers=None, files=None, data=None, timeout=None, **kw):
+        # OpenAI uses requests' `data=[(k,v), ...]` for the form;
+        # collect the keys actually transmitted.
+        if data is not None:
+            for k, _v in (data if isinstance(data, list) else data.items()):
+                sent_form_keys.add(k)
+        resp = MagicMock()
+        resp.ok = True
+        resp.status_code = 200
+        resp.json = lambda: {"text": "", "language": "ru", "segments": []}
+        return resp
+
+    with patch("providers.openai_whisper.requests.post", side_effect=capture_post):
+        opts = TranscriptionOptions(language="mixed", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    # Critical: language must NOT be in the form when mixed
+    assert "language" not in sent_form_keys
+
+
+def test_submit_single_language_includes_language_field(fake_audio):
+    """Regression: language='ru' must still produce ("language", "ru") in the
+    form data — the mixed-mode guard must not accidentally suppress it."""
+    p = OpenAIWhisperProvider("test-key")
+
+    captured_data: list = []
+
+    def capture_post(url, headers=None, files=None, data=None, timeout=None, **kw):
+        if data is not None:
+            captured_data.extend(data if isinstance(data, list) else list(data.items()))
+        resp = MagicMock()
+        resp.ok = True
+        resp.status_code = 200
+        resp.json = lambda: {"text": "", "language": "russian", "segments": []}
+        return resp
+
+    with patch("providers.openai_whisper.requests.post", side_effect=capture_post):
+        opts = TranscriptionOptions(language="ru", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    assert ("language", "ru") in captured_data

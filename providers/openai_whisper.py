@@ -42,6 +42,12 @@ class OpenAIWhisperProvider(TranscriptionProvider):
     display_name = "OpenAI Whisper"
     # No speakers in the response; the UI must offer no-diarization runs only.
     supports_diarization = False
+    # whisper-1 has no native code-switching; for "mixed" we omit the language
+    # field so OpenAI auto-detects (best-effort).  Verified 2026-05-21:
+    # https://platform.openai.com/docs/api-reference/audio/createTranscription
+    # — language is optional; supplying it improves accuracy/latency; omitting
+    # it enables auto-detection.  No multilingual or code_switching flag exists.
+    supports_mixed = True  # opt-in: best-effort auto-detect path
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
@@ -87,7 +93,13 @@ class OpenAIWhisperProvider(TranscriptionProvider):
             ("response_format", "verbose_json"),
             ("timestamp_granularities[]", "segment"),
         ]
-        if options.language:
+        # whisper-1 has no native code-switching mode.  The closest equivalent
+        # is to omit the language form field so OpenAI's server falls back to
+        # auto-detect — best-effort only.  Gladia (per-segment code_switching)
+        # and AssemblyAI (Universal-2 multilingual) give qualitatively better
+        # results for true trilingual audio.  Verified 2026-05-21:
+        # https://platform.openai.com/docs/api-reference/audio/createTranscription
+        if options.language and options.language != "mixed":
             data.append(("language", options.language))
         if options.hotwords:
             # Whisper accepts a free-form ``prompt`` string. Joining

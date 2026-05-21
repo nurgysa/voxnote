@@ -39,6 +39,7 @@ class SpeechmaticsProvider(TranscriptionProvider):
 
     display_name = "Speechmatics"
     supports_diarization = True
+    supports_mixed = True  # KZ in multilingual model + language_identification_config
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
@@ -259,20 +260,43 @@ def _build_config(options: TranscriptionOptions) -> dict:
     Note: Speechmatics has no exact-count speaker hint. ``num_speakers``
     / ``min_speakers`` / ``max_speakers`` are intentionally ignored —
     the provider picks the count automatically.
+
+    For ``language == "mixed"`` (KZ+RU+EN code-switching):
+      - ``transcription_config.language`` is set to ``"auto"`` to enable
+        Speechmatics' built-in language identification.
+      - A top-level ``language_identification_config`` (sibling of
+        ``transcription_config``, NOT nested inside it) is added with
+        ``expected_languages: ["kk", "ru", "en"]`` to narrow the
+        candidate set.
+    Verified against:
+      https://docs.speechmatics.com/speech-to-text/batch/language-identification
+      on 2026-05-21.
     """
-    transcription_config: dict = {
-        "language": options.language or "auto",
-    }
+    transcription_config: dict = {}
+    if options.language == "mixed":
+        # KZ+RU+EN multilingual mode: opt into language ID via "auto",
+        # then restrict candidates with language_identification_config.
+        transcription_config["language"] = "auto"
+    else:
+        transcription_config["language"] = options.language or "auto"
+
     if options.diarize:
         transcription_config["diarization"] = "speaker"
     if options.hotwords:
         transcription_config["additional_vocab"] = [
             {"content": w} for w in options.hotwords if w
         ]
-    return {
+
+    config: dict = {
         "type": "transcription",
         "transcription_config": transcription_config,
     }
+    if options.language == "mixed":
+        # Top-level sibling of transcription_config — per Speechmatics docs.
+        config["language_identification_config"] = {
+            "expected_languages": ["kk", "ru", "en"],
+        }
+    return config
 
 
 def _extract_language(payload: dict) -> str | None:

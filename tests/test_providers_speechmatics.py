@@ -217,3 +217,96 @@ def test_rejected_status_raises(fake_audio):
     ):
         with pytest.raises(ProviderError, match="bad audio"):
             p.transcribe(fake_audio, TranscriptionOptions())
+
+
+# ── supports_mixed + language="mixed" branch ──────────────────────────
+
+
+def test_speechmatics_supports_mixed_true():
+    """SpeechmaticsProvider.supports_mixed is True (class attribute).
+
+    Speechmatics supports Kazakh (kk) in its multilingual model, so it
+    opts in to the mixed-mode runtime guard added in B.0.
+    """
+    assert SpeechmaticsProvider.supports_mixed is True
+
+
+def test_submit_mixed_enables_language_identification(fake_audio):
+    """language='mixed' must send language='auto' in transcription_config
+    and a top-level language_identification_config with expected_languages.
+
+    Verified against Speechmatics docs:
+    https://docs.speechmatics.com/speech-to-text/batch/language-identification
+    on 2026-05-21.  Structure confirmed:
+      - transcription_config.language = "auto"
+      - language_identification_config (top-level sibling, NOT nested)
+        .expected_languages: ["kk", "ru", "en"]
+    """
+    p = SpeechmaticsProvider("test-key")
+    submitted_config: dict = {}
+
+    def capture_post(url, headers=None, files=None, timeout=None, **kw):
+        if files and "config" in files:
+            import json as _json
+            # files["config"] is a tuple: (None, json_string, content_type)
+            raw = files["config"][1]
+            submitted_config.update(_json.loads(raw))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.ok = True
+        resp.json = MagicMock(return_value={"id": "jid-mixed"})
+        return resp
+
+    with patch("providers.speechmatics.requests.post", side_effect=capture_post), \
+         patch.object(p, "_wait_for_job"), \
+         patch.object(p, "_fetch_transcript", return_value={"results": []}):
+        opts = TranscriptionOptions(language="mixed", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    tc = submitted_config.get("transcription_config", {})
+    assert tc.get("language") == "auto", (
+        f"Expected transcription_config.language='auto', got: {tc}"
+    )
+    lid = submitted_config.get("language_identification_config")
+    assert lid is not None, (
+        f"Expected top-level language_identification_config, got: {submitted_config}"
+    )
+    assert lid.get("expected_languages") == ["kk", "ru", "en"], (
+        f"Unexpected expected_languages: {lid}"
+    )
+
+
+def test_submit_single_language_does_not_leak_mixed_keys(fake_audio):
+    """Regression: language='ru' must NOT emit language_identification_config.
+
+    Only the mixed branch introduces that top-level key; single-language
+    paths must remain physically unchanged.
+    """
+    p = SpeechmaticsProvider("test-key")
+    submitted_config: dict = {}
+
+    def capture_post(url, headers=None, files=None, timeout=None, **kw):
+        if files and "config" in files:
+            import json as _json
+            raw = files["config"][1]
+            submitted_config.update(_json.loads(raw))
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.ok = True
+        resp.json = MagicMock(return_value={"id": "jid-ru"})
+        return resp
+
+    with patch("providers.speechmatics.requests.post", side_effect=capture_post), \
+         patch.object(p, "_wait_for_job"), \
+         patch.object(p, "_fetch_transcript", return_value={"results": []}):
+        opts = TranscriptionOptions(language="ru", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    tc = submitted_config.get("transcription_config", {})
+    assert tc.get("language") == "ru", (
+        f"Single-language path should force language='ru', got: {tc}"
+    )
+    assert "language_identification_config" not in submitted_config, (
+        f"language_identification_config must NOT appear in single-lang mode: "
+        f"{submitted_config}"
+    )
