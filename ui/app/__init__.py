@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import os
 import threading
-import tkinter as tk
 from tkinter import messagebox
+from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
-from audio_cutter import AudioCutter
 from logging_setup import crash_log_path, get_logger, init_logging
 from recorder import Recorder
 from theme import (
@@ -18,15 +17,9 @@ from theme import (
     BLUE_DIM,
     GREEN,
     RED,
-    TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
 from transcriber import Transcriber, TranscriptionCancelled
-from ui.dialogs.history import HistoryDialog
-from ui.dialogs.settings import SettingsDialog
-from ui.dialogs.system_monitor import SystemMonitorDialog
-from ui.dialogs.terms import TermsDialog
-from ui.dialogs.voices import VoicesDialog
 from utils import (
     create_history_entry,
     load_config,
@@ -45,16 +38,27 @@ from .constants import (
     MODELS,
     SPEAKER_COUNTS,
 )
+from .dialogs_mixin import DialogsMixin
 from .main_entry import main as main
 from .recorder_mixin import RecorderMixin
 from .save_mixin import SaveMixin
 from .settings_mixin import SettingsMixin
 
+# Type-only imports — these classes are referenced as type annotations on
+# ``App`` attributes (``self._settings_dialog: SettingsDialog | None``, etc.)
+# but constructed only inside ``DialogsMixin``. ``from __future__ import
+# annotations`` keeps the annotations as strings at runtime, so the imports
+# don't need to load unless a type checker is running.
+if TYPE_CHECKING:
+    from audio_cutter import AudioCutter
+    from ui.dialogs.settings import SettingsDialog
+    from ui.dialogs.system_monitor import SystemMonitorDialog
+
 init_logging()
 logger = get_logger(__name__)
 
 
-class App(RecorderMixin, SaveMixin, SettingsMixin, ctk.CTk):
+class App(DialogsMixin, RecorderMixin, SaveMixin, SettingsMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
 
@@ -119,153 +123,6 @@ class App(RecorderMixin, SaveMixin, SettingsMixin, ctk.CTk):
         saved_token = self._config.get("hf_token", "") or os.environ.get("HF_TOKEN", "")
         if saved_token:
             self._hf_token_var.set(saved_token)
-
-    # ── Dialog launchers ───────────────────────────────────────
-
-    def _open_settings_dialog(self):
-        # Track the open dialog so terms/voices saves can refresh its
-        # summaries live. Cleared on close via Tk's <Destroy> event.
-        if self._settings_dialog is not None:
-            try:
-                self._settings_dialog.lift()
-                self._settings_dialog.focus_set()
-                return
-            except tk.TclError:
-                # Dialog window was destroyed before <Destroy> fired (race
-                # on Windows after alt-F4) — drop the stale ref and re-open.
-                self._settings_dialog = None
-        self._settings_dialog = SettingsDialog(self)
-        self._settings_dialog.bind(
-            "<Destroy>", lambda _e: self._on_settings_dialog_closed(_e),
-        )
-
-    def _on_settings_dialog_closed(self, event) -> None:
-        # CTk fires <Destroy> for many child widgets; only the top-level
-        # toplevel itself signals dialog close. Compare against widget to
-        # avoid clearing the reference on inner widget destruction.
-        if event.widget is self._settings_dialog:
-            self._settings_dialog = None
-
-    def _open_monitor_dialog(self) -> None:
-        # Singleton: re-clicking the button while the monitor is open
-        # just lifts the existing window. Avoids duplicate timer chains
-        # and duplicate NVML handles competing for the same device.
-        if self._monitor_dialog is not None:
-            try:
-                self._monitor_dialog.lift()
-                self._monitor_dialog.focus_set()
-                return
-            except tk.TclError:
-                # Same race as in _open_settings_dialog — dialog gone, refresh.
-                self._monitor_dialog = None
-        self._monitor_dialog = SystemMonitorDialog(self)
-        self._monitor_dialog.bind(
-            "<Destroy>", lambda _e: self._on_monitor_dialog_closed(_e),
-        )
-
-    def _on_monitor_dialog_closed(self, event) -> None:
-        if event.widget is self._monitor_dialog:
-            self._monitor_dialog = None
-
-    def _refresh_settings_summaries(self) -> None:
-        """If the Settings dialog is open, re-render its term/voice summaries."""
-        if self._settings_dialog is not None:
-            try:
-                self._settings_dialog._refresh_summaries()
-            except tk.TclError:
-                # Dialog widget was destroyed mid-refresh — nothing to update.
-                pass
-
-    def _open_terms_dialog(self):
-        TermsDialog(self, self._config, self._refresh_settings_summaries)
-
-    def _open_voices_dialog(self):
-        # Pass the CURRENT HF token value (from the field, may be unsaved).
-        # Enrollment worker needs HF auth to download pyannote/embedding.
-        hf_token = self._hf_token_var.get().strip() or None
-        VoicesDialog(
-            self, self._config, hf_token, self._refresh_settings_summaries,
-        )
-
-    def _open_history_dialog(self):
-        HistoryDialog(self, on_load_to_main=self._load_history_into_main)
-
-    def _open_extract_tasks_dialog(self):
-        """Validate API keys are set, then open the Extract dialog."""
-        # Gate-check: both keys must be present in config. Mirrors the
-        # cloud-mode key check at line 790-797.
-        openrouter_key = (self._config.get("openrouter_api_key") or "").strip()
-        linear_key     = (self._config.get("linear_api_key") or "").strip()
-        if not openrouter_key or not linear_key:
-            messagebox.showwarning(
-                "Нет API-ключей",
-                "Извлечение задач требует двух ключей:\n"
-                "  • OpenRouter — чтобы вызвать LLM\n"
-                "  • Linear — чтобы получить список команд и участников\n\n"
-                "Откройте Настройки и введите ключи.",
-            )
-            return
-
-        transcript = self._textbox.get("1.0", "end").strip()
-        if not transcript:
-            messagebox.showwarning(
-                "Нет транскрипции",
-                "Сначала запустите транскрипцию или загрузите её из Истории.",
-            )
-            return
-
-        if not self._last_history_folder:
-            messagebox.showwarning(
-                "Нет папки истории",
-                "Извлечение пишет результат в папку из Истории. "
-                "Запустите транскрипцию или откройте запись из Истории, "
-                "затем повторите.",
-            )
-            return
-
-        # Lazy import — pulls in tasks/extractor and (transitively) requests.
-        # Same pattern as Settings dialog's lazy validate-button imports.
-        # ExtractTasksDialog(parent, *, transcript, history_folder, transcript_lang, config)
-        from ui.dialogs.extract_tasks import ExtractTasksDialog
-        ExtractTasksDialog(
-            self,
-            transcript=transcript,
-            history_folder=self._last_history_folder,
-            transcript_lang=LANGUAGES.get(self._lang_var.get()),
-            config=self._config,
-        )
-
-    def _load_history_into_main(self, transcript_text: str, audio_path: str | None):
-        """Drop a history entry's transcript into the main textbox.
-
-        If the audio file exists in the history folder, also wire it up as
-        the current audio source so the user can re-transcribe (e.g. with
-        diarization toggled differently) without re-picking the file.
-        """
-        self._textbox.delete("1.0", "end")
-        self._textbox.insert("1.0", transcript_text)
-        self._btn_save.configure(state="normal")
-        self._btn_copy.configure(state="normal")
-        # The history entry's folder IS the target for any future extract.
-        self._last_history_folder = os.path.dirname(audio_path) if audio_path else None
-        self._btn_extract_tasks.configure(
-            state="normal" if self._last_history_folder else "disabled",
-        )
-        if audio_path and os.path.isfile(audio_path):
-            self._audio_path = audio_path
-            self._lbl_file.configure(
-                text=os.path.basename(audio_path), text_color=TEXT_PRIMARY,
-            )
-            self._btn_transcribe.configure(state="normal")
-        self._lbl_status.configure(
-            text="Загружено из истории", text_color=TEXT_SECONDARY,
-        )
-
-    def _open_cutter(self):
-        # Track the most recent cutter so theme changes can repaint it.
-        # AudioCutter doesn't need true singleton semantics — multiple
-        # opens are fine — we just keep the latest reference.
-        self._cutter = AudioCutter(self, audio_path=self._audio_path)
 
     # ── Transcription orchestration ───────────────────────────
 
