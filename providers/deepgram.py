@@ -43,6 +43,11 @@ class DeepgramProvider(TranscriptionProvider):
 
     display_name = "Deepgram"
     supports_diarization = True
+    # nova-3 multilingual covers ~30 languages but NOT Kazakh (кк).
+    # Explicit override (same value as the ABC default after B.0) so future
+    # maintainers see the intentional decision here, not just an inheritance
+    # artefact. See https://developers.deepgram.com/docs/models-languages-overview
+    supports_mixed: bool = False
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
@@ -62,6 +67,16 @@ class DeepgramProvider(TranscriptionProvider):
         on_progress=None,
         cancel_event=None,
     ) -> TranscriptionResult:
+        # Defense-in-depth: Transcriber.transcribe() already blocks this via
+        # the supports_mixed=False class attribute, but providers can be called
+        # directly (e.g. scripts using providers.get_provider("Deepgram", ...)).
+        # Raise before any HTTP work so the user gets a clear Russian message.
+        if options.language == "mixed":
+            raise ProviderError(
+                "Deepgram nova-3 не поддерживает Қазақша. "
+                "Для трилингвальной транскрипции выбери Gladia или AssemblyAI."
+            )
+
         if not os.path.isfile(audio_path):
             raise ProviderError(f"Файл не найден: {audio_path}")
 

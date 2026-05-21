@@ -177,3 +177,25 @@ def test_successful_diarized_round_trip(fake_audio):
         )
     assert len(result.segments) == 1
     assert result.segments[0]["speaker"] == "SPEAKER_0"
+
+
+# ── supports_mixed = False + early-raise ──────────────────────────────
+
+
+def test_deepgram_supports_mixed_false():
+    """Deepgram nova-3 doesn't include Kazakh; reflect that as a
+    capability the UI and runtime guard can read."""
+    assert DeepgramProvider.supports_mixed is False
+
+
+def test_submit_mixed_raises_provider_error_before_http(fake_audio):
+    """When called with language='mixed', Deepgram must raise BEFORE
+    making any HTTP request. Defense-in-depth: the transcribe() cloud
+    short-circuit (B.0) is the primary block; this is the secondary
+    block for callers using DeepgramProvider directly."""
+    p = DeepgramProvider("test-key")
+    with patch("providers.deepgram.requests.post") as mock_post:
+        opts = TranscriptionOptions(language="mixed", diarize=False)
+        with pytest.raises(ProviderError, match="Қазақша"):
+            p.transcribe(fake_audio, opts)
+        assert mock_post.call_count == 0
