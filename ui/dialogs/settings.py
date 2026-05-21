@@ -105,8 +105,14 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Wire reactive warning: fires whenever language or cloud provider
         # changes so the label stays in sync without requiring a Save button.
-        self._parent._lang_var.trace_add("write", self._update_mixed_warning)
-        self._parent._cloud_provider_var.trace_add(
+        # The traced StringVars live on `self._parent` (App) and outlive the
+        # dialog, so the trace tokens must be kept and unregistered in
+        # destroy() — otherwise reopening the dialog stacks duplicate
+        # callbacks that fire on already-destroyed dialogs and raise TclError.
+        self._trace_lang = self._parent._lang_var.trace_add(
+            "write", self._update_mixed_warning,
+        )
+        self._trace_provider = self._parent._cloud_provider_var.trace_add(
             "write", self._update_mixed_warning,
         )
         # Run once immediately so an already-loaded incompatible config
@@ -122,6 +128,32 @@ class SettingsDialog(ctk.CTkToplevel):
         primary_button(
             footer, text="Закрыть", command=self.destroy, width=120,
         ).grid(row=0, column=0, sticky="e")
+
+    def destroy(self) -> None:
+        """Remove app-level Var traces before the Toplevel is torn down.
+
+        ``_lang_var`` and ``_cloud_provider_var`` live on the App and outlive
+        the dialog. Without cleanup, reopening Settings registers a second
+        trace pointing at the previous (destroyed) dialog's bound method, and
+        the next dropdown change fires both — the stale one raises TclError
+        ("invalid command name") on the destroyed widget, and the destroyed
+        dialog instance is held alive by the trace, leaking memory.
+
+        Wrapped in try/except TclError because the underlying Var may have
+        already been GC'd (parent App teardown ordering) — in that case there
+        is nothing left to unregister.
+        """
+        for var, token in (
+            (self._parent._lang_var, getattr(self, "_trace_lang", None)),
+            (self._parent._cloud_provider_var, getattr(self, "_trace_provider", None)),
+        ):
+            if token is not None:
+                try:
+                    var.trace_remove("write", token)
+                except tk.TclError:
+                    # Var already destroyed during parent teardown — safe to ignore.
+                    pass
+        super().destroy()
 
     def _section_card(self, parent, title: str, row: int) -> ctk.CTkFrame:
         """A titled card. Returns the inner content frame (already gridded)."""
