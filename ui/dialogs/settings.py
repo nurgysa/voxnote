@@ -20,6 +20,7 @@ import tkinter as tk
 
 import customtkinter as ctk
 
+from providers import PROVIDERS
 from theme import (
     BG,
     BLUE,
@@ -33,6 +34,7 @@ from theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from ui.app.constants import LANGUAGES
 from ui.widgets import (
     card,
     label,
@@ -100,6 +102,18 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_openrouter_section(body)
         self._build_linear_section(body)
         self._build_glide_section(body)
+
+        # Wire reactive warning: fires whenever language or cloud provider
+        # changes so the label stays in sync without requiring a Save button.
+        self._parent._lang_var.trace_add("write", self._update_mixed_warning)
+        self._parent._cloud_provider_var.trace_add(
+            "write", self._update_mixed_warning,
+        )
+        # Run once immediately so an already-loaded incompatible config
+        # (e.g. lang=mixed + provider=Deepgram from config.json) shows the
+        # warning as soon as the dialog opens — not only after the user
+        # interacts with a dropdown.
+        self._update_mixed_warning()
 
         # --- Footer ---
         footer = ctk.CTkFrame(self, fg_color="transparent")
@@ -215,6 +229,43 @@ class SettingsDialog(ctk.CTkToplevel):
         else:
             self._cpu_warning.grid_remove()
 
+    def _update_mixed_warning(self, *_args) -> None:
+        """Show or hide the inline incompatibility warning in the cloud section.
+
+        Fires when either the language or cloud-provider StringVar changes, and
+        once at __init__ end to reflect a pre-loaded config state.
+
+        Shows a warning when:
+          - the selected language label resolves to code ``"mixed"``
+          - AND the active cloud provider has ``supports_mixed = False``
+            (class attribute, no instantiation required)
+
+        Currently the only provider with ``supports_mixed = False`` is Deepgram.
+        """
+        lang_label = self._parent._lang_var.get()
+        lang_code = LANGUAGES.get(lang_label)
+        if lang_code != "mixed":
+            self._mixed_warning.grid_remove()
+            return
+
+        provider_name = self._parent._cloud_provider_var.get()
+        provider_cls = PROVIDERS.get(provider_name)
+        if provider_cls is None:
+            self._mixed_warning.grid_remove()
+            return
+
+        if not provider_cls.supports_mixed:
+            self._mixed_warning.configure(
+                text=(
+                    f"⚠ {provider_name} не поддерживает "
+                    "«Смешанный (KZ+RU+EN)». "
+                    "Выбери другой провайдер или язык."
+                ),
+            )
+            self._mixed_warning.grid()
+        else:
+            self._mixed_warning.grid_remove()
+
     def _build_audio_section(self, parent) -> None:
         section = self._section_card(parent, "Аудио", row=3)
         check = ctk.CTkCheckBox(
@@ -229,11 +280,9 @@ class SettingsDialog(ctk.CTkToplevel):
         check.grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
 
     def _build_cloud_section(self, parent) -> None:
-        # Lazy import — registry pulls in `requests`, no need to load it
-        # for users who only run local. Importing inside the method also
-        # avoids a circular import with ui.app at module-load time.
-        from providers import PROVIDERS
-
+        # PROVIDERS is imported at module level — the lazy comment is kept
+        # only for historical context; the top-level import is now shared
+        # with _update_mixed_warning().
         section = self._section_card(parent, "Облако (опционально)", row=4)
 
         # Toggle. When ON, the local device pickers above are bypassed
@@ -259,8 +308,23 @@ class SettingsDialog(ctk.CTkToplevel):
             command=self._parent._on_cloud_provider_changed,
         ).grid(row=1, column=1, padx=4, pady=6, sticky="w")
 
+        # Inline warning shown when language=mixed AND the chosen provider
+        # has supports_mixed=False (currently only Deepgram). Initially
+        # hidden; _update_mixed_warning() toggles visibility reactively.
+        self._mixed_warning = ctk.CTkLabel(
+            section, text="",
+            font=ctk.CTkFont(family=FONT, size=11),
+            text_color=RED,
+            anchor="w",
+            wraplength=340,
+        )
+        self._mixed_warning.grid(
+            row=2, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w",
+        )
+        self._mixed_warning.grid_remove()  # hidden until needed
+
         label(section, "API key").grid(
-            row=2, column=0, padx=(4, 8), pady=6, sticky="w",
+            row=3, column=0, padx=(4, 8), pady=6, sticky="w",
         )
         ctk.CTkEntry(
             section, textvariable=self._parent._cloud_api_key_var, height=36,
@@ -269,11 +333,11 @@ class SettingsDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(family=FONT, size=12),
             placeholder_text="API ключ провайдера",
             show="•",  # Mask the key visually — same UX as a password field.
-        ).grid(row=2, column=1, padx=4, pady=6, sticky="ew")
+        ).grid(row=3, column=1, padx=4, pady=6, sticky="ew")
         tonal_button(
             section, text="Вставить",
             command=self._parent._paste_cloud_api_key, width=100,
-        ).grid(row=2, column=2, padx=(4, 4), pady=6)
+        ).grid(row=3, column=2, padx=(4, 4), pady=6)
 
         # Disclosure. Cloud means audio leaves the user's machine and
         # ends up on a third-party server, which has privacy/compliance
@@ -284,7 +348,7 @@ class SettingsDialog(ctk.CTkToplevel):
             "⚠ При включении аудио загружается на сервер провайдера. "
             "Не используй для конфиденциальных записей.",
             anchor="w",
-        ).grid(row=3, column=0, columnspan=3, padx=4, pady=(2, 6), sticky="w")
+        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(2, 6), sticky="w")
         # Static price summary. Cheapest with diarization first.
         # OpenAI Whisper sits on its own line because it is the only
         # provider without speaker labels.
@@ -294,13 +358,13 @@ class SettingsDialog(ctk.CTkToplevel):
             "Gladia ~$0.61/ч • AssemblyAI ~$0.65/ч • "
             "Speechmatics ~$1.04/ч.",
             anchor="w",
-        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w")
+        ).grid(row=5, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w")
         label(
             section,
             "ℹ OpenAI Whisper ~$0.36/ч — только транскрипция, "
             "без определения спикеров.",
             anchor="w",
-        ).grid(row=5, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
+        ).grid(row=6, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
 
     def _build_dictionaries_section(self, parent) -> None:
         section = self._section_card(parent, "Словари", row=5)
