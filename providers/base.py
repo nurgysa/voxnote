@@ -78,15 +78,17 @@ class TranscriptionProvider(ABC):
     supports_diarization: bool = False
 
     #: Whether this provider supports the KZ+RU+EN code-switching mode.
-    #: Default True — all currently-supported providers EXCEPT Deepgram
-    #: ship KZ in their multilingual models. Deepgram's nova-3 omits KZ
-    #: and overrides this to False (``supports_mixed = False``), then
-    #: raises ProviderError when called with ``options.language == "mixed"``.
-    #: Used by Settings UI to surface an inline warning when the current
-    #: provider can't service a stored 'Смешанный (KZ+RU+EN)' language
-    #: preference. Class attribute (not a method) to mirror
-    #: ``supports_diarization``; static introspectable capability.
-    supports_mixed: bool = True
+    #: Default False — providers must explicitly opt in by setting
+    #: ``supports_mixed = True`` once their ``_submit()`` actually maps the
+    #: 'mixed' sentinel to a native multilingual config. This keeps the
+    #: capability map honest at every commit during the phased PR-B/PR-C
+    #: rollout and avoids exposing 'Смешанный (KZ+RU+EN)' as selectable for
+    #: providers that aren't actually wired yet. When this is False and
+    #: ``language == "mixed"`` is requested, ``Transcriber.transcribe()``
+    #: raises a Russian-language ProviderError before any HTTP round-trip.
+    #: Class attribute (not a method) to mirror ``supports_diarization``;
+    #: static introspectable capability.
+    supports_mixed: bool = False
 
     @abstractmethod
     def transcribe(

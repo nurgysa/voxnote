@@ -607,6 +607,20 @@ class Transcriber:
         # and delegate to the chosen managed API. Returns formatted text in
         # the same shape as the local path so the UI doesn't need to branch.
         if cloud_provider:
+            # Guard: fail fast with a Russian ProviderError before any HTTP
+            # work when the chosen provider hasn't opted in to mixed-mode.
+            # Without this, language="mixed" leaks to the vendor API as a
+            # literal language code and produces a confusing vendor 400.
+            # Providers opt in by setting supports_mixed = True once their
+            # _submit() has a mixed-aware branch (see PR-B/PR-C task series).
+            if language == "mixed":
+                from providers import PROVIDERS, ProviderError
+                provider_cls = PROVIDERS.get(cloud_provider)
+                if provider_cls is not None and not provider_cls.supports_mixed:
+                    raise ProviderError(
+                        f"{cloud_provider} ещё не поддерживает «Смешанный (KZ+RU+EN)». "
+                        "Выбери другой язык или провайдер."
+                    )
             return self._transcribe_via_cloud(
                 audio_path,
                 language=language,
