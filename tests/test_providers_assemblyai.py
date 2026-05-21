@@ -307,3 +307,40 @@ def test_poll_status_callback_fires_on_change_only():
         "Обработка на серверах AssemblyAI...",
         "AssemblyAI: completed",
     ]
+
+
+# ── supports_mixed + language="mixed" branch ─────────────────────────
+
+
+def test_assemblyai_supports_mixed_true():
+    """AssemblyAI explicitly opts in to the KZ+RU+EN code-switching mode.
+    Universal-2 covers 99 languages including Kazakh ('kk'), so the opt-in
+    is sound. The class attribute must be True (not the inherited default —
+    this test guards against accidental revert to the ABC default)."""
+    assert AssemblyAIProvider.supports_mixed is True
+
+
+def test_submit_mixed_uses_multilingual_config():
+    """When TranscriptionOptions.language == 'mixed', the submitted body must:
+    - set language_detection=True (enable per-file auto language detection)
+    - set speech_model='universal' (Universal-2, AssemblyAI's 99-language model
+      that includes Kazakh — verified against AssemblyAI docs on 2026-05-21:
+      https://www.assemblyai.com/docs/pre-recorded-audio/language-detection and
+      https://assemblyai.github.io/assemblyai-node-sdk/types/Transcript.html)
+    - NOT include language_code (mixed mode must not force a single language)
+    """
+    p = AssemblyAIProvider("test-key")
+
+    submitted_body: dict = {}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        if json is not None:
+            submitted_body.update(json)
+        return MagicMock(status_code=200, ok=True, json=lambda: {"id": "tr-mixed"})
+
+    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+        p._submit("https://cdn.aai/mixed.wav", TranscriptionOptions(language="mixed"))
+
+    assert submitted_body.get("language_detection") is True
+    assert submitted_body.get("speech_model") == "universal"
+    assert "language_code" not in submitted_body

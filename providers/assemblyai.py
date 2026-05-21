@@ -51,6 +51,7 @@ class AssemblyAIProvider(TranscriptionProvider):
 
     display_name = "AssemblyAI"
     supports_diarization = True
+    supports_mixed = True  # Universal-2 covers 99 languages including Kazakh ('kk')
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
@@ -176,8 +177,18 @@ class AssemblyAIProvider(TranscriptionProvider):
             "audio_url": audio_url,
             "speaker_labels": bool(options.diarize),
         }
-        # Language: explicit if supplied, else turn on auto-detection.
-        if options.language:
+        # Language handling:
+        #   "mixed" → multilingual ASR: enable per-file language_detection and
+        #   switch to Universal-2 ('universal'), the 99-language model that
+        #   includes Kazakh. Verified against AssemblyAI docs on 2026-05-21:
+        #   https://www.assemblyai.com/docs/pre-recorded-audio/language-detection
+        #   https://assemblyai.github.io/assemblyai-node-sdk/types/Transcript.html
+        #   Explicit code (kk/ru/en) → force that single language.
+        #   None → auto-detect a single dominant language.
+        if options.language == "mixed":
+            body["language_detection"] = True
+            body["speech_model"] = "universal"
+        elif options.language:
             body["language_code"] = options.language
         else:
             body["language_detection"] = True
