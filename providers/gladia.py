@@ -45,6 +45,7 @@ class GladiaProvider(TranscriptionProvider):
 
     display_name = "Gladia"
     supports_diarization = True
+    supports_mixed = True   # Gladia supports KZ+RU+EN via code_switching flag
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
@@ -153,8 +154,18 @@ class GladiaProvider(TranscriptionProvider):
             "audio_url": audio_url,
             "diarization": bool(options.diarize),
         }
-        if options.language:
-            # Single forced language; code_switching defaults to False.
+        if options.language == "mixed":
+            # KZ+RU+EN code-switching mode. Gladia's code_switching flag
+            # enables true per-segment language switching across the listed
+            # languages; without it, Gladia forces a single dominant language.
+            # Verified against https://docs.gladia.io/chapters/language/code-switching.md
+            # (2026-05-21): field is nested in language_config, Kazakh code is "kk".
+            body["language_config"] = {
+                "languages": ["kk", "ru", "en"],
+                "code_switching": True,
+            }
+        elif options.language:
+            # Single forced language (kk/ru/en); code_switching stays False.
             body["language_config"] = {"languages": [options.language]}
         if options.hotwords:
             body["custom_vocabulary"] = list(options.hotwords)

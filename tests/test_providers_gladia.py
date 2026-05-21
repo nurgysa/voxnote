@@ -151,6 +151,14 @@ def test_successful_three_call_round_trip(fake_audio):
     assert result.segments[0]["speaker"] == "SPEAKER_0"
 
 
+def test_gladia_supports_mixed_true():
+    """GladiaProvider must opt in to mixed-mode support by setting the
+    class attribute ``supports_mixed = True``. This overrides the ABC
+    default of False (set in B.0) so the runtime guard in transcribe()
+    forwards language='mixed' to Gladia instead of raising early."""
+    assert GladiaProvider.supports_mixed is True
+
+
 def test_poll_error_status_raises(fake_audio):
     upload_resp = MagicMock(
         status_code=200, ok=True,
@@ -179,3 +187,65 @@ def test_poll_error_status_raises(fake_audio):
     ):
         with pytest.raises(ProviderError, match="AUDIO_DURATION_TOO_LONG"):
             p.transcribe(fake_audio, TranscriptionOptions())
+
+
+# ── language="mixed" branch ───────────────────────────────────────────
+
+
+def test_submit_mixed_enables_code_switching(fake_audio):
+    """When options.language == 'mixed', the submit body must request
+    code-switching across KZ+RU+EN via Gladia's native language_config.
+
+    Verified against https://docs.gladia.io/chapters/language/code-switching.md
+    (2026-05-21): code_switching is nested inside language_config (not
+    top-level); languages array uses ISO 639-1 codes; Kazakh is 'kk'.
+    """
+    p = GladiaProvider("test-key")
+
+    submitted_body = {}
+
+    def capture_post(url, headers=None, json=None, timeout=None, **kw):
+        submitted_body.update(json or {})
+        resp = MagicMock()
+        resp.ok = True
+        resp.status_code = 200
+        resp.json = lambda: {"result_url": "https://example/r/1"}
+        return resp
+
+    with patch.object(p, "_upload", return_value="https://example/audio.wav"), \
+         patch("providers.gladia.requests.post", side_effect=capture_post), \
+         patch.object(p, "_poll", return_value={"result": {"transcription": {"utterances": []}}}):
+        opts = TranscriptionOptions(language="mixed", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    assert submitted_body["language_config"] == {
+        "languages": ["kk", "ru", "en"],
+        "code_switching": True,
+    }
+
+
+def test_submit_single_language_unchanged(fake_audio):
+    """Regression: language='ru' must produce the SAME body as before
+    (no code_switching key, no languages list beyond the single forced
+    language). Guards against accidental drift from the mixed-mode branch."""
+    p = GladiaProvider("test-key")
+
+    submitted_body = {}
+
+    def capture_post(url, headers=None, json=None, timeout=None, **kw):
+        submitted_body.update(json or {})
+        resp = MagicMock()
+        resp.ok = True
+        resp.status_code = 200
+        resp.json = lambda: {"result_url": "https://example/r/1"}
+        return resp
+
+    with patch.object(p, "_upload", return_value="https://example/audio.wav"), \
+         patch("providers.gladia.requests.post", side_effect=capture_post), \
+         patch.object(p, "_poll", return_value={"result": {"transcription": {"utterances": []}}}):
+        opts = TranscriptionOptions(language="ru", diarize=False)
+        p.transcribe(fake_audio, opts)
+
+    assert submitted_body["language_config"] == {"languages": ["ru"]}
+    # code_switching key must NOT appear in single-language mode
+    assert "code_switching" not in submitted_body.get("language_config", {})
