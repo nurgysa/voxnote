@@ -39,9 +39,7 @@ class SpeechmaticsProvider(TranscriptionProvider):
 
     display_name = "Speechmatics"
     supports_diarization = True
-    # Speechmatics supports Kazakh (kk) in its multilingual model, so it opts
-    # in to the KZ+RU+EN mixed-mode capability added in the B.0 ABC default.
-    supports_mixed = True
+    supports_mixed = True  # KZ in multilingual model + language_identification_config
 
     def __init__(self, api_key: str):
         if not api_key or not api_key.strip():
