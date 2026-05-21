@@ -9,7 +9,7 @@ from providers.base import (
 
 class _StubProvider(TranscriptionProvider):
     """Minimal subclass that only implements the abstract transcribe(),
-    so we can probe inherited behavior like supports_mixed()."""
+    so we can probe inherited behavior like supports_mixed."""
 
     display_name = "Stub"
     supports_diarization = False
@@ -23,7 +23,7 @@ def test_supports_mixed_default_true():
     declare otherwise. The 4 of 5 providers that support KZ/RU/EN ride
     the default; Deepgram overrides to False (lacks KZ in nova-3)."""
     p = _StubProvider()
-    assert p.supports_mixed() is True
+    assert p.supports_mixed is True
 
 
 def test_transcription_options_accepts_mixed_language():
