@@ -140,6 +140,23 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
   backup + sync, brief at `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`.
   Implementation not started — backup-first (one-way upload + manual
   restore), text-only scope (~100 KB per snapshot, no audio).
+- **Code-switching KZ+RU+EN Phase 1** (May 2026): shipped via 4 PRs
+  (#21 PR-A foundation, #22 PR-B Gladia + Deepgram + capability gate,
+  #23 PR-C AssemblyAI + Speechmatics + OpenAI Whisper, #24 PR-D Settings
+  UI warning) plus a #25 hotfix for Settings-dialog Var trace lifecycle.
+  Spec + plan at `docs/superpowers/specs/2026-05-21-code-switching-kz-ru-en-design.md`
+  and `docs/superpowers/plans/2026-05-21-code-switching-kz-ru-en-phase-1.md`.
+  Adds a `"Смешанный (KZ+RU+EN)"` → `"mixed"` sentinel: local Whisper
+  gets a trilingual `initial_prompt` (frame in `transcriber/prompt.py`)
+  and `language=None` (via `_effective_whisper_language()`); cloud
+  providers branch on `options.language == "mixed"` to emit their native
+  multilingual config — Gladia `code_switching: true`, AssemblyAI
+  `speech_model: universal`, Speechmatics `language_identification_config`,
+  OpenAI Whisper omits the language form field. Deepgram opts out
+  (`supports_mixed = False`) because nova-3 lacks Kazakh — runtime guard
+  in `Transcriber.transcribe()` raises a Russian `ProviderError` for
+  any provider whose class attribute `supports_mixed = False`. Phase 2
+  (per-segment local language detection) is a deferred separate spec.
 
 ## Don't
 
