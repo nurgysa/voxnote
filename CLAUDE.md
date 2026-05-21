@@ -8,8 +8,9 @@ for the latter see `README.md`.
 
 Windows desktop GUI for offline audio transcription + speaker diarization.
 Stack: CustomTkinter (UI) + faster-whisper/ctranslate2 (ASR) + pyannote.audio
-(diarization) + an optional cloud provider path (currently AssemblyAI; see
-`providers/base.py` ABC for the extension point).
+(diarization) + a multi-provider cloud transcription path (AssemblyAI,
+Deepgram, Gladia, OpenAI Whisper, Speechmatics — see `providers/base.py`
+ABC for the extension point).
 
 Target hardware: ASUS ROG Strix G15, GTX 1650 Ti (4 GB VRAM). VRAM is the
 binding constraint — many architectural decisions exist solely because both
@@ -22,12 +23,17 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
    teardown; without the early `faulthandler.enable()`, the process
    vanishes silently.
 2. **`ctranslate2` must be imported before `torch`** on Windows. See the
-   comment at the top of `transcriber.py`. Wrong order ⇒
+   comment at the top of `transcriber/__init__.py`. Wrong order ⇒
    `STATUS_DLL_INIT_FAILED` (Windows code 3221225794) on first run.
 3. **Unload Whisper with `model.unload_model(to_cpu=True)`, never `del
    model`.** `del` triggers Fatal Python errors on Windows + GTX 1650 Ti
    during ctranslate2 teardown. See the long comment in
-   `transcriber.py` around the unload site.
+   `transcriber/__init__.py` around the unload site.
+   *(After PR #4 the file is `transcriber/__init__.py` — F4 split
+   moved the monolith into a package with `cuda_utils`, `progress`,
+   `prompt`, `speaker_aligner` submodules. PR #9 added the
+   `_DIARIZE_WORKER_PATH` constant to keep the subprocess path valid
+   from inside the package.)*
 4. **Disable cuDNN inside `diarize_worker.py`** before pyannote loads.
    On the 1650 Ti this prevents `HOST_ALLOCATION_FAILED` /
    `CUBLAS_STATUS_NOT_INITIALIZED`.
@@ -53,7 +59,7 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
   `requests.RequestException` for HTTP, custom `ProviderError` /
   `LinearError` / `PersistenceError` for module-level failures.
   When you must swallow, add a one-line comment explaining why
-  (see `transcriber.py` for the gold-standard pattern).
+  (see `transcriber/__init__.py` for the gold-standard pattern).
 - **Type hints**: used heavily in `tasks/`, `providers/`, and module-level
   helpers. Apply them to new code; don't bother retro-fitting unless you're
   already touching the file.
@@ -67,7 +73,7 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 168 tests
+pytest                       # must show green; baseline = 285 tests
 python -m ruff check .       # must be clean
 ```
 
@@ -85,13 +91,13 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 |---|---|
 | Entry point + faulthandler bootstrap | `app.py` |
 | Main window + transcription run loop | `ui/app.py` |
-| All dialogs | `ui/dialogs/` (extract_tasks, settings, history, voices, terms, system_monitor) |
-| Whisper transcription | `transcriber.py` (will become `transcriber/` after F4 split) |
+| All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `voices.py`, `terms.py`, `system_monitor.py`) |
+| Whisper transcription | `transcriber/` package (`__init__.py` + `cuda_utils`, `progress`, `prompt`, `speaker_aligner` — split via PR #4) |
 | Diarization subprocess | `diarize_worker.py` |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
-| AssemblyAI provider | `providers/assemblyai.py` |
-| Task extraction (LLM → Linear) | `tasks/` (extractor, sender, schema, persistence, linear_client, openrouter_client) |
+| Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,openai_whisper,speechmatics}.py` |
+| Task extraction (LLM → Linear/Glide) | `tasks/` (`extractor`, `sender`, `schema`, `persistence`, `linear_client`, `glide_client`, `openrouter_client`, `errors`) + `tasks/backends/` (Protocol-based dispatch — `base.py`, `linear.py`, `glide.py`) |
 | Voice library (speaker enrollment) | `voice_library.py` + `enrollment_worker.py` |
 | Audio editor | `audio_cutter.py` |
 | Silence removal | `silence_remover.py` |
@@ -115,18 +121,24 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 
 ## Active work / context
 
-- **Codebase review** (May 2026): findings F1–F8 archived in
-  `~/.claude/plans/codebase-review-keen-thompson.md` (user-local). Most
-  shipped via PR #1 + #2. Outstanding: F4 (split god-modules
-  `transcriber.py` 1104 LOC, `ui/dialogs/extract_tasks.py` 1244 LOC,
-  `ui/app.py` 1139 LOC) and F7 (write `docs/ARCHITECTURE.md`).
-- **F4-PR-1** (transcriber.py split into 5 modules) is scheduled as a
-  remote agent — see https://claude.ai/code/routines for state. If
-  you're picking up F4 manually, check that routine first; if it ran,
-  there may be an open PR to continue from.
-- **`phase-6.4-glide`** branch (parallel to main) is adding
-  Deepgram/Gladia/Speechmatics/OpenAI Whisper providers. When it merges,
-  the `providers/` section above goes from "1 provider" to "5 providers".
+- **Codebase review** (May 2026): F1–F8 archived in
+  `~/.claude/plans/codebase-review-keen-thompson.md` (user-local).
+  Shipped: F1/F3/F5/F6 (PR #1), F3-B Tk-cleanup narrowing (PR #2),
+  **F4-PR-1** transcriber split (PR #4), **F4-PR-3** extract_tasks split
+  (PR #5), **F7** ARCHITECTURE.md (PR #6/#7), worker-path follow-up
+  (PR #9). **Outstanding: F4-PR-2** — split `ui/app.py` (~1194 LOC)
+  into focused modules, same template as PR #4/PR #5.
+- **Phase 6.4** (May 2026, PR #10): added 4 cloud transcription
+  providers (Deepgram, Gladia, Speechmatics, OpenAI Whisper) and the
+  Glide LLM backend via the new `tasks/backends/` Protocol layer. UI
+  got per-backend Settings checkboxes, Extract dialog backend selector,
+  real-cost display via `_format_real_cost`, humanized errors via
+  `tasks/errors.humanize()`, and Phase 6.5 keyboard shortcuts
+  (Ctrl+N, Ctrl+Shift+E, Ctrl+Shift+S, F5, Esc) in the extract dialog.
+- **Phase 7** (design spec only, commit `bbfa10f`): Google Drive
+  backup + sync, brief at `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`.
+  Implementation not started — backup-first (one-way upload + manual
+  restore), text-only scope (~100 KB per snapshot, no audio).
 
 ## Don't
 
