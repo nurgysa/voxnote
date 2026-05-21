@@ -29,10 +29,8 @@ from ui.dialogs.terms import TermsDialog
 from ui.dialogs.voices import VoicesDialog
 from utils import (
     create_history_entry,
-    get_output_path,
     load_config,
     save_config,
-    save_transcript,
     validate_audio,
 )
 
@@ -49,12 +47,14 @@ from .constants import (
     SPEAKER_COUNTS,
 )
 from .main_entry import main as main
+from .recorder_mixin import RecorderMixin
+from .save_mixin import SaveMixin
 
 init_logging()
 logger = get_logger(__name__)
 
 
-class App(ctk.CTk):
+class App(RecorderMixin, SaveMixin, ctk.CTk):
     def __init__(self):
         super().__init__()
 
@@ -266,71 +266,6 @@ class App(ctk.CTk):
         # AudioCutter doesn't need true singleton semantics — multiple
         # opens are fine — we just keep the latest reference.
         self._cutter = AudioCutter(self, audio_path=self._audio_path)
-
-    # ── Recorder controls ──────────────────────────────────────
-
-    def _toggle_recording(self):
-        """Start or stop recording."""
-        if self._recorder.is_recording:
-            self._stop_recording()
-        else:
-            self._start_recording()
-
-    def _start_recording(self):
-        try:
-            self._recorder.start()
-        except Exception as e:
-            messagebox.showerror("Ошибка записи", str(e))
-            return
-        self._btn_rec.configure(text="⏹  Стоп", fg_color="#B3261E")
-        self._btn_rec_pause.configure(state="normal")
-        self._lbl_rec_time.configure(text="00:00", text_color=RED)
-        self._update_rec_timer()
-
-    def _stop_recording(self):
-        path = self._recorder.stop()
-        if self._rec_timer_id:
-            self.after_cancel(self._rec_timer_id)
-            self._rec_timer_id = None
-        self._btn_rec.configure(text="⏺  Запись", fg_color="#D93025")
-        self._btn_rec_pause.configure(state="disabled", text="Пауза")
-        self._rec_level.set(0)
-        if path and os.path.exists(path):
-            # Auto-load the recording for transcription
-            self._audio_path = path
-            self._lbl_file.configure(text=os.path.basename(path), text_color=TEXT_PRIMARY)
-            self._btn_transcribe.configure(state="normal")
-            elapsed = self._lbl_rec_time.cget("text")
-            self._lbl_rec_time.configure(text=elapsed, text_color=GREEN)
-            self._lbl_status.configure(
-                text=f"Запись сохранена: {os.path.basename(path)}", text_color=GREEN,
-            )
-
-    def _toggle_pause(self):
-        if self._recorder.is_paused:
-            self._recorder.resume()
-            self._btn_rec_pause.configure(text="Пауза")
-            self._lbl_rec_time.configure(text_color=RED)
-        else:
-            self._recorder.pause()
-            self._btn_rec_pause.configure(text="Продолжить")
-            self._lbl_rec_time.configure(text_color=TEXT_SECONDARY)
-
-    def _update_rec_timer(self):
-        """Update recording timer and level meter every 100ms."""
-        if not self._recorder.is_recording:
-            return
-        elapsed = self._recorder.elapsed
-        m, s = divmod(int(elapsed), 60)
-        h, m = divmod(m, 60)
-        if h > 0:
-            self._lbl_rec_time.configure(text=f"{h}:{m:02d}:{s:02d}")
-        else:
-            self._lbl_rec_time.configure(text=f"{m:02d}:{s:02d}")
-        # Update level meter (smoothed)
-        level = min(self._recorder.peak_level * 3.0, 1.0)  # amplify for visibility
-        self._rec_level.set(level)
-        self._rec_timer_id = self.after(100, self._update_rec_timer)
 
     # ── Settings handlers ─────────────────────────────────────
 
@@ -866,58 +801,4 @@ class App(ctk.CTk):
         self._progress.set(0)
         self._set_running(False)
 
-    # ── Save / copy ──────────────────────────────────────────
-
-    def _save_txt(self):
-        text = self._textbox.get("1.0", "end").strip()
-        if not text:
-            return
-        default_path = (
-            get_output_path(self._audio_path) if self._audio_path else "transcript.txt"
-        )
-        path = filedialog.asksaveasfilename(
-            title="Сохранить транскрипцию",
-            defaultextension=".txt",
-            initialfile=os.path.basename(default_path),
-            filetypes=[
-                ("Text files", "*.txt"),
-                ("SubRip subtitles", "*.srt"),
-                ("WebVTT subtitles", "*.vtt"),
-            ],
-        )
-        if not path:
-            return
-
-        # SRT/VTT need per-segment timestamps from the last transcription.
-        # If the user picks a subtitle format but we don't have segments
-        # (e.g. they typed text into the box manually), warn — a silent .srt
-        # with one giant cue would be useless.
-        ext = os.path.splitext(path)[1].lower()
-        segments = self._transcriber.last_segments if self._transcriber else None
-        if ext in (".srt", ".vtt"):
-            if not segments:
-                messagebox.showwarning(
-                    "Нет таймкодов",
-                    "Для экспорта в SRT/VTT нужна свежая транскрипция —\n"
-                    "запустите её заново.",
-                )
-                return
-            from transcript_format import format_srt, format_vtt
-            payload = format_srt(segments) if ext == ".srt" else format_vtt(segments)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(payload)
-        else:
-            save_transcript(text, path)
-        self._lbl_status.configure(
-            text=f"Сохранено: {os.path.basename(path)}", text_color=TEXT_SECONDARY,
-        )
-
-    def _copy_text(self):
-        text = self._textbox.get("1.0", "end").strip()
-        if text:
-            self.clipboard_clear()
-            self.clipboard_append(text)
-            self._lbl_status.configure(
-                text="Скопировано в буфер обмена", text_color=TEXT_SECONDARY,
-            )
 
