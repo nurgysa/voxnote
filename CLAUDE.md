@@ -90,7 +90,7 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 | Concern | Module |
 |---|---|
 | Entry point + faulthandler bootstrap | `app.py` |
-| Main window + transcription run loop | `ui/app.py` |
+| Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
 | All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `voices.py`, `terms.py`, `system_monitor.py`) |
 | Whisper transcription | `transcriber/` package (`__init__.py` + `cuda_utils`, `progress`, `prompt`, `speaker_aligner` — split via PR #4) |
 | Diarization subprocess | `diarize_worker.py` |
@@ -126,8 +126,9 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
   Shipped: F1/F3/F5/F6 (PR #1), F3-B Tk-cleanup narrowing (PR #2),
   **F4-PR-1** transcriber split (PR #4), **F4-PR-3** extract_tasks split
   (PR #5), **F7** ARCHITECTURE.md (PR #6/#7), worker-path follow-up
-  (PR #9). **Outstanding: F4-PR-2** — split `ui/app.py` (~1194 LOC)
-  into focused modules, same template as PR #4/PR #5.
+  (PR #9), **F4-PR-2** ui/app split into a 5-mixin package
+  (PRs #12/#14–#18, May 2026 — `__init__.py` 1278 → 133 LOC). The
+  full codebase-review punchlist is now closed.
 - **Phase 6.4** (May 2026, PR #10): added 4 cloud transcription
   providers (Deepgram, Gladia, Speechmatics, OpenAI Whisper) and the
   Glide LLM backend via the new `tasks/backends/` Protocol layer. UI
