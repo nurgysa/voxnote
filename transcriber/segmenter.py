@@ -30,7 +30,7 @@ _MIN_SILENCE_MS = 500
 _SPEECH_PAD_MS = 100
 
 
-def vad_split(samples: np.ndarray, sample_rate: int) -> list[dict]:
+def vad_split(samples: np.ndarray, sample_rate: int = 16_000) -> list[dict]:
     """Detect speech in ``samples`` and return per-region sample-index ranges.
 
     Args:
@@ -57,4 +57,4 @@ def vad_split(samples: np.ndarray, sample_rate: int) -> list[dict]:
         min_silence_duration_ms=_MIN_SILENCE_MS,
         speech_pad_ms=_SPEECH_PAD_MS,
     )
-    return list(get_speech_timestamps(samples, vad_options))
+    return list(get_speech_timestamps(samples, vad_options, sampling_rate=sample_rate))
