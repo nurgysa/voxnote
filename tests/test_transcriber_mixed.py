@@ -8,6 +8,7 @@ Mock-based — no real Whisper model, no GPU. Stubs:
 """
 from __future__ import annotations
 
+import threading
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -320,3 +321,140 @@ def test_mixed_segment_timestamps_offset_correctly():
     assert seg["start"] == pytest.approx(911.0, abs=0.01)
     # abs_end = 900 + 10 + 3.5 = 913.5
     assert seg["end"] == pytest.approx(913.5, abs=0.01)
+
+
+def test_mixed_empty_vad_yields_empty_transcript():
+    """If vad_split returns [], _decode_chunk_mixed returns [] without
+    calling model.transcribe at all. Important for chunks that are
+    entirely silent — they should contribute nothing, not crash."""
+    t = Transcriber(model_size="tiny")
+    t._model = MagicMock()
+
+    fake_samples = np.zeros(16_000 * 10, dtype=np.float32)
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=[]):
+        out = t._decode_chunk_mixed(
+            chunk_path="silent.wav",
+            chunk_start_abs=0.0,
+            primary_start_abs=0.0,
+            initial_prompt="frame",
+            hotwords_str=None,
+            cancel_event=None,
+        )
+
+    assert out == []
+    assert t._model.transcribe.call_count == 0
+
+
+def test_mixed_dedup_drops_segments_before_primary_start():
+    """For overlap chunks (chunk_start_abs < primary_start_abs), the same
+    midpoint-based dedup as _decode_chunk_single must apply: segments
+    whose midpoint is before primary_start_abs are dropped."""
+    t = Transcriber(model_size="tiny")
+    t._model = _make_fake_model([
+        # First VAD slice contributes a segment whose absolute midpoint
+        # is BEFORE primary_start_abs — should be dropped.
+        # Second VAD slice produces a segment past primary_start_abs — kept.
+        (iter([_make_segment(0.0, 1.0, "dropped")]), _make_info("ru")),
+        (iter([_make_segment(0.0, 1.0, "kept")]), _make_info("ru")),
+    ])
+    fake_samples = np.zeros(16_000 * 30, dtype=np.float32)
+    vad_segments = [
+        {"start": 0,            "end": 16_000 * 2},    # 0-2s in chunk
+        {"start": 16_000 * 5,   "end": 16_000 * 8},    # 5-8s in chunk
+    ]
+
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=vad_segments):
+        out = t._decode_chunk_mixed(
+            chunk_path="fake.wav",
+            chunk_start_abs=100.0,
+            primary_start_abs=103.0,   # primary starts 3s into this chunk
+            initial_prompt="frame",
+            hotwords_str=None,
+            cancel_event=None,
+        )
+
+    # Slice 1 segment midpoint = 100 + 0 + 0.5 = 100.5 < 103 → DROPPED
+    # Slice 2 segment midpoint = 100 + 5 + 0.5 = 105.5 ≥ 103 → KEPT
+    assert [s["text"] for s in out] == ["kept"]
+
+
+def test_mixed_cancel_event_breaks_inner_loop():
+    """Setting cancel_event mid-loop must raise TranscriptionCancelled
+    on the next _check_cancelled, before processing more segments."""
+    from transcriber import TranscriptionCancelled
+
+    cancel = threading.Event()
+    t = Transcriber(model_size="tiny")
+
+    call_count = {"n": 0}
+
+    def fake_transcribe(audio, **kwargs):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            cancel.set()  # cancel after second segment is being processed
+        return (iter([_make_segment(0.0, 1.0, f"seg{call_count['n']}")]), _make_info("ru"))
+
+    t._model = MagicMock()
+    t._model.transcribe.side_effect = fake_transcribe
+
+    fake_samples = np.zeros(16_000 * 30, dtype=np.float32)
+    vad_segments = [
+        {"start": 0,            "end": 16_000 * 3},
+        {"start": 16_000 * 5,   "end": 16_000 * 8},
+        {"start": 16_000 * 10,  "end": 16_000 * 13},
+    ]
+
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=vad_segments):
+        with pytest.raises(TranscriptionCancelled):
+            t._decode_chunk_mixed(
+                chunk_path="fake.wav",
+                chunk_start_abs=0.0,
+                primary_start_abs=0.0,
+                initial_prompt="frame",
+                hotwords_str=None,
+                cancel_event=cancel,
+            )
+
+    # Should have called transcribe at most 2 times (one before cancel,
+    # one during which cancel was set). The third VAD segment must NOT
+    # have been processed.
+    assert t._model.transcribe.call_count <= 2
+
+
+def test_mixed_word_timestamps_offset_correctly():
+    """When Whisper emits per-word timestamps within a VAD slice, the
+    word abs times must include both chunk_start_abs AND seg_start_s.
+    Diarization downstream (speaker_aligner) indexes by word times, so
+    a missing offset would mis-align speakers."""
+    t = Transcriber(model_size="tiny")
+    fake_word = MagicMock()
+    fake_word.start = 0.5
+    fake_word.end = 1.0
+    fake_word.word = "Hello"
+
+    t._model = _make_fake_model([
+        (iter([_make_segment(0.0, 1.0, "Hello", words=[fake_word])]), _make_info("en")),
+    ])
+    fake_samples = np.zeros(16_000 * 30, dtype=np.float32)
+    vad_segments = [{"start": 16_000 * 10, "end": 16_000 * 15}]
+
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=vad_segments):
+        out = t._decode_chunk_mixed(
+            chunk_path="fake.wav",
+            chunk_start_abs=600.0,    # chunk starts at 10-min mark
+            primary_start_abs=600.0,
+            initial_prompt="frame",
+            hotwords_str=None,
+            cancel_event=None,
+        )
+
+    assert len(out) == 1
+    words = out[0]["words"]
+    assert len(words) == 1
+    # word abs_start = 600 (chunk) + 10 (vad slice start) + 0.5 (whisper local) = 610.5
+    assert words[0]["start"] == pytest.approx(610.5, abs=0.01)
+    assert words[0]["end"] == pytest.approx(611.0, abs=0.01)
