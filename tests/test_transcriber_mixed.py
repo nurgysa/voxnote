@@ -69,8 +69,7 @@ def test_mixed_routes_to_per_segment_path():
         {"start": 16_000 * 22, "end": 16_000 * 28},
     ]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         out = t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -210,8 +209,7 @@ def test_mixed_passes_language_none_and_vad_filter_false():
         {"start": 16_000 * 5, "end": 16_000 * 8},
     ]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -248,8 +246,7 @@ def test_mixed_passes_trilingual_prompt_through():
 
     expected_prompt = "Расшифровка трилингвальной речи..."
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -281,8 +278,7 @@ def test_mixed_output_segments_carry_language_field():
         {"start": 16_000 * 9, "end": 16_000 * 12},
     ]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         out = t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -309,8 +305,7 @@ def test_mixed_segment_timestamps_offset_correctly():
     # VAD says slice runs from 10s to 15s within the chunk.
     vad_segments = [{"start": 16_000 * 10, "end": 16_000 * 15}]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         out = t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -337,8 +332,7 @@ def test_mixed_empty_vad_yields_empty_transcript():
     t._model = MagicMock()
 
     fake_samples = np.zeros(16_000 * 10, dtype=np.float32)
-    with patch("transcriber.ensure_16khz_mono", return_value=("silent.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=[]):
         out = t._decode_chunk_mixed(
             chunk_path="silent.wav",
@@ -371,8 +365,7 @@ def test_mixed_dedup_drops_segments_before_primary_start():
         {"start": 16_000 * 5,   "end": 16_000 * 8},    # 5-8s in chunk
     ]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         out = t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -414,8 +407,7 @@ def test_mixed_cancel_event_breaks_inner_loop():
         {"start": 16_000 * 10,  "end": 16_000 * 13},
     ]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         with pytest.raises(TranscriptionCancelled):
             t._decode_chunk_mixed(
@@ -450,8 +442,7 @@ def test_mixed_word_timestamps_offset_correctly():
     fake_samples = np.zeros(16_000 * 30, dtype=np.float32)
     vad_segments = [{"start": 16_000 * 10, "end": 16_000 * 15}]
 
-    with patch("transcriber.ensure_16khz_mono", return_value=("fake.wav", False)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+    with patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
          patch("transcriber.vad_split", return_value=vad_segments):
         out = t._decode_chunk_mixed(
             chunk_path="fake.wav",
@@ -470,61 +461,91 @@ def test_mixed_word_timestamps_offset_correctly():
     assert words[0]["end"] == pytest.approx(611.0, abs=0.01)
 
 
-def test_mixed_uses_ensure_16khz_mono_before_load():
-    """Regression guard for the P1 sampling-rate bug caught in PR #29
-    review: _decode_chunk_mixed must call ensure_16khz_mono on chunk_path
-    BEFORE load_mono_float32, so model.transcribe receives 16 kHz audio
-    even when normalize_audio=False and input was non-16 kHz WAV."""
+def test_transcribe_mixed_calls_ensure_16khz_mono_before_load_model():
+    """Regression for the Codex-caught Windows ordering bug: when
+    language=='mixed', transcribe() must call ensure_16khz_mono BEFORE
+    load_model() so any ffmpeg invocation happens before ctranslate2
+    locks the CUDA DLLs (Windows STATUS_DLL_INIT_FAILED invariant)."""
     t = Transcriber(model_size="tiny")
-    t._model = _make_fake_model([
-        (iter([_make_segment(0.0, 1.0, "ok")]), _make_info("ru")),
-    ])
+
+    # Track call order via a list. ensure_16khz_mono must precede load_model.
+    call_order: list[str] = []
+
+    def _ensure_16khz_side_effect(p):
+        call_order.append("ensure_16khz_mono")
+        return ("fake.wav", False)
+
+    ensure_16khz_mock = MagicMock(side_effect=_ensure_16khz_side_effect)
+    load_model_mock = MagicMock(side_effect=lambda: call_order.append("load_model"))
+
+    # Pre-populate the model so load_model_mock doesn't have to actually load
+    t._model = MagicMock()
+    t._model.transcribe.return_value = (iter([]), MagicMock(language="ru"))
 
     fake_samples = np.zeros(16_000 * 5, dtype=np.float32)
-    vad_segments = [{"start": 0, "end": 16_000 * 3}]
+    with patch.object(t, "load_model", load_model_mock), \
+         patch("transcriber.ensure_16khz_mono", ensure_16khz_mock), \
+         patch("transcriber.ensure_wav", return_value=("fake.wav", False)), \
+         patch("transcriber.get_duration_s", return_value=10.0), \
+         patch("transcriber.split_wav_into_chunks", return_value=[("fake.wav", 0.0, 0.0)]), \
+         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=[]):
+        t.transcribe(audio_path="fake.wav", language="mixed", diarize=False)
 
-    # ensure_16khz_mono is the tripwire — it MUST be called.
-    ensure_16khz_tripwire = MagicMock(return_value=("fake_16k.wav", False))
+    # Both must have fired, and ensure_16khz_mono must come first.
+    assert "ensure_16khz_mono" in call_order
+    assert "load_model" in call_order
+    assert call_order.index("ensure_16khz_mono") < call_order.index("load_model"), (
+        "ffmpeg-capable ensure_16khz_mono ran AFTER load_model — "
+        f"Windows STATUS_DLL_INIT_FAILED risk. Order: {call_order}"
+    )
+
+
+def test_transcribe_single_language_skips_ensure_16khz_mono():
+    """Regression guard: language='ru' must NOT trigger the upstream
+    ensure_16khz_mono call. The single-language path uses chunk file
+    paths (Whisper handles resampling internally), so the resample
+    helper is wasted work AND adds an ffmpeg invocation that the
+    pre-Phase-2 path didn't need."""
+    t = Transcriber(model_size="tiny")
+    t._model = MagicMock()
+    t._model.transcribe.return_value = (iter([]), MagicMock(language="ru"))
+
+    ensure_16khz_tripwire = MagicMock(return_value=("fake.wav", False))
 
     with patch("transcriber.ensure_16khz_mono", ensure_16khz_tripwire), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
-         patch("transcriber.vad_split", return_value=vad_segments):
-        t._decode_chunk_mixed(
-            chunk_path="input_chunk.wav",
-            chunk_start_abs=0.0,
-            primary_start_abs=0.0,
-            initial_prompt="frame",
-            hotwords_str=None,
-            cancel_event=None,
-        )
+         patch("transcriber.ensure_wav", return_value=("fake.wav", False)), \
+         patch("transcriber.get_duration_s", return_value=10.0), \
+         patch("transcriber.split_wav_into_chunks", return_value=[("fake.wav", 0.0, 0.0)]):
+        t.transcribe(audio_path="fake.wav", language="ru", diarize=False)
 
-    # ensure_16khz_mono must have been called with the input chunk path
-    ensure_16khz_tripwire.assert_called_once_with("input_chunk.wav")
+    ensure_16khz_tripwire.assert_not_called()
 
 
-def test_mixed_unlinks_temp_resample_file_on_normal_exit():
-    """When ensure_16khz_mono returns is_temp=True, _decode_chunk_mixed
-    must os.unlink the temp file on completion (avoids temp-file leak)."""
+def test_transcribe_mixed_cleans_up_old_temp_when_resample_happens():
+    """When ensure_wav returned a temp AND ensure_16khz_mono produces
+    a different temp (e.g. non-16k WAV input with normalize=False),
+    the ensure_wav temp must be deleted to avoid leaking it."""
     t = Transcriber(model_size="tiny")
-    t._model = _make_fake_model([
-        (iter([_make_segment(0.0, 1.0, "ok")]), _make_info("ru")),
-    ])
+    t._model = MagicMock()
+    t._model.transcribe.return_value = (iter([]), MagicMock(language="ru"))
 
     fake_samples = np.zeros(16_000 * 5, dtype=np.float32)
-    vad_segments = [{"start": 0, "end": 16_000 * 3}]
-
     unlink_mock = MagicMock()
-    with patch("transcriber.ensure_16khz_mono", return_value=("temp.wav", True)), \
-         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
-         patch("transcriber.vad_split", return_value=vad_segments), \
-         patch("transcriber.os.unlink", unlink_mock):
-        t._decode_chunk_mixed(
-            chunk_path="input_chunk.wav",
-            chunk_start_abs=0.0,
-            primary_start_abs=0.0,
-            initial_prompt="frame",
-            hotwords_str=None,
-            cancel_event=None,
-        )
 
-    unlink_mock.assert_called_once_with("temp.wav")
+    chunks = [("new_16k_temp.wav", 0.0, 0.0)]
+    with patch("transcriber.ensure_wav", return_value=("old_temp.wav", True)), \
+         patch("transcriber.ensure_16khz_mono", return_value=("new_16k_temp.wav", True)), \
+         patch("transcriber.get_duration_s", return_value=10.0), \
+         patch("transcriber.split_wav_into_chunks", return_value=chunks), \
+         patch("transcriber.load_mono_float32", return_value=(fake_samples, 16_000)), \
+         patch("transcriber.vad_split", return_value=[]), \
+         patch("transcriber.os.unlink", unlink_mock):
+        t.transcribe(audio_path="fake.wav", language="mixed", diarize=False)
+
+    # The OLD ensure_wav temp must be unlinked (we own it). The new 16k
+    # temp will be cleaned up by the existing try/finally in transcribe()
+    # (its wav_is_temp tracking handles that).
+    unlink_calls = [c.args[0] for c in unlink_mock.call_args_list]
+    assert "old_temp.wav" in unlink_calls, \
+        f"Old ensure_wav temp was not unlinked: {unlink_calls}"

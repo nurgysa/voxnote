@@ -694,130 +694,116 @@ class Transcriber:
         Returns transcript-segment dicts with the same shape
         ``_decode_chunk_single`` produces, plus a new ``"language"`` key
         carrying ``info.language`` (the per-segment detection result).
+
+        The chunk MUST already be 16 kHz mono — `transcribe()` enforces this
+        upstream via `ensure_16khz_mono(wav_path)` before `load_model()`,
+        preserving the Windows STATUS_DLL_INIT_FAILED-avoidance ordering. Don't
+        call ffmpeg from inside this method — it runs AFTER load_model().
         """
-        # Mixed mode slices the chunk into numpy arrays per VAD region and
-        # passes them to model.transcribe(seg_audio, ...). faster-whisper
-        # treats numpy input as 16 kHz mono unconditionally — if the chunk
-        # arrived at a different rate (normalize_audio=False AND input is a
-        # non-16 kHz WAV), the slice would be interpreted at the wrong
-        # frequency, garbling text and skewing timestamps. Resample first;
-        # ensure_16khz_mono short-circuits when the chunk is already 16k mono.
-        chunk_16k_path, _is_temp = ensure_16khz_mono(chunk_path)
-        try:
-            # Load the chunk into memory once. Unlike _decode_chunk_single,
-            # which streams via the WAV path, the mixed path needs the raw
-            # samples to feed numpy slices to model.transcribe() per VAD
-            # region — Whisper accepts both a path and an ndarray.
-            samples, sample_rate = load_mono_float32(chunk_16k_path)
-            # VAD pre-pass: split the chunk into speech regions so each can
-            # be decoded with its own language detection. Parameters tuned in
-            # segmenter.py for language detection (min 500 ms speech, etc.),
-            # not silence removal.
-            speech_timestamps = vad_split(samples, sample_rate)
-            logger.info(
-                "Transcribe: mixed mode, vad_segments=%d",
-                len(speech_timestamps),
+        # Load the chunk into memory once. Unlike _decode_chunk_single,
+        # which streams via the WAV path, the mixed path needs the raw
+        # samples to feed numpy slices to model.transcribe() per VAD
+        # region — Whisper accepts both a path and an ndarray.
+        samples, sample_rate = load_mono_float32(chunk_path)
+        # VAD pre-pass: split the chunk into speech regions so each can
+        # be decoded with its own language detection. Parameters tuned in
+        # segmenter.py for language detection (min 500 ms speech, etc.),
+        # not silence removal.
+        speech_timestamps = vad_split(samples, sample_rate)
+        logger.info(
+            "Transcribe: mixed mode, vad_segments=%d",
+            len(speech_timestamps),
+        )
+
+        out: list[dict] = []
+        for seg_idx, ts in enumerate(speech_timestamps):
+            # Cancel checkpoint between VAD segments. Each model.transcribe()
+            # call below can take several seconds on a long region; checking
+            # here keeps cancel latency bounded to one region's decode time.
+            _check_cancelled(cancel_event)
+            seg_audio = samples[ts["start"]:ts["end"]]
+            seg_start_s = ts["start"] / sample_rate
+
+            # Per-segment Whisper decode. Key differences from the single-
+            # language path (_decode_chunk_single above):
+            #   language=None — let Whisper detect_language() run on this
+            #     slice. This is the whole point of the mixed path: each
+            #     VAD region gets its own language tag.
+            #   vad_filter=False — we already filtered above, no need to
+            #     run the VAD pass again inside Whisper.
+            # The anti-hallucination tuple, word_timestamps, initial_prompt,
+            # hotwords mirror the single-language path — same rationale
+            # applies (see _decode_chunk_single for full commentary).
+            segments, info = self._model.transcribe(
+                seg_audio,
+                language=None,                    # Whisper auto-detects per slice
+                beam_size=self._beam_size,
+                vad_filter=False,                 # already filtered
+                condition_on_previous_text=False,
+                no_speech_threshold=0.6,
+                log_prob_threshold=-1.0,
+                compression_ratio_threshold=2.4,
+                word_timestamps=True,
+                initial_prompt=initial_prompt,
+                hotwords=hotwords_str,
             )
 
-            out: list[dict] = []
-            for seg_idx, ts in enumerate(speech_timestamps):
-                # Cancel checkpoint between VAD segments. Each model.transcribe()
-                # call below can take several seconds on a long region; checking
-                # here keeps cancel latency bounded to one region's decode time.
+            whisper_segs_count = 0
+            for segment in segments:
+                # Cancel checkpoint inside the inner Whisper segment loop —
+                # mirrors _decode_chunk_single's pattern. Sub-microsecond
+                # overhead.
                 _check_cancelled(cancel_event)
-                seg_audio = samples[ts["start"]:ts["end"]]
-                seg_start_s = ts["start"] / sample_rate
-
-                # Per-segment Whisper decode. Key differences from the single-
-                # language path (_decode_chunk_single above):
-                #   language=None — let Whisper detect_language() run on this
-                #     slice. This is the whole point of the mixed path: each
-                #     VAD region gets its own language tag.
-                #   vad_filter=False — we already filtered above, no need to
-                #     run the VAD pass again inside Whisper.
-                # The anti-hallucination tuple, word_timestamps, initial_prompt,
-                # hotwords mirror the single-language path — same rationale
-                # applies (see _decode_chunk_single for full commentary).
-                segments, info = self._model.transcribe(
-                    seg_audio,
-                    language=None,                    # Whisper auto-detects per slice
-                    beam_size=self._beam_size,
-                    vad_filter=False,                 # already filtered
-                    condition_on_previous_text=False,
-                    no_speech_threshold=0.6,
-                    log_prob_threshold=-1.0,
-                    compression_ratio_threshold=2.4,
-                    word_timestamps=True,
-                    initial_prompt=initial_prompt,
-                    hotwords=hotwords_str,
-                )
-
-                whisper_segs_count = 0
-                for segment in segments:
-                    # Cancel checkpoint inside the inner Whisper segment loop —
-                    # mirrors _decode_chunk_single's pattern. Sub-microsecond
-                    # overhead.
-                    _check_cancelled(cancel_event)
-                    # Count Whisper-emitted segments BEFORE the dedup continue
-                    # below — the diagnostic answers "did Whisper find speech
-                    # in this VAD region?", which is more useful than "how many
-                    # segments survived dedup against the previous chunk".
-                    whisper_segs_count += 1
-                    # Convert Whisper-segment-local times to absolute times by
-                    # adding the VAD region's offset (seg_start_s) AND the
-                    # chunk's absolute offset (chunk_start_abs). Two-level
-                    # arithmetic because Whisper sees only the sliced audio.
-                    abs_start = chunk_start_abs + seg_start_s + segment.start
-                    abs_end = chunk_start_abs + seg_start_s + segment.end
-                    # Midpoint dedup against the previous chunk's overlap zone —
-                    # identical strategy to _decode_chunk_single. Drops segments
-                    # whose midpoint falls before primary_start_abs because the
-                    # earlier chunk already transcribed that audio.
-                    seg_mid = (abs_start + abs_end) / 2.0
-                    if seg_mid < primary_start_abs:
-                        continue
-                    # Word-level times: same two-level offset as segment times.
-                    # ``segment.words`` is optional (None if DTW alignment was
-                    # skipped); an empty list downstream triggers the segment-
-                    # level speaker-overlap fallback during diarization.
-                    seg_words: list[dict] = []
-                    if segment.words:
-                        for w in segment.words:
-                            seg_words.append({
-                                "start": w.start + chunk_start_abs + seg_start_s,
-                                "end": w.end + chunk_start_abs + seg_start_s,
-                                "word": w.word,
-                            })
-                    out.append({
-                        "start": abs_start,
-                        "end": abs_end,
-                        "text": segment.text.strip(),
-                        "words": seg_words,
-                        # Per-segment detected language — the load-bearing
-                        # addition over _decode_chunk_single's dict shape.
-                        # Downstream consumers (subtitle formatters, future
-                        # per-segment-language UI) read this key.
-                        "language": info.language,
-                    })
-                logger.debug(
-                    "vad_seg %d: %.2fs-%.2fs, lang=%s, whisper_segments=%d",
-                    seg_idx,
-                    seg_start_s,
-                    seg_start_s + (ts["end"] - ts["start"]) / sample_rate,
-                    info.language,
-                    whisper_segs_count,
-                )
-            return out
-        finally:
-            # Best-effort cleanup of the resample temp. Runs on normal
-            # return, cancellation (TranscriptionCancelled), and any
-            # ffmpeg/Whisper exception — without it we'd leak temp WAVs
-            # on every mixed-mode chunk when the source isn't 16 kHz mono.
-            if _is_temp:
-                try:
-                    os.unlink(chunk_16k_path)
-                except OSError:
-                    pass  # best-effort cleanup
+                # Count Whisper-emitted segments BEFORE the dedup continue
+                # below — the diagnostic answers "did Whisper find speech
+                # in this VAD region?", which is more useful than "how many
+                # segments survived dedup against the previous chunk".
+                whisper_segs_count += 1
+                # Convert Whisper-segment-local times to absolute times by
+                # adding the VAD region's offset (seg_start_s) AND the
+                # chunk's absolute offset (chunk_start_abs). Two-level
+                # arithmetic because Whisper sees only the sliced audio.
+                abs_start = chunk_start_abs + seg_start_s + segment.start
+                abs_end = chunk_start_abs + seg_start_s + segment.end
+                # Midpoint dedup against the previous chunk's overlap zone —
+                # identical strategy to _decode_chunk_single. Drops segments
+                # whose midpoint falls before primary_start_abs because the
+                # earlier chunk already transcribed that audio.
+                seg_mid = (abs_start + abs_end) / 2.0
+                if seg_mid < primary_start_abs:
+                    continue
+                # Word-level times: same two-level offset as segment times.
+                # ``segment.words`` is optional (None if DTW alignment was
+                # skipped); an empty list downstream triggers the segment-
+                # level speaker-overlap fallback during diarization.
+                seg_words: list[dict] = []
+                if segment.words:
+                    for w in segment.words:
+                        seg_words.append({
+                            "start": w.start + chunk_start_abs + seg_start_s,
+                            "end": w.end + chunk_start_abs + seg_start_s,
+                            "word": w.word,
+                        })
+                out.append({
+                    "start": abs_start,
+                    "end": abs_end,
+                    "text": segment.text.strip(),
+                    "words": seg_words,
+                    # Per-segment detected language — the load-bearing
+                    # addition over _decode_chunk_single's dict shape.
+                    # Downstream consumers (subtitle formatters, future
+                    # per-segment-language UI) read this key.
+                    "language": info.language,
+                })
+            logger.debug(
+                "vad_seg %d: %.2fs-%.2fs, lang=%s, whisper_segments=%d",
+                seg_idx,
+                seg_start_s,
+                seg_start_s + (ts["end"] - ts["start"]) / sample_rate,
+                info.language,
+                whisper_segs_count,
+            )
+        return out
 
     def transcribe(
         self,
@@ -934,6 +920,29 @@ class Transcriber:
                 else "Подготовка аудио (ffmpeg)..."
             )
         wav_path, wav_is_temp = ensure_wav(audio_path, normalize=normalize_audio)
+        # Mixed-mode invariant: `_decode_chunk_mixed` passes numpy slices to
+        # `model.transcribe(...)`, which assumes 16 kHz mono input. Force the
+        # chunked audio to that rate here — while we're still BEFORE load_model().
+        # Running ffmpeg AFTER load_model() crashes Windows with
+        # STATUS_DLL_INIT_FAILED (see the IMPORTANT ordering comment above).
+        # `ensure_16khz_mono` short-circuits when wav_path is already 16k mono,
+        # so the default `normalize_audio=True` path pays only a cheap header
+        # read (ensure_wav already produces 16 kHz mono in that case).
+        if language == "mixed":
+            new_wav_path, new_is_temp = ensure_16khz_mono(wav_path)
+            if new_wav_path != wav_path:
+                # ensure_16khz_mono produced a temp resample. Drop the prior
+                # ensure_wav temp (if any) — it's no longer referenced — and
+                # take ownership of the new 16 kHz file.
+                if wav_is_temp:
+                    try:
+                        os.unlink(wav_path)
+                    except OSError:
+                        pass  # best-effort
+                wav_path = new_wav_path
+                wav_is_temp = new_is_temp
+            # else: short-circuit — wav_path/wav_is_temp unchanged.
+
         chunks_dir = None
         diarize_handle: dict | None = None
         try:
