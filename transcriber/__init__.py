@@ -565,19 +565,47 @@ class Transcriber:
         effective_language: str | None,
         initial_prompt: str | None,
         hotwords_str: str | None,
-        cancel_event,
+        cancel_event: threading.Event | None,
     ) -> list[dict]:
         """Single-language per-chunk decode — the pre-Phase-2 code path.
 
         Extracted verbatim from the inline body of ``transcribe()`` so the
         parallel mixed-mode helper (``_decode_chunk_mixed``) can sit next
-        to it. Behaviour is byte-identical to pre-refactor; see the moved
-        comments for rationale on each transcribe() parameter.
+        to it. Behaviour is byte-identical to pre-refactor. Rationale for
+        each parameter is documented inline.
 
         Returns a list of transcript-segment dicts with keys
         ``{"start", "end", "text", "words"}`` — same shape callers already
         consume from the inline loop.
         """
+        # Sequential WhisperModel.transcribe() per chunk. We do NOT
+        # use BatchedInferencePipeline because its parallel batched
+        # inference exceeds VRAM on a 4 GB GPU with Whisper medium
+        # (verified OOM at batch=4: logs/transcribe_crash_2026-04-14_16-42-41.log).
+        # Sequential per-segment inference uses ~1× chunk activations,
+        # which fits comfortably alongside the loaded weights.
+        # Quality-focused defaults (Phase 1 tuning):
+        #   condition_on_previous_text=False — disables the feedback
+        #     loop that causes Whisper to emit runaway repeats like
+        #     "Спасибо. Спасибо. Спасибо." on long quiet stretches.
+        #     Well-known failure mode; standard production fix.
+        #   vad_parameters — keep a bit of silence around speech so
+        #     word endings aren't clipped; ignore micro-pauses so we
+        #     don't fragment utterances mid-word.
+        #   no_speech_threshold / log_prob_threshold /
+        #     compression_ratio_threshold — anti-hallucination gates
+        #     for the temperature-fallback ladder. Values are the
+        #     faster-whisper recommended anti-hallucination tuple.
+        # word_timestamps=True:
+        #   Enables word-level diarization (see _assign_speakers_word_level).
+        #   Cost: ~10-15% more wall time for transcription — this is the
+        #   cross-attention DTW alignment pass Whisper runs after the
+        #   beam search. Worth it: without per-word times, a single
+        #   Whisper segment that spans two speakers' turns ("— Да.
+        #   — Согласен.") gets labeled with a single speaker, which
+        #   is the dominant visible diarization error in dialogue.
+        #   Paid even when diarize=False because it's harmless and
+        #   branching would just add flakiness.
         segments, _info = self._model.transcribe(
             chunk_path,
             language=effective_language,
@@ -598,12 +626,29 @@ class Transcriber:
 
         out: list[dict] = []
         for segment in segments:
+            # Cancel checkpoint inside the hot loop. On a 90-minute
+            # file this fires several thousand times — a single
+            # is_set() call is sub-microsecond, so the overhead is
+            # invisible compared to per-segment Whisper inference.
             _check_cancelled(cancel_event)
             abs_start = segment.start + chunk_start_abs
             abs_end = segment.end + chunk_start_abs
+            # Dedup overlap zone. A chunk (N>0) begins _CHUNK_OVERLAP_S
+            # seconds before its primary_start_abs; segments whose
+            # midpoint falls before primary_start_abs describe audio
+            # already transcribed by the previous chunk. Keeping the
+            # earlier chunk's version is arbitrary but consistent —
+            # both transcriptions of the same audio should match.
+            # Using the midpoint (not start or end) is robust to
+            # boundary words that straddle the line.
             seg_mid = (abs_start + abs_end) / 2.0
             if seg_mid < primary_start_abs:
                 continue
+            # Words are optional in faster-whisper: if the DTW
+            # alignment pass was skipped (silent segment, or
+            # pathological beam output), segment.words is None. We
+            # store the list anyway — an empty list triggers the
+            # segment-level speaker-overlap fallback downstream.
             seg_words: list[dict] = []
             if segment.words:
                 for w in segment.words:
