@@ -549,3 +549,40 @@ def test_transcribe_mixed_cleans_up_old_temp_when_resample_happens():
     unlink_calls = [c.args[0] for c in unlink_mock.call_args_list]
     assert "old_temp.wav" in unlink_calls, \
         f"Old ensure_wav temp was not unlinked: {unlink_calls}"
+
+
+def test_transcribe_mixed_cleans_up_ensure_wav_temp_when_resample_raises():
+    """Regression for Codex P2 finding on PR #31: ensure_16khz_mono used
+    to sit OUTSIDE the try/finally that cleans up the ensure_wav temp.
+    If it raised (ffmpeg failure, soundfile can't read the header,
+    corrupt file, etc.), the ensure_wav temp would leak.
+
+    Moving the call INSIDE the try block restores deterministic cleanup
+    on the error path. Without the fix, this test would fail because
+    the RuntimeError would propagate out of transcribe() before the
+    finally block ran, leaving 'old_temp.wav' on disk forever.
+    """
+    t = Transcriber(model_size="tiny")
+    t._model = MagicMock()
+
+    unlink_mock = MagicMock()
+
+    # ensure_16khz_mono raises — simulates ffmpeg failing on a corrupt WAV
+    # header, or soundfile.SoundFile() crashing on a malformed file.
+    resample_failure = RuntimeError("ffmpeg failed to resample input.wav")
+
+    with patch("transcriber.ensure_wav", return_value=("old_temp.wav", True)), \
+         patch("transcriber.ensure_16khz_mono", side_effect=resample_failure), \
+         patch("transcriber.get_duration_s", return_value=10.0), \
+         patch("transcriber.os.unlink", unlink_mock):
+        with pytest.raises(RuntimeError, match="ffmpeg failed to resample"):
+            t.transcribe(audio_path="fake.wav", language="mixed", diarize=False)
+
+    # The ensure_wav temp MUST have been unlinked by the finally block
+    # despite the resample raising. Without the fix, this assertion would
+    # fail because the call sat outside the try/finally.
+    unlink_calls = [c.args[0] for c in unlink_mock.call_args_list]
+    assert "old_temp.wav" in unlink_calls, (
+        "ensure_wav temp was leaked after ensure_16khz_mono raised. "
+        f"unlink calls: {unlink_calls}"
+    )

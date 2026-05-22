@@ -920,33 +920,40 @@ class Transcriber:
                 else "Подготовка аудио (ffmpeg)..."
             )
         wav_path, wav_is_temp = ensure_wav(audio_path, normalize=normalize_audio)
-        # Mixed-mode invariant: `_decode_chunk_mixed` passes numpy slices to
-        # `model.transcribe(...)`, which assumes 16 kHz mono input. Force the
-        # chunked audio to that rate here — while we're still BEFORE load_model().
-        # Running ffmpeg AFTER load_model() crashes Windows with
-        # STATUS_DLL_INIT_FAILED (see the IMPORTANT ordering comment above).
-        # `ensure_16khz_mono` short-circuits when wav_path is already 16k mono,
-        # so the default `normalize_audio=True` path pays only a cheap header
-        # read (ensure_wav already produces 16 kHz mono in that case).
-        if language == "mixed":
-            new_wav_path, new_is_temp = ensure_16khz_mono(wav_path)
-            if new_wav_path != wav_path:
-                # ensure_16khz_mono produced a temp resample. Drop the prior
-                # ensure_wav temp (if any) — it's no longer referenced — and
-                # take ownership of the new 16 kHz file.
-                if wav_is_temp:
-                    try:
-                        os.unlink(wav_path)
-                    except OSError:
-                        pass  # best-effort
-                wav_path = new_wav_path
-                wav_is_temp = new_is_temp
-            # else: short-circuit — wav_path/wav_is_temp unchanged.
-
         chunks_dir = None
         diarize_handle: dict | None = None
         try:
             _check_cancelled(cancel_event)
+            # Mixed-mode invariant: `_decode_chunk_mixed` passes numpy slices to
+            # `model.transcribe(...)`, which assumes 16 kHz mono input. Force the
+            # chunked audio to that rate here — while we're still BEFORE load_model().
+            # Running ffmpeg AFTER load_model() crashes Windows with
+            # STATUS_DLL_INIT_FAILED (see the IMPORTANT ordering comment above).
+            # `ensure_16khz_mono` short-circuits when wav_path is already 16k mono,
+            # so the default `normalize_audio=True` path pays only a cheap header
+            # read (ensure_wav already produces 16 kHz mono in that case).
+            #
+            # Sits INSIDE the try block so an ffmpeg / soundfile failure here
+            # propagates through the finally below, releasing the ensure_wav
+            # temp via the wav_is_temp cleanup. The order constraint is about
+            # execution order (ffmpeg before load_model), not lexical position;
+            # try-block nesting is fine.
+            if language == "mixed":
+                new_wav_path, new_is_temp = ensure_16khz_mono(wav_path)
+                if new_wav_path != wav_path:
+                    # ensure_16khz_mono produced a temp resample. Drop the prior
+                    # ensure_wav temp (if any) — it's no longer referenced — and
+                    # take ownership of the new 16 kHz file.
+                    if wav_is_temp:
+                        try:
+                            os.unlink(wav_path)
+                        except OSError:
+                            pass  # best-effort
+                    wav_path = new_wav_path
+                    wav_is_temp = new_is_temp
+                # else: short-circuit — wav_path/wav_is_temp unchanged.
+                _check_cancelled(cancel_event)
+
             # Now safe to load Whisper — ffmpeg has already done any DLL
             # initialization it needs and exited.
             if on_status:
