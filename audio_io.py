@@ -94,6 +94,56 @@ def ensure_wav(
     return tmp.name, True
 
 
+def ensure_16khz_mono(audio_path: str) -> tuple[str, bool]:
+    """Ensure ``audio_path`` is a 16 kHz mono WAV; returns ``(path, is_temp)``.
+
+    Short-circuits with ``is_temp=False`` when the file is already 16 kHz
+    mono. Otherwise resamples via ffmpeg into a temp WAV; caller owns the
+    temp and must delete it.
+
+    Phase 2 mixed-mode passes numpy slices to ``WhisperModel.transcribe()``,
+    which assumes the input is 16 kHz. Per-chunk audio loaded via
+    ``load_mono_float32`` carries the file's NATIVE sample rate — non-16
+    kHz inputs would be interpreted at wrong frequencies by Whisper's
+    mel-filterbank, garbling text and timestamps by a sr/16000 factor.
+
+    Why not extend ``ensure_wav`` with a force-16k flag? Because the rest
+    of the pipeline (audio_cutter, silence_remover) calls
+    ``ensure_wav(normalize=False)`` and EXPECTS native sample rate. This
+    helper is mixed-mode-specific and skips loudness normalization (the
+    chunk has already been normalized upstream by
+    ``Transcriber.transcribe()``'s ffmpeg pass when
+    ``normalize_audio=True``; when ``normalize_audio=False``, the user
+    explicitly opted out, so we must not re-normalize either).
+
+    Raises ``RuntimeError`` with the tail of ffmpeg's stderr if conversion
+    fails. The temp file (if any) is cleaned up before raising.
+    """
+    # Cheap check via soundfile's header read — no audio data loaded.
+    with sf.SoundFile(audio_path) as f:
+        if f.samplerate == SAMPLE_RATE and f.channels == 1:
+            return audio_path, False
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        subprocess.run(
+            [
+                "ffmpeg", "-v", "error", "-y", "-i", audio_path,
+                "-ar", str(SAMPLE_RATE), "-ac", "1", tmp.name,
+            ],
+            capture_output=True, check=True,
+        )
+    except subprocess.CalledProcessError as e:
+        os.unlink(tmp.name)
+        stderr = e.stderr.decode("utf-8", errors="replace") if e.stderr else ""
+        raise RuntimeError(
+            f"ffmpeg failed to resample {audio_path} to 16 kHz "
+            f"(exit {e.returncode}):\n{stderr[-1000:]}"
+        ) from e
+    return tmp.name, True
+
+
 def load_mono_float32(audio_path: str) -> tuple[np.ndarray, int]:
     """Load an audio file as a 1-D float32 mono numpy array + sample rate.
 

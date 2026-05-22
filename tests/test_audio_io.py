@@ -3,7 +3,16 @@
 Avoids the ffmpeg-dependent code paths (ensure_wav with conversion,
 split chunking) — those are integration tests that need a real ffmpeg
 binary. The branches we cover here exercise pure logic + soundfile.
+
+Two ensure_16khz_mono tests below DO need ffmpeg (the resample path)
+and are guarded by ``_FFMPEG_AVAILABLE``; they skip on CI runners
+without an ffmpeg install and exercise the real ffmpeg pipeline
+locally. The header-only short-circuit path is covered by a separate
+ffmpeg-free test.
 """
+import os
+import shutil
+
 import numpy as np
 import pytest
 import soundfile as sf
@@ -11,11 +20,14 @@ import soundfile as sf
 from audio_io import (
     SAMPLE_RATE,
     _ffmpeg_time,
+    ensure_16khz_mono,
     ensure_wav,
     get_duration_s,
     load_mono_float32,
     split_wav_into_chunks,
 )
+
+_FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
 
 # ── _ffmpeg_time ───────────────────────────────────────────────────
 
@@ -95,3 +107,71 @@ def test_split_returns_single_chunk_when_under_threshold(tmp_path):
     assert chunks == [(str(wav), 0.0, 0.0)]
     # No ffmpeg call → no chunks dir created.
     assert not out_dir.exists()
+
+
+# ── ensure_16khz_mono ─────────────────────────────────────────────
+
+
+def test_ensure_16khz_mono_short_circuits_for_16k_mono_wav(tmp_path):
+    """A WAV that's already 16 kHz mono must be returned as-is,
+    is_temp=False (no ffmpeg invocation)."""
+    src = tmp_path / "input.wav"
+    samples = np.zeros(16_000 * 2, dtype=np.float32)  # 2s of silence
+    sf.write(str(src), samples, 16_000, subtype="PCM_16")
+
+    out_path, is_temp = ensure_16khz_mono(str(src))
+    assert out_path == str(src)
+    assert is_temp is False
+
+
+@pytest.mark.skipif(
+    not _FFMPEG_AVAILABLE,
+    reason="ffmpeg binary unavailable (CI runners without ffmpeg skip the resample path)",
+)
+def test_ensure_16khz_mono_resamples_44100_hz(tmp_path):
+    """A 44.1 kHz WAV must be resampled to 16 kHz mono and the resulting
+    file written to a temp path. is_temp=True so the caller knows to
+    delete."""
+    src = tmp_path / "input_44k.wav"
+    samples = np.zeros(44_100 * 2, dtype=np.float32)  # 2s of silence at 44.1k
+    sf.write(str(src), samples, 44_100, subtype="PCM_16")
+
+    out_path, is_temp = ensure_16khz_mono(str(src))
+    try:
+        assert is_temp is True
+        assert out_path != str(src)
+        # Verify the output IS 16 kHz mono
+        with sf.SoundFile(out_path) as f:
+            assert f.samplerate == 16_000
+            assert f.channels == 1
+    finally:
+        if is_temp:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
+
+
+@pytest.mark.skipif(
+    not _FFMPEG_AVAILABLE,
+    reason="ffmpeg binary unavailable (CI runners without ffmpeg skip the resample path)",
+)
+def test_ensure_16khz_mono_resamples_stereo_48k(tmp_path):
+    """48 kHz stereo must be both downmixed to mono AND resampled to 16 kHz."""
+    src = tmp_path / "input_48k_stereo.wav"
+    # 2s of silence, 2 channels
+    samples = np.zeros((48_000 * 2, 2), dtype=np.float32)
+    sf.write(str(src), samples, 48_000, subtype="PCM_16")
+
+    out_path, is_temp = ensure_16khz_mono(str(src))
+    try:
+        assert is_temp is True
+        with sf.SoundFile(out_path) as f:
+            assert f.samplerate == 16_000
+            assert f.channels == 1
+    finally:
+        if is_temp:
+            try:
+                os.unlink(out_path)
+            except OSError:
+                pass
