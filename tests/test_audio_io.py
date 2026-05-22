@@ -3,8 +3,15 @@
 Avoids the ffmpeg-dependent code paths (ensure_wav with conversion,
 split chunking) — those are integration tests that need a real ffmpeg
 binary. The branches we cover here exercise pure logic + soundfile.
+
+Two ensure_16khz_mono tests below DO need ffmpeg (the resample path)
+and are guarded by ``_FFMPEG_AVAILABLE``; they skip on CI runners
+without an ffmpeg install and exercise the real ffmpeg pipeline
+locally. The header-only short-circuit path is covered by a separate
+ffmpeg-free test.
 """
 import os
+import shutil
 
 import numpy as np
 import pytest
@@ -19,6 +26,8 @@ from audio_io import (
     load_mono_float32,
     split_wav_into_chunks,
 )
+
+_FFMPEG_AVAILABLE = shutil.which("ffmpeg") is not None
 
 # ── _ffmpeg_time ───────────────────────────────────────────────────
 
@@ -115,6 +124,10 @@ def test_ensure_16khz_mono_short_circuits_for_16k_mono_wav(tmp_path):
     assert is_temp is False
 
 
+@pytest.mark.skipif(
+    not _FFMPEG_AVAILABLE,
+    reason="ffmpeg binary unavailable (CI runners without ffmpeg skip the resample path)",
+)
 def test_ensure_16khz_mono_resamples_44100_hz(tmp_path):
     """A 44.1 kHz WAV must be resampled to 16 kHz mono and the resulting
     file written to a temp path. is_temp=True so the caller knows to
@@ -139,6 +152,10 @@ def test_ensure_16khz_mono_resamples_44100_hz(tmp_path):
                 pass
 
 
+@pytest.mark.skipif(
+    not _FFMPEG_AVAILABLE,
+    reason="ffmpeg binary unavailable (CI runners without ffmpeg skip the resample path)",
+)
 def test_ensure_16khz_mono_resamples_stereo_48k(tmp_path):
     """48 kHz stereo must be both downmixed to mono AND resampled to 16 kHz."""
     src = tmp_path / "input_48k_stereo.wav"
