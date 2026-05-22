@@ -37,18 +37,28 @@ def _assign_speakers_word_level(
     """
     out: list[dict] = []
     for seg in segments:
+        # Mixed-mode Phase 2 carries a per-segment ``language`` tag (the
+        # info.language Whisper detected for this VAD region). Every
+        # sub-segment we emit for ``seg`` inherits the SAME tag because the
+        # whole VAD region was decoded as a single language. In single-mode
+        # (the dominant runtime case) the key is absent — we forward None
+        # then strip below so the dict shape stays identical to pre-Phase-2.
+        seg_language = seg.get("language")
         words = seg.get("words") or []
         if not words:
             # Fallback: no per-word times → keep the old behavior for this seg.
             speaker = _find_speaker_by_overlap(
                 seg["start"], seg["end"], speaker_turns,
             )
-            out.append({
+            row: dict = {
                 "start": seg["start"],
                 "end": seg["end"],
                 "text": seg["text"],
                 "speaker": speaker,
-            })
+            }
+            if seg_language is not None:
+                row["language"] = seg_language
+            out.append(row)
             continue
 
         # Group consecutive same-speaker words into emitted sub-segments.
@@ -61,12 +71,12 @@ def _assign_speakers_word_level(
             mid = (w["start"] + w["end"]) / 2.0
             sp = _speaker_at_time(mid, speaker_turns)
             if sp != current_speaker and current_words:
-                _flush_word_group(current_words, current_speaker, out)
+                _flush_word_group(current_words, current_speaker, out, seg_language)
                 current_words = []
             current_speaker = sp
             current_words.append(w)
 
-        _flush_word_group(current_words, current_speaker, out)
+        _flush_word_group(current_words, current_speaker, out, seg_language)
 
     return out
 
@@ -75,6 +85,7 @@ def _flush_word_group(
     words: list[dict],
     speaker: str | None,
     out: list[dict],
+    language: str | None = None,
 ) -> None:
     """Append one sub-segment ({start, end, text, speaker}) for a word run.
 
@@ -86,18 +97,26 @@ def _flush_word_group(
 
     Skips word groups that are empty or pure-whitespace (e.g. a leading
     space token from Whisper's tokenizer that would render as "").
+
+    When ``language`` is not None (Phase 2 mixed-mode), it is propagated to
+    the emitted dict as ``"language"``. In single-mode the parent segment
+    has no language tag, the default None is passed, and we omit the key
+    entirely — keeping the dict shape byte-identical to pre-Phase-2.
     """
     if not words:
         return
     text = "".join(w["word"] for w in words).strip()
     if not text:
         return
-    out.append({
+    row: dict = {
         "start": words[0]["start"],
         "end": words[-1]["end"],
         "text": text,
         "speaker": speaker,
-    })
+    }
+    if language is not None:
+        row["language"] = language
+    out.append(row)
 
 
 def _speaker_at_time(

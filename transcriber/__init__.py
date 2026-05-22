@@ -743,6 +743,11 @@ class Transcriber:
                 # mirrors _decode_chunk_single's pattern. Sub-microsecond
                 # overhead.
                 _check_cancelled(cancel_event)
+                # Count Whisper-emitted segments BEFORE the dedup continue
+                # below — the diagnostic answers "did Whisper find speech
+                # in this VAD region?", which is more useful than "how many
+                # segments survived dedup against the previous chunk".
+                whisper_segs_count += 1
                 # Convert Whisper-segment-local times to absolute times by
                 # adding the VAD region's offset (seg_start_s) AND the
                 # chunk's absolute offset (chunk_start_abs). Two-level
@@ -779,7 +784,6 @@ class Transcriber:
                     # per-segment-language UI) read this key.
                     "language": info.language,
                 })
-                whisper_segs_count += 1
             logger.debug(
                 "vad_seg %d: %.2fs-%.2fs, lang=%s, whisper_segments=%d",
                 seg_idx,
@@ -999,8 +1003,18 @@ class Transcriber:
                 # Strip the heavy ``words`` payload before exposing — the
                 # subtitle formatters only need start/end/text. Keeps the
                 # public segments shape consistent across diarize/no-diarize.
+                # Mixed-mode (Phase 2) attaches a per-segment ``language``
+                # tag the spec promises to forward to SRT/VTT exporters and
+                # future features; preserve it when present. Single-mode
+                # has no language key — the conditional spread keeps the
+                # dict shape byte-identical to pre-Phase-2.
                 self.last_segments = [
-                    {"start": s["start"], "end": s["end"], "text": s["text"]}
+                    {
+                        "start": s["start"],
+                        "end": s["end"],
+                        "text": s["text"],
+                        **({"language": s["language"]} if "language" in s else {}),
+                    }
                     for s in transcript_segments
                 ]
                 return format_timed(transcript_segments)
