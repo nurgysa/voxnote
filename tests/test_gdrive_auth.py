@@ -73,6 +73,50 @@ def test_sign_in_runs_flow_and_caches_credentials(tmp_path, monkeypatch):
     assert on_disk["account_email"] == "tester@example.com"
 
 
+def test_sign_in_still_succeeds_when_userinfo_returns_non_json(tmp_path):
+    """Regression for Codex P2 on PR #40: when Google's userinfo endpoint
+    returns a non-JSON 200 (captive portal, corporate MITM, transient
+    Google outage page), resp.json() raises json.JSONDecodeError — a
+    ValueError, NOT a requests.RequestException. The original except clause
+    only caught RequestException, so the JSON error would bubble up AFTER
+    OAuth succeeded but BEFORE save_tokens() ran — leaving the user with
+    valid credentials in memory that never reached disk.
+
+    _fetch_account_email's contract is best-effort: email is a nice-to-have
+    for the status badge, but its absence must NEVER block sign-in. This
+    test pins that contract.
+    """
+    fake_creds = MagicMock()
+    fake_creds.to_json.return_value = '{"token": "fake-access", "refresh_token": "fake-refresh"}'
+    fake_flow = MagicMock()
+    fake_flow.run_local_server.return_value = fake_creds
+
+    # Mock a response where raise_for_status() passes (HTTP 200) but
+    # json() raises a JSONDecodeError — simulates Google returning an
+    # HTML error page with 200 status (rare but observed in the wild).
+    fake_userinfo = MagicMock()
+    fake_userinfo.raise_for_status.return_value = None  # 200 OK
+    fake_userinfo.json.side_effect = json.JSONDecodeError("Expecting value", "<html>...", 0)
+
+    token_file = tmp_path / "gdrive-token.json"
+    auth = GDriveAuth(token_path=token_file)
+
+    with patch(
+        "google_auth_oauthlib.flow.InstalledAppFlow.from_client_config",
+        return_value=fake_flow,
+    ), patch("gdrive.auth.requests.get", return_value=fake_userinfo):
+        # Must NOT raise — the original buggy code did raise here.
+        auth.sign_in()
+
+    # Sign-in completed successfully despite the email lookup failing.
+    assert auth.is_signed_in() is True
+    assert auth.get_account_email() is None, "Email lookup failed → None"
+    assert token_file.exists(), "Token MUST still be persisted to disk"
+    on_disk = json.loads(token_file.read_text())
+    assert on_disk["token"] == "fake-access"
+    assert on_disk["account_email"] is None
+
+
 def test_load_tokens_returns_false_when_file_missing(tmp_path):
     """If the token file doesn't exist, load_tokens() returns False and
     leaves the instance unsigned. Not an error — this is the first-run

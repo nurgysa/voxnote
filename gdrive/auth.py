@@ -140,7 +140,15 @@ class GDriveAuth:
             )
             resp.raise_for_status()
             return resp.json().get("email")
-        except requests.RequestException as e:
+        except (requests.RequestException, ValueError) as e:
+            # ValueError catches json.JSONDecodeError (non-JSON 200 from a
+            # captive portal / corporate MITM proxy / Google outage page)
+            # AND UnicodeDecodeError (response body in an encoding requests
+            # can't decode). Both are realistic in the wild and would
+            # otherwise bubble up AFTER OAuth succeeded but BEFORE
+            # save_tokens() runs — blocking the user from signing in
+            # despite holding valid credentials. Per the docstring this
+            # function is best-effort: any failure → None, no exception.
             logger.warning("Could not fetch GDrive account email: %s", e)
             return None
 
