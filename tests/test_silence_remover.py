@@ -11,9 +11,12 @@ The wrapper ``remove_silences`` itself isn't tested here — it's a thin
 adapter around faster_whisper's Silero VAD, which is too heavy for unit
 tests. The interesting logic is the inversion in ``_compute_silence_ranges``.
 """
+from unittest.mock import patch
+
+import numpy as np
 import pytest
 
-from silence_remover import _compute_silence_ranges
+from silence_remover import _compute_silence_ranges, remove_silences
 
 # ── Cases lifted straight from the docstring ────────────────────────
 
@@ -116,3 +119,44 @@ def test_multiple_consecutive_sub_eps_gaps_all_dropped():
         total_duration_sec=10.0,
     )
     assert silences == []
+
+
+# ── sampling_rate forwarding (regression for the latent VAD bug) ────
+
+
+def test_remove_silences_forwards_sampling_rate_to_vad():
+    """Regression for the latent VAD sampling_rate bug flagged in PR-A
+    commit 7541f84. ``remove_silences(samples, sample_rate)`` must
+    forward ``sample_rate`` to ``get_speech_timestamps`` so VAD's
+    internal frame-position math matches the audio it's looking at.
+
+    Without the fix the VAD function uses its default 16 kHz, so for
+    native-rate audio (e.g. 44.1 kHz from audio_cutter) silence/speech
+    sample indices come back at the wrong frame rate — UI overlays and
+    trimmed output were skewed by ``actual_sr / 16000``.
+
+    Tight unit test via monkeypatch: patch the VAD entry-point at its
+    lazy-import location and assert the kwarg arrives intact. Avoids
+    the integration-grade question of "does Silero detect this synthetic
+    signal" and pins down exactly what the fix promises.
+    """
+    samples = np.zeros(44_100 * 1, dtype=np.float32)  # 1 second @ 44.1k
+    captured_kwargs = {}
+
+    def fake_get_speech_timestamps(audio, vad_options=None, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []  # no speech needed; we only care about the call shape
+
+    # Patch the symbol at its import site — silence_remover does a lazy
+    # `from faster_whisper.vad import ... get_speech_timestamps` inside
+    # the function, so the patch target is the source module, not
+    # silence_remover.
+    with patch(
+        "faster_whisper.vad.get_speech_timestamps",
+        side_effect=fake_get_speech_timestamps,
+    ):
+        remove_silences(samples, sample_rate=44_100)
+
+    assert captured_kwargs.get("sampling_rate") == 44_100, (
+        f"sample_rate not forwarded to VAD. Got kwargs: {captured_kwargs}"
+    )

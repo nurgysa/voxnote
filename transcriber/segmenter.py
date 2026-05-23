@@ -57,4 +57,21 @@ def vad_split(samples: np.ndarray, sample_rate: int = 16_000) -> list[dict]:
         min_silence_duration_ms=_MIN_SILENCE_MS,
         speech_pad_ms=_SPEECH_PAD_MS,
     )
-    return list(get_speech_timestamps(samples, vad_options, sampling_rate=sample_rate))
+    # Forward sampling_rate so the ms→sample threshold conversions inside
+    # faster-whisper match the input's wall-time rate (CLAUDE.md invariant
+    # #7). Current callers always pass 16 kHz audio (ensure_16khz_mono
+    # upstream — PR #30-#32 chain), so the kwarg is functionally a no-op
+    # today; it's defensive for any future caller that wires this helper
+    # in elsewhere.
+    #
+    # NOTE: Silero VAD's neural model itself only operates at 16 kHz.
+    # faster-whisper does NOT resample non-16k input before feeding the
+    # model — detection quality on non-16k input is poor regardless of
+    # this kwarg. Phase 2's mixed-mode path sidesteps this by ensuring
+    # 16k upstream; future callers passing other rates must resample
+    # first.
+    return list(get_speech_timestamps(
+        samples,
+        vad_options,
+        sampling_rate=sample_rate,
+    ))

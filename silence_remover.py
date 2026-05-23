@@ -78,7 +78,26 @@ def remove_silences(samples: np.ndarray, sample_rate: int) -> SilenceRemovalResu
 
     # Returns a list of dicts like [{"start": int, "end": int}, ...]
     # where start/end are sample indices into `samples`.
-    speech_timestamps = get_speech_timestamps(samples, vad_options)
+    #
+    # Why sampling_rate=sample_rate (CLAUDE.md invariant #7): the kwarg
+    # controls faster-whisper's ms→sample conversions for the speech /
+    # silence threshold logic. Without it, the default 16 kHz means
+    # "500 ms min silence" is computed as 8000 samples, which at 44.1 kHz
+    # input means only ~181 ms actual silence — too permissive. Forwarding
+    # the real rate keeps the thresholds correct in wall time.
+    #
+    # KNOWN LIMITATION: Silero VAD's neural model itself only operates at
+    # 16 kHz; faster-whisper does NOT resample non-16k input before
+    # feeding the model. Detection quality on non-16k audio is poor
+    # regardless of this kwarg — formants land at the wrong frequencies
+    # for Silero's training. Callers that need accurate VAD on non-16k
+    # WAVs should resample to 16 kHz upstream (e.g. via ensure_wav).
+    # Tracked as a separate cleanup.
+    speech_timestamps = get_speech_timestamps(
+        samples,
+        vad_options,
+        sampling_rate=sample_rate,
+    )
 
     # Convert speech sample-ranges to seconds for the UI.
     speech_ranges_sec = [

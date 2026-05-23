@@ -114,3 +114,36 @@ def test_vad_split_micro_blips_merged():
     result = vad_split(samples, sample_rate=16_000)
     # Single region because the micro-silence is below the min_silence threshold.
     assert len(result) == 1, f"Expected 1 group (micro-silence merged), got {len(result)}: {result}"
+
+
+def test_vad_split_forwards_sampling_rate_to_vad():
+    """vad_split must pass its sample_rate parameter through to
+    get_speech_timestamps as the `sampling_rate` kwarg. This keeps the
+    ms→samples threshold conversions inside faster-whisper aligned with
+    the input's wall-time rate.
+
+    Test strategy: monkeypatch get_speech_timestamps and assert the
+    kwarg is forwarded. We don't assert on actual Silero behavior at
+    non-16k because Silero's model is 16k-only and faster-whisper
+    doesn't resample — that limitation is documented in the source's
+    NOTE block and out of scope for this regression test.
+    """
+    from unittest.mock import patch
+
+    samples = np.zeros(44_100, dtype=np.float32)  # 1 second @ 44.1k
+    captured_kwargs: dict = {}
+
+    def fake_get_speech_timestamps(audio, vad_options=None, **kwargs):
+        captured_kwargs.update(kwargs)
+        return []
+
+    # Lazy import inside vad_split — patch at the source module.
+    with patch(
+        "faster_whisper.vad.get_speech_timestamps",
+        side_effect=fake_get_speech_timestamps,
+    ):
+        vad_split(samples, sample_rate=44_100)
+
+    assert captured_kwargs.get("sampling_rate") == 44_100, (
+        f"sample_rate not forwarded to VAD. Got kwargs: {captured_kwargs}"
+    )
