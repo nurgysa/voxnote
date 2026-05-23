@@ -52,9 +52,15 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
    called UPSTREAM of `load_model()` — running ffmpeg after `load_model`
    crashes Windows (consequence of invariant #2). When adding any new
    numpy-into-Whisper code path, gate it the same way.
-   *(`silence_remover.py:81` calls `get_speech_timestamps` on numpy at
-   native sample rate — known latent bug, flagged in PR-A commit
-   `7541f84`'s body, tracked as future cleanup.)*
+8. **Numpy audio → `faster_whisper.vad.get_speech_timestamps` MUST be
+   16 kHz mono.** Silero's neural model is 16-kHz-only and faster-whisper
+   does NOT resample non-16k input — formants land at wrong frequencies
+   and detection collapses. The `sampling_rate` kwarg only fixes
+   ms→sample threshold arithmetic, not detection itself. Use
+   `audio_io.resample_to_16khz_mono(samples, sample_rate)` (the numpy-in
+   sibling of `ensure_16khz_mono`) — short-circuits when input is already
+   16 kHz, ffmpeg pipe otherwise. `silence_remover.remove_silences`
+   does this internally; future callers should follow the same pattern.
 
 ## Code conventions
 
@@ -84,9 +90,10 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 334 tests
+pytest                       # must show green; baseline = 342 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
-                             # cloud/UI tests, +4 segmenter, +15 mixed-mode)
+                             # cloud/UI tests, +4 segmenter, +15 mixed-mode,
+                             # +8 from sampling-rate / VAD-resample fixes)
 python -m ruff check .       # must be clean
 ```
 
