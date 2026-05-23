@@ -90,10 +90,12 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 342 tests
+pytest                       # must show green; baseline = 356 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
                              # cloud/UI tests, +4 segmenter, +15 mixed-mode,
-                             # +8 from sampling-rate / VAD-resample fixes)
+                             # +8 from sampling-rate / VAD-resample fixes,
+                             # +10 from GDrive auth (Phase 7.0 PR-A #40/#41),
+                             # +4 from Settings-section smoke (Phase 7.0 PR-B #42))
 python -m ruff check .       # must be clean
 ```
 
@@ -123,6 +125,7 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 | Silence removal | `silence_remover.py` |
 | Logging setup | `logging_setup.py` |
 | Persistent settings | `config.json` (template: `config.example.json`); helper: `utils.save_config` |
+| Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.audio-transcriber/gdrive-token.json`) |
 
 ## Branch + PR workflow
 
@@ -156,10 +159,25 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
   real-cost display via `_format_real_cost`, humanized errors via
   `tasks/errors.humanize()`, and Phase 6.5 keyboard shortcuts
   (Ctrl+N, Ctrl+Shift+E, Ctrl+Shift+S, F5, Esc) in the extract dialog.
-- **Phase 7** (design spec only, commit `bbfa10f`): Google Drive
-  backup + sync, brief at `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`.
-  Implementation not started — backup-first (one-way upload + manual
-  restore), text-only scope (~100 KB per snapshot, no audio).
+- **Phase 7.0** (May 2026, shipped): Google Drive auth + Settings UI.
+  Shipped via PR #40 (PR-A `gdrive/auth.py` foundation) + #41 (Codex
+  P2 fix — JSON decode in userinfo lookup) + #42 (PR-B Settings UI
+  integration). New `gdrive/` package with `auth.py::GDriveAuth`
+  wrapping `google_auth_oauthlib.flow.InstalledAppFlow` for the
+  desktop OAuth loopback dance; tokens cached at
+  `~/.audio-transcriber/gdrive-token.json` (outside `config.json`
+  because the latter gets backed up to Drive — chicken/egg). Scope
+  is `drive.file` (non-sensitive — no Google manual verification
+  needed). Settings dialog gained a "Google Drive" section (row=9)
+  with status badge + Войти/Выйти buttons; sign-in runs in a daemon
+  thread to keep the UI responsive while the browser blocks. Spec at
+  `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`, plan
+  at `docs/superpowers/plans/2026-05-23-gdrive-phase-7.0-auth.md`.
+  Note: `CLIENT_ID` / `CLIENT_SECRET` constants in `gdrive/auth.py`
+  are placeholder strings — manual smoke + real-GCP wire-up deferred
+  to a tiny follow-up commit once the GCP project Pre-flight is done
+  (B.5 in the plan). Phase 7.1+ (backup, restore, scheduler, audio
+  opt-in) remain unstarted.
 - **Code-switching KZ+RU+EN Phase 1** (May 2026): shipped via 4 PRs
   (#21 PR-A foundation, #22 PR-B Gladia + Deepgram + capability gate,
   #23 PR-C AssemblyAI + Speechmatics + OpenAI Whisper, #24 PR-D Settings
