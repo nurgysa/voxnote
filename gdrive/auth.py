@@ -20,6 +20,8 @@ import os
 from pathlib import Path
 from typing import Optional
 
+import requests
+
 logger = logging.getLogger(__name__)
 
 
@@ -57,3 +59,86 @@ class GDriveAuth:
         self.token_path = token_path or _default_token_path()
         self._credentials = None       # populated by load_tokens / sign_in
         self._account_email = None     # populated by sign_in (from id_token)
+
+    def sign_in(self) -> None:
+        """Run the OAuth desktop flow. Opens the user's browser to the
+        Google consent screen and blocks until they finish (or cancel).
+
+        Must run in a worker thread — `run_local_server()` blocks. UI
+        code is responsible for the threading.
+        """
+        # Lazy import — Google libs are heavy (~30 MB collectively); only
+        # pay the import cost when the user actually clicks Войти.
+        from google_auth_oauthlib.flow import InstalledAppFlow
+
+        client_config = {
+            "installed": {
+                "client_id": CLIENT_ID,
+                "client_secret": CLIENT_SECRET,
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "redirect_uris": ["http://localhost"],
+            }
+        }
+        flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
+        # port=0 → pick a random free localhost port (RFC 8252 §7.3).
+        credentials = flow.run_local_server(port=0, open_browser=True)
+        self._credentials = credentials
+
+        # Resolve account email via OAuth2 userinfo (drive.file scope alone
+        # doesn't include profile claims, but Google's userinfo endpoint
+        # accepts any valid access token).
+        self._account_email = self._fetch_account_email(credentials.token)
+
+        self.save_tokens()
+
+    def is_signed_in(self) -> bool:
+        """True iff we have credentials in memory (loaded from disk or
+        freshly obtained). Does NOT verify the token is still valid on
+        the server — refresh logic does that lazily on first API call."""
+        return self._credentials is not None
+
+    def get_account_email(self) -> Optional[str]:
+        """Email of the signed-in account, or None if not signed in."""
+        return self._account_email
+
+    def get_credentials(self):
+        """Return the live google.oauth2.credentials.Credentials object
+        (or None). Phase 7.1's backup module will call this and build a
+        Drive API client from it."""
+        return self._credentials
+
+    def save_tokens(self) -> None:
+        """Persist credentials + account_email to token_path. Caller is
+        responsible for ensuring _credentials is non-None."""
+        if self._credentials is None:
+            raise RuntimeError("Cannot save tokens before sign_in()")
+        self.token_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = json.loads(self._credentials.to_json())
+        payload["account_email"] = self._account_email
+        self.token_path.write_text(json.dumps(payload, indent=2))
+        # Defensive: tighten perms on POSIX. No-op on Windows.
+        try:
+            os.chmod(self.token_path, 0o600)
+        except OSError:
+            pass   # Windows or filesystem doesn't support — fine, file is in user home
+
+    @staticmethod
+    def _fetch_account_email(access_token: str) -> Optional[str]:
+        """Call Google's OAuth2 v3 userinfo endpoint to get the email.
+
+        Returns None on any failure — having the email is nice-to-have
+        for the Settings status badge, but not having it doesn't break
+        sign-in (token is still valid).
+        """
+        try:
+            resp = requests.get(
+                "https://www.googleapis.com/oauth2/v3/userinfo",
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json().get("email")
+        except requests.RequestException as e:
+            logger.warning("Could not fetch GDrive account email: %s", e)
+            return None
