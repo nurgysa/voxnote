@@ -18,7 +18,6 @@ import json
 import logging
 import os
 from pathlib import Path
-from typing import Optional
 
 import requests
 from google.auth.exceptions import RefreshError
@@ -57,7 +56,7 @@ class GDriveAuth:
     explicitly if you need cached creds at startup.
     """
 
-    def __init__(self, token_path: Optional[Path] = None) -> None:
+    def __init__(self, token_path: Path | None = None) -> None:
         self.token_path = token_path or _default_token_path()
         self._credentials = None       # populated by load_tokens / sign_in
         self._account_email = None     # populated by sign_in (from id_token)
@@ -100,7 +99,7 @@ class GDriveAuth:
         the server — refresh logic does that lazily on first API call."""
         return self._credentials is not None
 
-    def get_account_email(self) -> Optional[str]:
+    def get_account_email(self) -> str | None:
         """Email of the signed-in account, or None if not signed in."""
         return self._account_email
 
@@ -126,7 +125,7 @@ class GDriveAuth:
             pass   # Windows or filesystem doesn't support — fine, file is in user home
 
     @staticmethod
-    def _fetch_account_email(access_token: str) -> Optional[str]:
+    def _fetch_account_email(access_token: str) -> str | None:
         """Call Google's OAuth2 v3 userinfo endpoint to get the email.
 
         Returns None on any failure — having the email is nice-to-have

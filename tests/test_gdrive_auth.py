@@ -16,7 +16,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from gdrive.auth import GDriveAuth, TOKEN_FILENAME
+from gdrive.auth import TOKEN_FILENAME, GDriveAuth
 
 
 def test_token_path_under_user_home(tmp_path, monkeypatch):
