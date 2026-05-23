@@ -173,18 +173,22 @@ def resample_to_16khz_mono(samples: np.ndarray, sample_rate: int) -> np.ndarray:
         is already 16 kHz.
 
     Raises:
-        ValueError: if ``samples`` is not 1-D.
+        ValueError: if ``samples`` is not 1-D — checked BEFORE the
+            ``sample_rate == SAMPLE_RATE`` short-circuit so a caller
+            mistake (e.g. forgetting to channel-average a stereo array
+            before passing 16 kHz input) fails fast here with an
+            actionable error, not later inside VAD with a confusing one.
         RuntimeError: with the tail of ffmpeg's stderr if the subprocess
             fails.
     """
-    if sample_rate == SAMPLE_RATE:
-        return samples
-
     if samples.ndim != 1:
         raise ValueError(
             f"resample_to_16khz_mono expects 1-D mono input, "
             f"got shape {samples.shape}"
         )
+
+    if sample_rate == SAMPLE_RATE:
+        return samples
 
     # Ensure float32 — Python's bytes() conversion below otherwise produces
     # the wrong byte layout for other dtypes. cheap no-op when already f32.

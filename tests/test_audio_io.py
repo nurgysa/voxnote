@@ -198,6 +198,16 @@ def test_resample_to_16khz_mono_rejects_multi_dim_input():
         resample_to_16khz_mono(stereo, sample_rate=44_100)
 
 
+def test_resample_to_16khz_mono_rejects_stereo_at_16k():
+    """Regression for Codex finding on PR #35: the ndim check must run
+    BEFORE the sample_rate==16k short-circuit, otherwise a stereo 16k
+    input silently bypasses the helper and produces a confusing VAD
+    error later. Forces fail-fast at the helper boundary."""
+    stereo_16k = np.zeros((16_000 * 2, 2), dtype=np.float32)
+    with pytest.raises(ValueError, match="1-D mono"):
+        resample_to_16khz_mono(stereo_16k, sample_rate=16_000)
+
+
 @pytest.mark.skipif(
     not _FFMPEG_AVAILABLE,
     reason="ffmpeg binary unavailable (CI runners without ffmpeg skip the resample path)",
