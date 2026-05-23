@@ -311,8 +311,19 @@ def test_sign_in_runs_flow_and_caches_credentials(tmp_path, monkeypatch):
     token_file = tmp_path / "gdrive-token.json"
     auth = GDriveAuth(token_path=token_file)
 
-    with patch("gdrive.auth.InstalledAppFlow.from_client_config", return_value=fake_flow), \
-         patch("gdrive.auth.requests.get", return_value=fake_userinfo):
+    # NOTE on patch targets: sign_in() does a LAZY import of InstalledAppFlow
+    # inside the function (`from google_auth_oauthlib.flow import
+    # InstalledAppFlow`) to keep the ~30 MB Google libs out of cold start.
+    # A lazy import does NOT create an attribute on gdrive.auth, so
+    # `patch("gdrive.auth.InstalledAppFlow.from_client_config")` would fail
+    # with AttributeError. Patch the SOURCE module where the name is looked
+    # up at import time. `requests`, by contrast, is imported at module top
+    # in gdrive/auth.py — so gdrive.auth.requests is a real attribute and
+    # patching there works.
+    with patch(
+        "google_auth_oauthlib.flow.InstalledAppFlow.from_client_config",
+        return_value=fake_flow,
+    ), patch("gdrive.auth.requests.get", return_value=fake_userinfo):
         auth.sign_in()
 
     assert auth.is_signed_in() is True
