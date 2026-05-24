@@ -20,5 +20,6 @@
   "gdrive_account_email": "",
   "gdrive_last_backup": "",
   "gdrive_backup_frequency": "off",
+  "gdrive_root_folder_id": "",
   "appearance_mode": "Системная"
 }
