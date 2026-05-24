@@ -73,3 +73,28 @@ def test_builder_creates_gdrive_vars():
         "app._gdrive_auth.load_tokens()",
     ):
         assert marker in src, f"builder.py source missing {marker!r}"
+
+
+def test_settings_dialog_has_backup_now_button_and_handlers():
+    """Phase 7.1: 'Сделать backup сейчас' button + 3 handlers must
+    exist in SettingsDialog source."""
+    src = _read(os.path.join("ui", "dialogs", "settings.py"))
+    assert "Сделать backup сейчас" in src, (
+        "Button label literal missing — Russian UX string check"
+    )
+    for method in (
+        "_handle_gdrive_backup_now",
+        "_on_gdrive_backup_success",
+        "_on_gdrive_backup_failure",
+    ):
+        assert f"def {method}(self" in src, f"Missing handler: {method}"
+
+
+def test_settings_mixin_has_backup_success_callback():
+    """Phase 7.1: _on_gdrive_backup_succeeded must exist on
+    SettingsMixin (called by the dialog's success worker)."""
+    src = _read(os.path.join("ui", "app", "settings_mixin.py"))
+    assert "def _on_gdrive_backup_succeeded(" in src
+    # Sanity: it must persist both keys.
+    assert '"gdrive_root_folder_id"' in src
+    assert '"gdrive_last_backup"' in src

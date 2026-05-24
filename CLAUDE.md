@@ -90,12 +90,16 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 356 tests
+pytest                       # must show green; baseline = 379 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
                              # cloud/UI tests, +4 segmenter, +15 mixed-mode,
                              # +8 from sampling-rate / VAD-resample fixes,
                              # +10 from GDrive auth (Phase 7.0 PR-A #40/#41),
-                             # +4 from Settings-section smoke (Phase 7.0 PR-B #42))
+                             # +4 from Settings-section smoke (Phase 7.0 PR-B #42),
+                             # +11 from Drive client wrapper + root-parent fix
+                             #   (Phase 7.1 PR-A #45 + #46),
+                             # +10 from backup orchestrator (Phase 7.1 PR-B #47),
+                             # +2 from backup-button smoke (Phase 7.1 PR-C))
 python -m ruff check .       # must be clean
 ```
 
@@ -126,6 +130,8 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 | Logging setup | `logging_setup.py` |
 | Persistent settings | `config.json` (template: `config.example.json`); helper: `utils.save_config` |
 | Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.audio-transcriber/gdrive-token.json`) |
+| Google Drive API wrapper (Phase 7.1) | `gdrive/client.py` (`DriveClient` — thin wrapper over `googleapiclient.discovery.build`; find/create folder + upload file) |
+| Google Drive backup orchestrator (Phase 7.1) | `gdrive/backup.py` (`run_backup` — composes `redact_config` + `zip_history` + `build_manifest` + `DriveClient`) |
 
 ## Branch + PR workflow
 
@@ -159,6 +165,27 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
   real-cost display via `_format_real_cost`, humanized errors via
   `tasks/errors.humanize()`, and Phase 6.5 keyboard shortcuts
   (Ctrl+N, Ctrl+Shift+E, Ctrl+Shift+S, F5, Esc) in the extract dialog.
+- **Phase 7.1** (May 2026, shipped): Google Drive manual backup.
+  Shipped via PR-A `gdrive/client.py` Drive API v3 wrapper (#45 +
+  #46 Codex P2 fix for root-parent folder filter), PR-B
+  `gdrive/backup.py` orchestrator (#47), PR-C Settings UI button +
+  config key (this PR). New "Сделать backup сейчас" button under
+  the Google Drive section of Settings; click triggers a worker
+  thread that ensures auth is valid, zips `history/` (excluding
+  `*.wav/*.mp3/*.m4a` per text-only scope), redacts API keys
+  from `config.json`, builds a SHA-256 + size manifest, and
+  uploads all three files to `audio-transcriber-backup/<ISO-ts>/`
+  on Drive. New config keys: `gdrive_root_folder_id` (cached
+  after first backup to skip find_or_create round-trip),
+  `gdrive_last_backup` (ISO snapshot name; Phase 7.3 scheduler
+  reads it). Spec at
+  `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`,
+  plan at `docs/superpowers/plans/2026-05-23-gdrive-phase-7.1-backup.md`.
+  `DriveClient` imported lazily via a sentinel-pattern inside
+  `gdrive/backup.py` so `from gdrive.backup import run_backup`
+  stays cheap AND `patch("gdrive.backup.DriveClient", ...)` works
+  cleanly in tests. Phase 7.2 (restore), 7.3 (auto-schedule),
+  7.4 (audio opt-in) remain unstarted.
 - **Phase 7.0** (May 2026, shipped): Google Drive auth + Settings UI.
   Shipped via PR #40 (PR-A `gdrive/auth.py` foundation) + #41 (Codex
   P2 fix — JSON decode in userinfo lookup) + #42 (PR-B Settings UI

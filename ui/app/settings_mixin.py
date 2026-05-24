@@ -168,6 +168,24 @@ class SettingsMixin:
         self._config["gdrive_enabled"] = False
         save_config(self._config)
 
+    def _on_gdrive_backup_succeeded(
+        self,
+        *,
+        root_folder_id: str,
+        snapshot_name: str,
+    ) -> None:
+        """Called from the Settings dialog after a successful backup.
+
+        Persists two config keys:
+          * gdrive_root_folder_id — cached so the NEXT backup skips
+            the find_or_create_folder round-trip
+          * gdrive_last_backup — ISO snapshot name, used by the
+            Phase 7.3 scheduler's "is overdue?" check
+        """
+        self._config["gdrive_root_folder_id"] = root_folder_id
+        self._config["gdrive_last_backup"] = snapshot_name
+        save_config(self._config)
+
     def _on_cloud_provider_changed(self, value: str) -> None:
         self._config["cloud_provider"] = value
         # Swap the visible key field to the one stored for this provider

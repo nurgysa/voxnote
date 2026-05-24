@@ -827,18 +827,37 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         self._gdrive_signout_btn.grid(row=1, column=2, padx=(4, 4), pady=6, sticky="e")
 
+        # Backup-now row (Phase 7.1) — button + status label. Status is
+        # local (not bound to a parent Var) because backup status is a
+        # transient dialog-only concern; persistence of
+        # gdrive_last_backup happens on success via the mixin callback.
+        self._gdrive_backup_btn = tonal_button(
+            section, text="Сделать backup сейчас",
+            command=self._handle_gdrive_backup_now, width=200,
+        )
+        self._gdrive_backup_btn.grid(
+            row=2, column=0, columnspan=2, padx=4, pady=6, sticky="w",
+        )
+        self._gdrive_backup_status = label(section, "", anchor="w")
+        self._gdrive_backup_status.grid(
+            row=2, column=2, padx=(8, 4), pady=6, sticky="ew",
+        )
+
         # Initial button enabled-state reflects current sign-in state.
         self._refresh_gdrive_button_state()
 
     def _refresh_gdrive_button_state(self) -> None:
-        """Войти is enabled iff not signed in; Выйти iff signed in. Called
-        after every state change so the UI matches the GDriveAuth state."""
+        """Войти is enabled iff not signed in; Выйти + Сделать backup
+        iff signed in. Called after every state change so the UI
+        matches the GDriveAuth state."""
         if self._parent._gdrive_auth.is_signed_in():
             self._gdrive_signin_btn.configure(state="disabled")
             self._gdrive_signout_btn.configure(state="normal")
+            self._gdrive_backup_btn.configure(state="normal")
         else:
             self._gdrive_signin_btn.configure(state="normal")
             self._gdrive_signout_btn.configure(state="disabled")
+            self._gdrive_backup_btn.configure(state="disabled")
 
     def _handle_gdrive_signin(self) -> None:
         """Войти clicked — spawn a worker that runs sign_in() (blocks on
@@ -875,4 +894,83 @@ class SettingsDialog(ctk.CTkToplevel):
     def _handle_gdrive_signout(self) -> None:
         """Выйти clicked — sync; sign_out() is fast (file delete)."""
         self._parent._on_gdrive_signed_out()
+        self._refresh_gdrive_button_state()
+
+    # ── Phase 7.1: Сделать backup сейчас ──────────────────────────────
+
+    def _handle_gdrive_backup_now(self) -> None:
+        """Сделать backup clicked — spawn a worker that runs
+        gdrive.backup.run_backup. Disable button immediately so a
+        double-click can't trigger two parallel backups (Drive's
+        find_or_create_folder isn't atomic — concurrent runs could
+        create duplicate top folders)."""
+        self._gdrive_backup_btn.configure(
+            state="disabled", text="Backup в процессе...",
+        )
+        self._gdrive_backup_status.configure(
+            text="Запускаю...", text_color=TEXT_SECONDARY,
+        )
+
+        def worker():
+            try:
+                # Lazy imports — keep dialog construction independent
+                # of gdrive.backup's googleapiclient import chain.
+                import tempfile
+
+                from gdrive.backup import run_backup
+
+                # Status callback marshals each status string back to
+                # the Tk main thread (CTk widgets are not thread-safe).
+                def _status(msg: str) -> None:
+                    self.after(0, self._gdrive_backup_status.configure, {
+                        "text": msg, "text_color": TEXT_SECONDARY,
+                    })
+
+                work_dir = tempfile.mkdtemp(prefix="gdrive-backup-")
+                result = run_backup(
+                    auth=self._parent._gdrive_auth,
+                    config=self._parent._config,
+                    history_dir="history",
+                    work_dir=work_dir,
+                    on_status=_status,
+                )
+                self.after(0, lambda: self._on_gdrive_backup_success(result))
+            except Exception as e:   # network, quota, RefreshError, disk full — all surface here
+                _logger.exception("GDrive backup failed: %s", e)
+                # Hoist str(e) before lambda — Python except-scope rule
+                # (same gotcha as _handle_gdrive_signin in Phase 7.0).
+                error_msg = str(e)
+                self.after(0, lambda: self._on_gdrive_backup_failure(error_msg))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_gdrive_backup_success(self, result: dict) -> None:
+        """Worker → main thread: persist new config keys + show ✓ message
+        + re-enable button."""
+        self._parent._on_gdrive_backup_succeeded(
+            root_folder_id=result["root_folder_id"],
+            snapshot_name=result["snapshot_name"],
+        )
+        n_files = len(result.get("uploaded", {}))
+        self._gdrive_backup_status.configure(
+            text=f"✓ Готово ({n_files} файла, snapshot {result['snapshot_name']})",
+            text_color=GREEN,
+        )
+        self._gdrive_backup_btn.configure(
+            state="normal", text="Сделать backup сейчас",
+        )
+
+    def _on_gdrive_backup_failure(self, error_msg: str) -> None:
+        """Worker → main thread: surface error in status + re-enable
+        button. Truncate to 100 chars so a long Drive error message
+        doesn't break dialog layout."""
+        self._gdrive_backup_status.configure(
+            text=f"✗ {error_msg[:100]}", text_color=RED,
+        )
+        self._gdrive_backup_btn.configure(
+            state="normal", text="Сделать backup сейчас",
+        )
+        # Refresh sign-in state — RefreshError inside run_backup
+        # triggers ensure_valid_credentials → sign_out, so the button
+        # states need to flip back to "not signed in".
         self._refresh_gdrive_button_state()
