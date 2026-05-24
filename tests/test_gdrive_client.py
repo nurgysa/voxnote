@@ -78,6 +78,52 @@ def test_find_folder_returns_none_when_no_match():
         assert client.find_folder("does-not-exist") is None
 
 
+def test_find_folder_no_parent_constrains_to_drive_root():
+    """Regression for Codex P2 on PR #45: when parent_id is None,
+    find_folder must constrain the search to Drive's "root" folder,
+    not search the entire Drive.
+
+    Without this constraint, a folder named "audio-transcriber-backup"
+    that the user has elsewhere in their Drive (shared from a
+    colleague, leftover from another tool, etc.) would shadow the
+    real one — causing subsequent backups to attach to the wrong
+    tree and breaking restore discoverability.
+
+    The fix: when parent_id is None, the query must include
+    "'root' in parents". This pins that behavior so a future refactor
+    can't silently drop the predicate.
+    """
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        client.find_folder("audio-transcriber-backup")
+
+    call_kwargs = fake_service.files.return_value.list.call_args.kwargs
+    assert "'root' in parents" in call_kwargs["q"], (
+        f"Expected 'root' in parents predicate in query, got: {call_kwargs['q']!r}"
+    )
+
+
+def test_find_folder_with_parent_id_uses_that_parent():
+    """When parent_id is given explicitly, the query uses it (NOT 'root').
+    Complement to the no-parent regression test: ensures the fix
+    doesn't accidentally hardcode 'root' for all calls."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        client.find_folder("2026-05-24T13-00-00", parent_id="explicit-parent-id")
+
+    call_kwargs = fake_service.files.return_value.list.call_args.kwargs
+    assert "'explicit-parent-id' in parents" in call_kwargs["q"]
+    assert "'root' in parents" not in call_kwargs["q"]
+
+
 def test_create_folder_calls_files_create_with_correct_metadata():
     """create_folder(name, parent_id) calls files().create with the
     folder MIME, the name, and the parent (if given). Returns the new

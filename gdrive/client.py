@@ -78,8 +78,18 @@ class DriveClient:
             f"mimeType = '{FOLDER_MIME}'",
             "trashed = false",
         ]
-        if parent_id is not None:
-            q_parts.append(f"'{parent_id}' in parents")
+        # Parent constraint: Drive's "root" is a magic folder id always
+        # pointing at the user's My Drive root. Without this branch,
+        # `parent_id=None` would omit the predicate entirely and match
+        # the name ANYWHERE in the user's Drive — including a folder
+        # called "audio-transcriber-backup" that was created by some
+        # other tool, shared from a colleague, or left over from an
+        # earlier backup attempt. That would then become the cached
+        # gdrive_root_folder_id, and subsequent backups would attach
+        # snapshots to the wrong tree, breaking restore discoverability.
+        # Codex caught the contract drift on PR #45.
+        parent_target = parent_id if parent_id is not None else "root"
+        q_parts.append(f"'{parent_target}' in parents")
         query = " and ".join(q_parts)
 
         service = self._get_service()
