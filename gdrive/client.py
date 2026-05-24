@@ -90,3 +90,34 @@ class DriveClient:
         ).execute()
         files = resp.get("files", [])
         return files[0]["id"] if files else None
+
+    def create_folder(self, name: str, parent_id: str | None = None) -> str:
+        """Create a Drive folder. Returns the new folder's id.
+
+        Drive API semantics: a "folder" is a file with mimeType
+        application/vnd.google-apps.folder. The `parents` field is a
+        list (Drive technically supports multiple parents but we never
+        use that). Folder names are not unique — caller's job to dedup
+        via find_folder first if uniqueness matters.
+        """
+        body: dict = {
+            "name": name,
+            "mimeType": FOLDER_MIME,
+        }
+        if parent_id is not None:
+            body["parents"] = [parent_id]
+
+        service = self._get_service()
+        resp = service.files().create(body=body, fields="id").execute()
+        return resp["id"]
+
+    def find_or_create_folder(self, name: str, parent_id: str | None = None) -> str:
+        """find_folder; if None, create_folder. Returns the (existing or
+        new) folder id. Used by the orchestrator to ensure the
+        ``audio-transcriber-backup`` top folder exists exactly once,
+        then create a timestamped child for each snapshot.
+        """
+        existing = self.find_folder(name, parent_id=parent_id)
+        if existing is not None:
+            return existing
+        return self.create_folder(name, parent_id=parent_id)

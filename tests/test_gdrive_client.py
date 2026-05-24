@@ -76,3 +76,79 @@ def test_find_folder_returns_none_when_no_match():
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
         assert client.find_folder("does-not-exist") is None
+
+
+def test_create_folder_calls_files_create_with_correct_metadata():
+    """create_folder(name, parent_id) calls files().create with the
+    folder MIME, the name, and the parent (if given). Returns the new
+    folder id from the response."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.create.return_value.execute.return_value = {
+        "id": "newly-created-id"
+    }
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        result = client.create_folder("audio-transcriber-backup")
+
+    assert result == "newly-created-id"
+    fake_service.files.return_value.create.assert_called_once()
+    body = fake_service.files.return_value.create.call_args.kwargs["body"]
+    assert body == {
+        "name": "audio-transcriber-backup",
+        "mimeType": FOLDER_MIME,
+    }
+
+
+def test_create_folder_with_parent_includes_parents_field():
+    """When parent_id is given, the metadata body includes it under
+    the `parents` list per Drive API conventions."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.create.return_value.execute.return_value = {
+        "id": "child-id"
+    }
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        client.create_folder("2026-05-23T22-00-00", parent_id="root-folder-id")
+
+    body = fake_service.files.return_value.create.call_args.kwargs["body"]
+    assert body["parents"] == ["root-folder-id"]
+
+
+def test_find_or_create_folder_returns_existing_when_match():
+    """If find_folder returns an id, find_or_create_folder returns it
+    without calling create. Avoids creating duplicate folders on
+    repeat backups."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {
+        "files": [{"id": "existing-id", "name": "audio-transcriber-backup"}]
+    }
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        result = client.find_or_create_folder("audio-transcriber-backup")
+
+    assert result == "existing-id"
+    fake_service.files.return_value.create.assert_not_called()
+
+
+def test_find_or_create_folder_creates_when_no_match():
+    """If find_folder returns None, find_or_create_folder calls create
+    and returns the new id."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+    fake_service.files.return_value.create.return_value.execute.return_value = {
+        "id": "freshly-made-id"
+    }
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        result = client.find_or_create_folder("audio-transcriber-backup")
+
+    assert result == "freshly-made-id"
+    fake_service.files.return_value.create.assert_called_once()
