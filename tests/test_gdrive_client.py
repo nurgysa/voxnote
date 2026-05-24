@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from gdrive.client import DriveClient
+from gdrive.client import FOLDER_MIME, DriveClient
 
 
 def test_constructor_takes_credentials_and_stores_them():
@@ -24,3 +24,55 @@ def test_constructor_takes_credentials_and_stores_them():
     client = DriveClient(fake_creds)
     assert client._credentials is fake_creds
     assert client._service is None, "Service should be lazy"
+
+
+def test_get_service_builds_lazily_and_caches():
+    """First call to _get_service() builds the discovery client; second
+    call returns the cached instance without rebuilding. Important
+    because discovery makes an HTTP GET to /v3/discovery (or hits the
+    cached static schema) — we don't want N calls per backup."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service) as mock_build:
+        first = client._get_service()
+        second = client._get_service()
+
+    assert first is fake_service
+    assert second is fake_service
+    mock_build.assert_called_once_with("drive", "v3", credentials=fake_creds, cache_discovery=False)
+
+
+def test_find_folder_returns_id_when_match_exists():
+    """find_folder runs files().list with a name + mimeType + parent
+    query. Returns the first matching folder's id, or None."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {
+        "files": [{"id": "folder-id-123", "name": "audio-transcriber-backup"}]
+    }
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        result = client.find_folder("audio-transcriber-backup")
+
+    assert result == "folder-id-123"
+    # Verify the query was correct (escapes name, filters by folder mime + non-trashed).
+    fake_service.files.return_value.list.assert_called_once()
+    call_kwargs = fake_service.files.return_value.list.call_args.kwargs
+    assert "name = 'audio-transcriber-backup'" in call_kwargs["q"]
+    assert FOLDER_MIME in call_kwargs["q"]
+    assert "trashed = false" in call_kwargs["q"]
+
+
+def test_find_folder_returns_none_when_no_match():
+    """No folder by that name → None, not exception. Caller decides
+    whether to create one."""
+    fake_creds = MagicMock()
+    fake_service = MagicMock()
+    fake_service.files.return_value.list.return_value.execute.return_value = {"files": []}
+    client = DriveClient(fake_creds)
+
+    with patch("googleapiclient.discovery.build", return_value=fake_service):
+        assert client.find_folder("does-not-exist") is None
