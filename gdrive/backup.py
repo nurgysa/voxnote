@@ -170,3 +170,172 @@ def build_manifest(
         "transcripts_count": transcripts_count,
         "audio_included": audio_included,
     }
+
+
+# DriveClient is imported lazily inside run_backup so importing
+# `gdrive.backup` from anywhere (e.g. Settings dialog at import time)
+# doesn't drag in googleapiclient. The test fixture patches
+# `gdrive.backup.DriveClient` — that name binding is created by the
+# `from .client import DriveClient` line INSIDE run_backup, which
+# happens at first call. To make the patch work, we declare the
+# binding at module scope via the lazy-loader trick: `DriveClient`
+# is a sentinel module-level None; run_backup overwrites it on first
+# entry. Tests `patch("gdrive.backup.DriveClient", ...)` after the
+# first import-time pass — they intercept the SAME module attribute.
+DriveClient = None   # populated lazily on first run_backup() call
+
+
+def run_backup(
+    *,
+    auth,
+    config: dict[str, Any],
+    history_dir,
+    work_dir,
+    app_version: str = "phase-7.1",
+    on_status=None,
+) -> dict[str, Any]:
+    """Run a complete backup: zip history, redact config, upload all
+    three payload files to a fresh timestamped folder on Drive.
+
+    Args:
+        auth: `gdrive.auth.GDriveAuth` instance (signed in).
+        config: in-memory app config dict — NOT mutated.
+        history_dir: pathlib.Path or str — the local history/ folder.
+        work_dir: temp scratch dir for staging files. Created if
+            missing. Caller is responsible for cleanup (tempfile.
+            mkdtemp + shutil.rmtree on success, leave on failure for
+            debug).
+        app_version: free-form version string written to manifest.
+        on_status: optional callable(str) for progress updates. Called
+            with Russian-language phase strings like
+            "Создаю архив истории...", "Загружаю manifest.json...",
+            etc. Settings dialog's worker uses this to update the
+            status badge.
+
+    Returns:
+        Dict with root_folder_id, snapshot_folder_id, snapshot_name,
+        and uploaded (mapping arcname → Drive file id). Caller
+        persists root_folder_id to config so subsequent backups
+        skip the find/create-top-folder dance.
+
+    Raises:
+        Any googleapiclient error (network, auth, quota) propagates
+        unchanged. RefreshError specifically: ensure_valid_credentials
+        re-raises it after sign_out, so the caller's status badge
+        can prompt re-login.
+    """
+    import json
+    import shutil
+    import socket
+    from pathlib import Path
+
+    # Lazy import — see module-scope DriveClient sentinel comment.
+    global DriveClient
+    if DriveClient is None:
+        from .client import DriveClient as _DriveClient
+        DriveClient = _DriveClient
+
+    work = Path(work_dir)
+    work.mkdir(parents=True, exist_ok=True)
+
+    history_path = Path(history_dir)
+
+    def _say(msg: str) -> None:
+        logger.info("backup: %s", msg)
+        if on_status is not None:
+            try:
+                on_status(msg)
+            except Exception:
+                # on_status is a UI callback; we never let it crash
+                # the backup. The status label not updating is a
+                # cosmetic issue, not a data-integrity one.
+                logger.exception("on_status callback failed (ignored)")
+
+    # 1. Validate auth — surfaces RefreshError early so we don't waste
+    #    time zipping if the user has revoked access in Google account
+    #    settings.
+    _say("Проверяю авторизацию Google Drive...")
+    auth.ensure_valid_credentials()
+    credentials = auth.get_credentials()
+
+    # 2. Stage history.zip
+    _say("Создаю архив истории...")
+    history_zip = work / "history.zip"
+    zip_history(history_path, history_zip)
+
+    # 3. Stage redacted config.json
+    _say("Готовлю конфиг (API ключи удалены)...")
+    redacted_cfg = redact_config(config)
+    config_path = work / "config.json"
+    config_path.write_text(json.dumps(redacted_cfg, indent=2, ensure_ascii=False))
+
+    # 4. Build + stage manifest.json
+    _say("Считаю контрольные суммы...")
+    snapshot_name = _iso_timestamp()
+    manifest = build_manifest(
+        files={
+            "config.json": config_path,
+            "history.zip": history_zip,
+        },
+        transcripts_count=_count_history_subdirs(history_path),
+        app_version=app_version,
+        host=socket.gethostname(),
+        created_at=snapshot_name,
+        audio_included=False,
+    )
+    manifest_path = work / "manifest.json"
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False))
+
+    # 5. Drive: find/create root + create snapshot folder
+    client = DriveClient(credentials)
+    _say("Подключаюсь к Google Drive...")
+    root_id = client.find_or_create_folder("audio-transcriber-backup")
+    _say(f"Создаю snapshot {snapshot_name}...")
+    snapshot_id = client.create_folder(snapshot_name, parent_id=root_id)
+
+    # 6. Upload three files in deterministic order. Manifest first so
+    #    a partial-failure observer can see what should have been
+    #    uploaded (Phase 7.2 restore reads manifest.json first).
+    uploaded = {}
+    # Imports local to keep module-top minimal.
+    from .client import JSON_MIME, ZIP_MIME
+
+    for arcname, local, mime in (
+        ("manifest.json", manifest_path, JSON_MIME),
+        ("config.json", config_path, JSON_MIME),
+        ("history.zip", history_zip, ZIP_MIME),
+    ):
+        _say(f"Загружаю {arcname}...")
+        file_id = client.upload_file(
+            local_path=local,
+            drive_name=arcname,
+            parent_id=snapshot_id,
+            mime_type=mime,
+        )
+        uploaded[arcname] = file_id
+
+    _say("✓ Backup готов")
+
+    # 7. Cleanup work dir on success (failure path leaves it for debug).
+    try:
+        shutil.rmtree(work)
+    except OSError as e:
+        logger.warning("Could not clean up work dir %s: %s", work, e)
+
+    return {
+        "root_folder_id": root_id,
+        "snapshot_folder_id": snapshot_id,
+        "snapshot_name": snapshot_name,
+        "uploaded": uploaded,
+    }
+
+
+def _count_history_subdirs(history_dir) -> int:
+    """Count immediate subdirectories of history/ — each one is a
+    transcribed meeting. Used for the manifest's transcripts_count
+    field (informational; restore UI shows it before downloading)."""
+    from pathlib import Path
+    p = Path(history_dir)
+    if not p.exists():
+        return 0
+    return sum(1 for child in p.iterdir() if child.is_dir())

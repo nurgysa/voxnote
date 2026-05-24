@@ -195,3 +195,117 @@ def test_build_manifest_serializable_to_json(tmp_path):
 
     serialised = json.dumps(manifest)
     assert json.loads(serialised) == manifest
+
+
+def test_run_backup_calls_client_in_correct_order(tmp_path):
+    """run_backup must call DriveClient in this order:
+      1. find_or_create_folder("audio-transcriber-backup")  → root_id
+      2. create_folder(<iso-timestamp>, parent_id=root_id)  → snap_id
+      3. upload_file(manifest.json, ..., parent_id=snap_id) → manifest_id
+      4. upload_file(config.json,   ..., parent_id=snap_id) → config_id
+      5. upload_file(history.zip,   ..., parent_id=snap_id) → zip_id
+
+    Returns a dict with root_id + snapshot_id + uploaded file ids."""
+    from gdrive.backup import run_backup
+
+    # Set up a real on-disk history dir + config so zip_history and
+    # build_manifest do real work (lighter-weight than mocking them).
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+    (history_dir / "meeting").mkdir()
+    (history_dir / "meeting" / "transcript.txt").write_text("hello")
+
+    config = {"language": "ru", "openrouter_api_key": "secret"}
+
+    # Mock the auth + client.
+    fake_auth = MagicMock()
+    fake_auth.ensure_valid_credentials.return_value = None
+    fake_auth.get_credentials.return_value = MagicMock()
+
+    fake_client = MagicMock()
+    fake_client.find_or_create_folder.return_value = "root-folder-id"
+    fake_client.create_folder.return_value = "snapshot-folder-id"
+    fake_client.upload_file.side_effect = ["manifest-id", "config-id", "zip-id"]
+
+    with patch("gdrive.backup.DriveClient", return_value=fake_client), \
+         patch("gdrive.backup._iso_timestamp", return_value="2026-05-23T22-30-45"):
+        result = run_backup(
+            auth=fake_auth,
+            config=config,
+            history_dir=history_dir,
+            work_dir=tmp_path / "work",
+        )
+
+    # ensure_valid_credentials was called before any Drive op.
+    fake_auth.ensure_valid_credentials.assert_called_once()
+    fake_auth.get_credentials.assert_called_once()
+
+    # Folder creation in the right order.
+    fake_client.find_or_create_folder.assert_called_once_with("audio-transcriber-backup")
+    fake_client.create_folder.assert_called_once_with(
+        "2026-05-23T22-30-45", parent_id="root-folder-id",
+    )
+
+    # 3 uploads to the snapshot folder.
+    assert fake_client.upload_file.call_count == 3
+    upload_names = [c.kwargs["drive_name"] for c in fake_client.upload_file.call_args_list]
+    assert upload_names == ["manifest.json", "config.json", "history.zip"]
+    for call in fake_client.upload_file.call_args_list:
+        assert call.kwargs["parent_id"] == "snapshot-folder-id"
+
+    # Result dict shape.
+    assert result == {
+        "root_folder_id": "root-folder-id",
+        "snapshot_folder_id": "snapshot-folder-id",
+        "snapshot_name": "2026-05-23T22-30-45",
+        "uploaded": {
+            "manifest.json": "manifest-id",
+            "config.json": "config-id",
+            "history.zip": "zip-id",
+        },
+    }
+
+
+def test_run_backup_redacts_uploaded_config(tmp_path):
+    """Variant of the redaction test that captures uploaded file
+    CONTENT during the upload call (run_backup cleans up work_dir
+    on success, so paths recorded by side_effect can't be read
+    after-the-fact)."""
+    from gdrive.backup import run_backup
+
+    history_dir = tmp_path / "history"
+    history_dir.mkdir()
+
+    config = {
+        "language": "ru",
+        "openrouter_api_key": "real-secret",
+        "cloud_api_keys": {"AssemblyAI": "real-asm-key"},
+    }
+    config_before = copy.deepcopy(config)
+
+    fake_auth = MagicMock()
+    fake_auth.get_credentials.return_value = MagicMock()
+    fake_client = MagicMock()
+    fake_client.find_or_create_folder.return_value = "root"
+    fake_client.create_folder.return_value = "snap"
+
+    uploaded_content = {}
+    def capture_upload(*, local_path, drive_name, **_):
+        # Read while file still exists (before run_backup's rmtree).
+        uploaded_content[drive_name] = open(local_path, encoding="utf-8").read()
+        return "fake-id"
+    fake_client.upload_file.side_effect = capture_upload
+
+    work_dir = tmp_path / "work"
+    with patch("gdrive.backup.DriveClient", return_value=fake_client), \
+         patch("gdrive.backup._iso_timestamp", return_value="2026-05-23T22-30-45"):
+        run_backup(auth=fake_auth, config=config, history_dir=history_dir, work_dir=work_dir)
+
+    # Local config unmodified.
+    assert config == config_before
+
+    # Uploaded config.json has <REDACTED> placeholders.
+    on_disk = json.loads(uploaded_content["config.json"])
+    assert on_disk["openrouter_api_key"] == REDACTION_PLACEHOLDER
+    assert on_disk["cloud_api_keys"] == {"AssemblyAI": REDACTION_PLACEHOLDER}
+    assert on_disk["language"] == "ru"
