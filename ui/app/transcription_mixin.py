@@ -177,22 +177,45 @@ class TranscriptionMixin:
             self._set_running(False)
             return
 
-        # Diarization gate: some providers (e.g. OpenAI Whisper) don't
-        # return speaker labels. Ask the user whether to fall back to
-        # transcription-only rather than silently dropping the request.
+        # Diarization gate (Phase 6.5 PR-B): when cloud provider lacks
+        # native diarization, the Transcriber routes to the hybrid path
+        # (cloud STT + local pyannote). Ask the user to confirm because
+        # local pyannote needs a HF token and a working GPU/CPU, and
+        # changes the cost profile (no cloud diariz fee but local
+        # compute used). The actual routing happens inside
+        # Transcriber.transcribe(); we just confirm intent here.
         if cloud_enabled and diarize:
             from providers import PROVIDERS
             provider_cls = PROVIDERS.get(cloud_provider_name)
             if (provider_cls is not None
                     and not provider_cls.supports_diarization):
+                # Local pyannote needs a HF token — surface the issue
+                # here so we don't enter the hybrid path and crash 30s
+                # in when the worker fails to download the model.
+                if not hf_token:
+                    messagebox.showwarning(
+                        "Нужен токен для локальной диаризации",
+                        f"Провайдер {cloud_provider_name} не делает "
+                        f"диаризацию сам — в этом режиме спикеры "
+                        f"определяются локально через pyannote.\n\n"
+                        f"Для этого нужен Hugging Face токен.\n"
+                        f"1. Зарегистрируйтесь на huggingface.co\n"
+                        f"2. Примите условия pyannote/speaker-diarization-3.1\n"
+                        f"3. Создайте токен и вставьте его в Настройки.",
+                    )
+                    self._set_running(False)
+                    return
                 if not messagebox.askokcancel(
-                    "Диаризация недоступна",
-                    f"Провайдер {cloud_provider_name} не поддерживает "
-                    f"определение спикеров. Продолжить без меток?",
+                    "Гибридная диаризация",
+                    f"Провайдер {cloud_provider_name} не делает "
+                    f"диаризацию сам. Запустить локальную диаризацию "
+                    f"через pyannote параллельно с облачной "
+                    f"транскрибацией?\n\n"
+                    f"Текст придёт из {cloud_provider_name}, спикеры "
+                    f"— с твоего GPU/CPU.",
                 ):
                     self._set_running(False)
                     return
-                diarize = False
 
         # HF Token is only required for the LOCAL diarization path. Cloud
         # providers (AssemblyAI, …) carry their own auth via cloud_api_key.
