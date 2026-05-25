@@ -78,6 +78,13 @@ class SettingsMixin:
         self._config["normalize_audio"] = bool(self._normalize_var.get())
         save_config(self._config)
 
+    def _on_denoise_changed(self) -> None:
+        """Persist the RNNoise denoise toggle. BooleanVar supplies no arg.
+        Opt-in (default False) because aggressive denoising can clip soft
+        consonants on already-clean recordings."""
+        self._config["denoise_audio"] = bool(self._denoise_var.get())
+        save_config(self._config)
+
     def _on_transcribe_device_changed(self, value: str) -> None:
         """
         Persist the choice and invalidate the cached Transcriber.

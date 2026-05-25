@@ -312,6 +312,22 @@ class SettingsDialog(ctk.CTkToplevel):
         )
         check.grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
 
+        # RNNoise (arnndn) — opt-in noise suppression. Default off; the
+        # neural denoiser can clip soft consonants on already-clean
+        # recordings. ~85 KB model lazy-downloaded on first use.
+        denoise_check = ctk.CTkCheckBox(
+            section, text="Подавлять шум (RNNoise — для записей с фоном)",
+            variable=self._parent._denoise_var,
+            command=self._parent._on_denoise_changed,
+            font=ctk.CTkFont(family=FONT, size=13),
+            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
+            border_color=BORDER, corner_radius=4,
+            checkbox_height=20, checkbox_width=20,
+        )
+        denoise_check.grid(
+            row=1, column=0, columnspan=2, padx=4, pady=6, sticky="w",
+        )
+
     def _build_cloud_section(self, parent) -> None:
         section = self._section_card(parent, "Облако (опционально)", row=4)
 

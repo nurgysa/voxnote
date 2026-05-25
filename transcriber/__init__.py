@@ -493,6 +493,7 @@ class Transcriber:
         max_speakers: int | None,
         cloud_provider: str,
         cloud_api_key: str,
+        denoise_audio: bool = False,
         on_progress,
         on_status,
         cancel_event,
@@ -536,49 +537,75 @@ class Transcriber:
             max_speakers=max_speakers,
         )
 
-        # Chunker dispatch: when the file would exceed the provider's
-        # documented upload cap, split it at silence boundaries and
-        # transcribe each chunk. needs_chunking() returns False when
-        # the provider declares no cap (Deepgram, AssemblyAI, etc.) so
-        # those paths skip the chunker entirely and upload as-is.
-        from transcriber.cloud_chunker import needs_chunking, transcribe_chunked
+        # Optional pre-denoise: when the user opted in via Settings, run
+        # the source through RNNoise (via ensure_wav's denoise flag)
+        # BEFORE handing audio to the provider or chunker. Cleaned WAV is
+        # a temp file we own — cleanup in the finally below.
+        #
+        # normalize=False here on purpose: cloud providers expect the
+        # original loudness profile (their gateways apply their own gain
+        # normalization). Only the denoising stage runs.
+        upload_path = audio_path
+        upload_is_temp = False
+        if denoise_audio:
+            if on_status:
+                on_status("Подготовка аудио (подавление шума)...")
+            upload_path, upload_is_temp = ensure_wav(
+                audio_path, normalize=False, denoise=True,
+            )
 
         try:
-            if needs_chunking(audio_path, provider):
-                result = transcribe_chunked(
-                    audio_path=audio_path,
-                    provider=provider,
-                    options=opts,
-                    on_status=on_status,
-                    on_progress=on_progress,
-                    cancel_event=cancel_event,
-                )
-            else:
-                result = provider.transcribe(
-                    audio_path,
-                    opts,
-                    on_status=on_status,
-                    on_progress=on_progress,
-                    cancel_event=cancel_event,
-                )
-        except ProviderError as e:
-            # Surface the user-facing message verbatim, preserving the
-            # original cause for the crash log via __cause__.
-            raise RuntimeError(str(e)) from e
+            # Chunker dispatch: when the file would exceed the provider's
+            # documented upload cap, split it at silence boundaries and
+            # transcribe each chunk. needs_chunking() returns False when
+            # the provider declares no cap (Deepgram, AssemblyAI, etc.) so
+            # those paths skip the chunker entirely and upload as-is.
+            from transcriber.cloud_chunker import needs_chunking, transcribe_chunked
 
-        # Cache for SRT/VTT export (mirrors the local path's
-        # ``self.last_segments = transcript_segments`` line below).
-        self.last_segments = result.segments
+            try:
+                if needs_chunking(upload_path, provider):
+                    result = transcribe_chunked(
+                        audio_path=upload_path,
+                        provider=provider,
+                        options=opts,
+                        on_status=on_status,
+                        on_progress=on_progress,
+                        cancel_event=cancel_event,
+                    )
+                else:
+                    result = provider.transcribe(
+                        upload_path,
+                        opts,
+                        on_status=on_status,
+                        on_progress=on_progress,
+                        cancel_event=cancel_event,
+                    )
+            except ProviderError as e:
+                # Surface the user-facing message verbatim, preserving the
+                # original cause for the crash log via __cause__.
+                raise RuntimeError(str(e)) from e
 
-        if on_progress:
-            on_progress(100.0)
+            # Cache for SRT/VTT export (mirrors the local path's
+            # ``self.last_segments = transcript_segments`` line below).
+            self.last_segments = result.segments
 
-        # Pick the same formatter the local path uses, based on whether
-        # any segment carries a speaker label.
-        has_speakers = any("speaker" in seg for seg in result.segments)
-        if diarize and has_speakers:
-            return format_diarized(result.segments)
-        return format_timed(result.segments)
+            if on_progress:
+                on_progress(100.0)
+
+            # Pick the same formatter the local path uses, based on whether
+            # any segment carries a speaker label.
+            has_speakers = any("speaker" in seg for seg in result.segments)
+            if diarize and has_speakers:
+                return format_diarized(result.segments)
+            return format_timed(result.segments)
+        finally:
+            # Always clean the denoised tempfile — success, cancel, error,
+            # or any provider failure.
+            if upload_is_temp:
+                try:
+                    os.unlink(upload_path)
+                except OSError:
+                    pass
 
     def _decode_chunk_single(
         self,
@@ -835,6 +862,7 @@ class Transcriber:
         max_speakers: int | None = None,
         voice_lib_path: str | None = None,
         normalize_audio: bool = True,
+        denoise_audio: bool = False,
         cloud_provider: str | None = None,
         cloud_api_key: str | None = None,
         on_progress=None,
@@ -897,6 +925,7 @@ class Transcriber:
                 max_speakers=max_speakers,
                 cloud_provider=cloud_provider,
                 cloud_api_key=cloud_api_key or "",
+                denoise_audio=denoise_audio,
                 on_progress=on_progress,
                 on_status=on_status,
                 cancel_event=cancel_event,
@@ -931,12 +960,15 @@ class Transcriber:
         # probes/loads them cleanly. We then load Whisper after the WAV is
         # ready. Total user-visible time is the same; only the order changed.
         if on_status:
-            on_status(
-                "Подготовка аудио (нормализация громкости)..."
-                if normalize_audio
-                else "Подготовка аудио (ffmpeg)..."
-            )
-        wav_path, wav_is_temp = ensure_wav(audio_path, normalize=normalize_audio)
+            if denoise_audio:
+                on_status("Подготовка аудио (подавление шума + нормализация)...")
+            elif normalize_audio:
+                on_status("Подготовка аудио (нормализация громкости)...")
+            else:
+                on_status("Подготовка аудио (ffmpeg)...")
+        wav_path, wav_is_temp = ensure_wav(
+            audio_path, normalize=normalize_audio, denoise=denoise_audio,
+        )
         chunks_dir = None
         diarize_handle: dict | None = None
         try:

@@ -121,6 +121,7 @@ class TranscriptionMixin:
             self._spk_count_var.get(), (None, None, None),
         )
         normalize_audio = bool(self._normalize_var.get())
+        denoise_audio = bool(self._denoise_var.get())
 
         # Voice library → temp JSON file for the diarize subprocess to read.
         # Written only when diarize=True AND voices exist; otherwise no path
@@ -239,6 +240,7 @@ class TranscriptionMixin:
             args=(
                 self._audio_path, lang_code, diarize, hf_token, hotwords,
                 num_speakers, min_speakers, max_speakers, normalize_audio,
+                denoise_audio,
                 voice_lib_path, diarize_device,
                 cloud_provider, cloud_api_key,
             ),
@@ -273,6 +275,7 @@ class TranscriptionMixin:
                            min_speakers: int | None = None,
                            max_speakers: int | None = None,
                            normalize_audio: bool = True,
+                           denoise_audio: bool = False,
                            voice_lib_path: str | None = None,
                            diarize_device: str = "auto",
                            cloud_provider: str | None = None,
@@ -306,6 +309,7 @@ class TranscriptionMixin:
                 max_speakers=max_speakers,
                 voice_lib_path=voice_lib_path,
                 normalize_audio=normalize_audio,
+                denoise_audio=denoise_audio,
                 cloud_provider=cloud_provider,
                 cloud_api_key=cloud_api_key,
                 on_progress=self._on_progress,

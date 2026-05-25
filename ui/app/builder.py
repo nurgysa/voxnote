@@ -140,6 +140,13 @@ def build_ui(app):
     app._normalize_var = ctk.BooleanVar(
         value=bool(app._config.get("normalize_audio", True)),
     )
+    # RNNoise (arnndn) — opt-in, default off. When enabled, ensure_wav
+    # inserts an RNNoise stage between highpass and loudnorm in the
+    # ffmpeg filter chain (local path) AND the cloud path runs a
+    # pre-denoise pass before sending audio to the provider/chunker.
+    app._denoise_var = ctk.BooleanVar(
+        value=bool(app._config.get("denoise_audio", False)),
+    )
     saved_tr_dev = app._config.get("transcribe_device", "Авто")
     app._tr_device_var = ctk.StringVar(
         value=saved_tr_dev if saved_tr_dev in DEVICES else "Авто",

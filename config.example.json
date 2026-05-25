@@ -6,6 +6,7 @@
   "model": "large-v3 (максимум)",
   "speaker_count": "Авто",
   "normalize_audio": true,
+  "denoise_audio": false,
   "transcribe_device": "Авто",
   "diarize_device": "Авто",
   "cloud_enabled": false,

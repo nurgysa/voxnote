@@ -13,6 +13,8 @@ Callers that need torch tensors (e.g. diarize_worker.py) convert numpy
 import os
 import subprocess
 import tempfile
+import urllib.error
+import urllib.request
 
 import numpy as np
 import soundfile as sf
@@ -22,10 +24,83 @@ import soundfile as sf
 # not a normal configuration knob, it's a "rewrite the pipeline" decision.
 SAMPLE_RATE = 16_000
 
+# RNNoise model URL. The GregorR/rnnoise-models repo hosts several
+# community-trained models in the .rnnn binary format that ffmpeg's
+# arnndn filter expects. somnolent-hogwash is a general-purpose model
+# widely cited for voice cleanup (referenced in Discord/OBS plugin
+# examples). License: GPL-3 per repo LICENSE — lazy-downloaded on first
+# use so the binary doesn't sit in this repo, keeping the rest of our
+# code license-unencumbered.
+_RNNOISE_MODEL_URL = (
+    "https://github.com/GregorR/rnnoise-models/raw/master/"
+    "somnolent-hogwash-2018-09-01/sh.rnnn"
+)
+_RNNOISE_MODEL_BASENAME = "sh.rnnn"
+
+
+def _get_rnnoise_model_path() -> str:
+    """Path to the RNNoise .rnnn model file for ffmpeg's ``arnndn`` filter.
+
+    Lazy-downloads from ``_RNNOISE_MODEL_URL`` on first call and caches in
+    ``~/.audio-transcriber/models/rnnoise/sh.rnnn``. Returns the cached path
+    on subsequent calls — one-time ~85 KB download per machine.
+
+    Why lazy and not bundled in the repo: the model is GPL-3 (per
+    GregorR/rnnoise-models LICENSE). Bundling would create a license-virality
+    surface for the rest of this codebase; downloading on first use keeps
+    the binary out of the repo while still giving the user a one-click
+    experience (no manual install steps).
+
+    Cache directory matches the existing convention used by
+    ``gdrive/auth.py`` for its OAuth token cache:
+    ``~/.audio-transcriber/<subsystem>/``.
+
+    Raises:
+        RuntimeError: network failure, disk full, or any other write
+            problem. Message is Russian-actionable so the user can recover
+            via Settings (disable denoising) or by retrying once network
+            is back. The partial file (if any) is removed before raising.
+    """
+    cache_dir = os.path.join(
+        os.path.expanduser("~"),
+        ".audio-transcriber", "models", "rnnoise",
+    )
+    cache_path = os.path.join(cache_dir, _RNNOISE_MODEL_BASENAME)
+    if os.path.isfile(cache_path):
+        return cache_path
+
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        with urllib.request.urlopen(_RNNOISE_MODEL_URL, timeout=30) as resp:
+            data = resp.read()
+        # Write to a temp file in the same dir then atomically rename, so a
+        # crash mid-write doesn't leave a half-cached file that later passes
+        # the os.path.isfile check but breaks ffmpeg with cryptic errors.
+        tmp_path = cache_path + ".partial"
+        with open(tmp_path, "wb") as f:
+            f.write(data)
+        os.replace(tmp_path, cache_path)
+    except (OSError, urllib.error.URLError) as e:
+        # Best-effort cleanup of the .partial file before raising.
+        for path in (cache_path + ".partial", cache_path):
+            if os.path.isfile(path):
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
+        raise RuntimeError(
+            f"Не удалось загрузить RNNoise модель для подавления шума: {e}. "
+            f"Отключи «Подавлять шум» в Настройках или проверь сетевое "
+            f"соединение и попробуй снова."
+        ) from e
+
+    return cache_path
+
 
 def ensure_wav(
     audio_path: str,
     normalize: bool = True,
+    denoise: bool = False,
 ) -> tuple[str, bool]:
     """Ensure ``audio_path`` points at a 16 kHz mono WAV readable end-to-end.
 
@@ -34,10 +109,15 @@ def ensure_wav(
 
     Args:
         audio_path: source audio (any format ffmpeg can decode).
-        normalize: if True (default), apply a speech-tuned filter chain
-            before writing the WAV (see below). Pass False for code paths
+        normalize: if True (default), apply EBU R128 loudness normalization
+            after the (always-on) highpass. Pass False for code paths
             that need the raw waveform — e.g. silence-based cutting, where
             normalization would invalidate the threshold.
+        denoise: if True, insert an ``arnndn`` (RNNoise) denoise stage
+            between the highpass and loudnorm. Default False — opt-in
+            because RNNoise can over-aggressively cut consonants on
+            already-clean recordings. The .rnnn model is lazy-downloaded
+            on first use via ``_get_rnnoise_model_path``.
 
     Why this exists at all: faster-whisper decodes audio via pyav (FFmpeg
     bindings). Some MP3 files with broken headers cause pyav to silently
@@ -55,23 +135,39 @@ def ensure_wav(
     additionally strips AC hum, mic rumble, and table thumps below speech
     fundamentals (~85 Hz) — effectively free.
 
-    Filter chain when ``normalize=True``:
-      * ``highpass=f=80`` — eliminate sub-speech rumble.
-      * ``loudnorm=I=-16:TP=-1.5:LRA=11`` — EBU R128 to streaming-standard
-        target (YouTube/Zoom/podcast). Single-pass: faster than the two-pass
-        mastering form and quality-equivalent for speech.
+    Why optional denoising: RNNoise (Mozilla/Xiph) is a neural denoiser
+    trained on hundreds of hours of speech-vs-noise pairs. On recordings
+    with keyboard clicks, fan hum, paper rustling, or breath noise on a
+    close mic, it gives a clear quality lift for downstream Whisper WER.
+    On already-clean studio-style recordings it can introduce subtle
+    artifacts (clipped consonants, "musical noise") that slightly hurt
+    quality. Hence opt-in via Settings.
 
-    When ``normalize=False`` AND the input is already ``.wav``, the file is
-    returned as-is with ``is_temp=False`` (no ffmpeg invocation, no copy).
+    Filter chain ordering (any combination is supported):
+      * ``highpass=f=80`` — always on; eliminates sub-speech rumble before
+        downstream stages can waste cycles on it.
+      * ``arnndn=m=<model_path>`` — only when ``denoise=True``. Runs on
+        the high-passed signal so the noise model isn't confused by
+        infrasonic energy.
+      * ``loudnorm=I=-16:TP=-1.5:LRA=11`` — only when ``normalize=True``.
+        Runs LAST so its measurement reflects the cleaned signal, not
+        the noise floor. Single-pass: faster than the two-pass mastering
+        form and quality-equivalent for speech.
+
+    Short-circuit: when input is already ``.wav`` AND ``normalize=False``
+    AND ``denoise=False``, returns the input path as-is (no ffmpeg
+    invocation, no copy). Any non-default flag forces a re-encode.
 
     Raises ``RuntimeError`` with the tail of ffmpeg's stderr if conversion
-    fails. The temp file (if any) is cleaned up before raising.
+    fails, or a Russian-actionable message if the RNNoise model download
+    fails on first ``denoise=True`` call. The temp file (if any) is
+    cleaned up before raising.
     """
     is_wav = os.path.splitext(audio_path)[1].lower() == ".wav"
-    # Short-circuit only when nothing needs to happen: input is already a WAV
-    # AND the caller opted out of filtering. Any other combination requires
-    # an ffmpeg pass.
-    if is_wav and not normalize:
+    # Short-circuit only when nothing needs to happen: input is already a
+    # WAV AND the caller opted out of all filtering. Any other combination
+    # — normalize, denoise, or non-WAV input — requires an ffmpeg pass.
+    if is_wav and not normalize and not denoise:
         return audio_path, False
 
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
@@ -79,8 +175,18 @@ def ensure_wav(
     cmd: list[str] = [
         "ffmpeg", "-v", "error", "-y", "-i", audio_path,
     ]
+    # Build the filter chain in the documented order. highpass is always
+    # present because (a) it's effectively free, (b) it improves both
+    # downstream stages, and (c) it preserves existing behavior for callers
+    # that pass only normalize=True.
+    filters: list[str] = ["highpass=f=80"]
+    if denoise:
+        # Model fetch happens here, not at module load — so users who
+        # never enable denoising never pay the download cost.
+        filters.append(f"arnndn=m={_get_rnnoise_model_path()}")
     if normalize:
-        cmd += ["-af", "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11"]
+        filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
+    cmd += ["-af", ",".join(filters)]
     cmd += ["-ar", str(SAMPLE_RATE), "-ac", "1", tmp.name]
     try:
         subprocess.run(cmd, capture_output=True, check=True)

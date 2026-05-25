@@ -12,6 +12,8 @@ ffmpeg-free test.
 """
 import os
 import shutil
+from unittest.mock import MagicMock, patch
+from urllib.error import URLError
 
 import numpy as np
 import pytest
@@ -20,6 +22,7 @@ import soundfile as sf
 from audio_io import (
     SAMPLE_RATE,
     _ffmpeg_time,
+    _get_rnnoise_model_path,
     ensure_16khz_mono,
     ensure_wav,
     get_duration_s,
@@ -238,3 +241,227 @@ def test_resample_to_16khz_mono_resamples_48000_to_16000():
     assert abs(len(result) - 32_000) <= 5, (
         f"Resampled length {len(result)} not within ±5 of expected 32000"
     )
+
+
+# ── _get_rnnoise_model_path (lazy download) ────────────────────────
+
+
+def _mock_urlopen_returning(data: bytes) -> MagicMock:
+    """Helper: build a urlopen mock that returns the given bytes."""
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = data
+    # Context-manager protocol for the `with urlopen(...) as resp:` pattern.
+    mock_resp.__enter__ = lambda self: self
+    mock_resp.__exit__ = lambda *a: None
+    return mock_resp
+
+
+def test_get_rnnoise_model_path_downloads_when_missing(tmp_path):
+    """First call (cache empty): fetches from GitHub, writes to
+    ~/.audio-transcriber/models/rnnoise/, returns the cached path."""
+    fake_home = str(tmp_path / "fake_home")
+    fake_model_bytes = b"x" * 85_000  # ~85 KB matches real model size
+
+    mock_resp = _mock_urlopen_returning(fake_model_bytes)
+
+    with patch("audio_io.os.path.expanduser", return_value=fake_home), \
+         patch("audio_io.urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        path = _get_rnnoise_model_path()
+
+    # Cache path is under the patched home dir, in the documented subdir.
+    assert path.startswith(fake_home)
+    assert "rnnoise" in path
+    assert path.endswith(".rnnn")
+    # File was actually written with the downloaded bytes.
+    with open(path, "rb") as f:
+        assert f.read() == fake_model_bytes
+    # urlopen called exactly once.
+    assert mock_open.call_count == 1
+
+
+def test_get_rnnoise_model_path_uses_cache_on_second_call(tmp_path):
+    """Second call (cache populated): no network roundtrip, returns
+    the existing path. This is the hot-path on every transcription
+    once the user has enabled denoising once."""
+    fake_home = str(tmp_path / "fake_home")
+    fake_model_bytes = b"x" * 1024
+
+    mock_resp = _mock_urlopen_returning(fake_model_bytes)
+
+    with patch("audio_io.os.path.expanduser", return_value=fake_home), \
+         patch("audio_io.urllib.request.urlopen", return_value=mock_resp) as mock_open:
+        first_path = _get_rnnoise_model_path()
+        second_path = _get_rnnoise_model_path()
+
+    assert first_path == second_path
+    # urlopen called ONCE total, not once per call.
+    assert mock_open.call_count == 1
+
+
+def test_get_rnnoise_model_path_raises_actionable_on_network_error(tmp_path):
+    """Network failure → RuntimeError with a Russian message telling
+    the user how to recover (disable denoise OR check network).
+    No half-written cache file left behind."""
+    fake_home = str(tmp_path / "fake_home")
+
+    with patch("audio_io.os.path.expanduser", return_value=fake_home), \
+         patch(
+            "audio_io.urllib.request.urlopen",
+            side_effect=URLError("Network unreachable"),
+         ):
+        with pytest.raises(RuntimeError, match="RNNoise"):
+            _get_rnnoise_model_path()
+
+    # No partial file lingers.
+    cache_dir = os.path.join(fake_home, ".audio-transcriber", "models", "rnnoise")
+    if os.path.isdir(cache_dir):
+        assert not any(
+            f.endswith(".rnnn") for f in os.listdir(cache_dir)
+        ), "Partial .rnnn file should not be left behind on download failure"
+
+
+# ── ensure_wav with denoise parameter ─────────────────────────────
+
+
+def _captured_filter_chain(captured_cmd: list) -> str | None:
+    """Pull the -af argument value out of a captured ffmpeg argv list.
+    Returns None if no -af was present (e.g. short-circuit path)."""
+    try:
+        af_idx = captured_cmd.index("-af")
+    except ValueError:
+        return None
+    return captured_cmd[af_idx + 1]
+
+
+def test_ensure_wav_denoise_false_preserves_existing_filter_chain(tmp_path):
+    """Regression guard: denoise=False (the default) produces exactly
+    the existing highpass + loudnorm chain. Without this test, a typo
+    in the filter-chain construction could silently change every
+    transcription's preprocessing — affecting WER on every recording."""
+    src = tmp_path / "in.mp3"
+    src.write_bytes(b"fake mp3")
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        # Write a tiny "output" so the caller doesn't blow up trying to
+        # read a missing temp file (it doesn't read, but be safe).
+        out_idx = -1
+        with open(cmd[out_idx], "wb") as f:
+            f.write(b"")
+        return MagicMock(returncode=0)
+
+    with patch("audio_io.subprocess.run", side_effect=fake_run):
+        out_path, _is_temp = ensure_wav(str(src), normalize=True, denoise=False)
+
+    chain = _captured_filter_chain(captured["cmd"])
+    assert chain == "highpass=f=80,loudnorm=I=-16:TP=-1.5:LRA=11"
+    # Cleanup the fake output.
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
+
+
+def test_ensure_wav_denoise_true_inserts_arnndn_between_highpass_and_loudnorm(tmp_path):
+    """denoise=True: filter chain becomes
+    highpass → arnndn=m=<model> → loudnorm. Order matters:
+    - highpass first cuts subsonic noise so arnndn doesn't waste cycles
+    - arnndn cleans speech-band noise
+    - loudnorm runs LAST on the cleaned signal so its measurement
+      isn't skewed by the noise floor"""
+    src = tmp_path / "in.mp3"
+    src.write_bytes(b"fake mp3")
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        with open(cmd[-1], "wb") as f:
+            f.write(b"")
+        return MagicMock(returncode=0)
+
+    with patch("audio_io.subprocess.run", side_effect=fake_run), \
+         patch(
+            "audio_io._get_rnnoise_model_path",
+            return_value="/fake/path/sh.rnnn",
+         ):
+        out_path, _is_temp = ensure_wav(str(src), normalize=True, denoise=True)
+
+    chain = _captured_filter_chain(captured["cmd"])
+    assert chain is not None
+    # Order: highpass, arnndn, loudnorm.
+    parts = chain.split(",")
+    assert parts[0] == "highpass=f=80"
+    assert parts[1] == "arnndn=m=/fake/path/sh.rnnn"
+    assert parts[2] == "loudnorm=I=-16:TP=-1.5:LRA=11"
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
+
+
+def test_ensure_wav_denoise_true_normalize_false_omits_loudnorm(tmp_path):
+    """User can ask for denoise without loudnorm — e.g. if they
+    pre-normalize externally. Chain becomes highpass + arnndn only."""
+    src = tmp_path / "in.mp3"
+    src.write_bytes(b"fake mp3")
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        with open(cmd[-1], "wb") as f:
+            f.write(b"")
+        return MagicMock(returncode=0)
+
+    with patch("audio_io.subprocess.run", side_effect=fake_run), \
+         patch(
+            "audio_io._get_rnnoise_model_path",
+            return_value="/fake/path/sh.rnnn",
+         ):
+        out_path, _is_temp = ensure_wav(
+            str(src), normalize=False, denoise=True,
+        )
+
+    chain = _captured_filter_chain(captured["cmd"])
+    assert chain == "highpass=f=80,arnndn=m=/fake/path/sh.rnnn"
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
+
+
+def test_ensure_wav_wav_input_normalize_false_denoise_true_runs_ffmpeg(tmp_path):
+    """The short-circuit (return input as-is) only fires when BOTH
+    normalize=False AND denoise=False. denoise=True alone must still
+    trigger an ffmpeg pass — even for a .wav input — otherwise the
+    user-requested denoising silently won't happen."""
+    src = tmp_path / "raw.wav"
+    _write_silent_wav(src, 0.5)
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        with open(cmd[-1], "wb") as f:
+            f.write(b"")
+        return MagicMock(returncode=0)
+
+    with patch("audio_io.subprocess.run", side_effect=fake_run), \
+         patch(
+            "audio_io._get_rnnoise_model_path",
+            return_value="/fake/path/sh.rnnn",
+         ):
+        out_path, is_temp = ensure_wav(
+            str(src), normalize=False, denoise=True,
+        )
+
+    # ffmpeg WAS invoked (not the short-circuit) — captured["cmd"] populated.
+    assert "cmd" in captured, "ffmpeg should have been called for denoise=True"
+    chain = _captured_filter_chain(captured["cmd"])
+    assert chain == "highpass=f=80,arnndn=m=/fake/path/sh.rnnn"
+    # And the returned path is a NEW temp file, not the input.
+    assert out_path != str(src)
+    assert is_temp is True
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
