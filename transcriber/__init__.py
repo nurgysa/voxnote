@@ -275,22 +275,32 @@ class Transcriber:
         voice_lib_path: str | None = None,
         on_progress=None,
         on_status=None,
+        wait_for_go: bool = True,
     ) -> dict:
         """
-        Spawn the diarization subprocess in WAIT mode and return a handle.
+        Spawn the diarization subprocess and return a handle.
 
-        The subprocess starts immediately but blocks on stdin for a "GO\\n"
-        line before doing any GPU work, so it can be launched in parallel
-        with Whisper transcription. While waiting it imports pyannote,
-        downloads/loads weights to CPU, and decodes the audio file — all
-        CPU+RAM only. Once we send GO it does VRAM preflight, moves the
+        By default (``wait_for_go=True``), the subprocess starts
+        immediately but blocks on stdin for a ``GO\\n`` line before
+        doing any GPU work — used by the LOCAL transcription path so
+        pyannote and Whisper don't fight for the 1650 Ti's 4 GB VRAM.
+        While waiting, the worker imports pyannote, downloads/loads
+        weights to CPU, and decodes the audio file (all CPU+RAM only).
+        Once parent sends ``GO`` it does VRAM preflight, moves the
         pipeline to CUDA, and runs inference.
 
+        With ``wait_for_go=False`` the worker skips the stdin block and
+        runs the full pipeline immediately. Used by the HYBRID cloud
+        path (``_transcribe_via_cloud_with_local_diarize``) — no Whisper
+        is loaded locally, so there's no VRAM contention to choreograph,
+        and we want maximum parallelism between the diarize subprocess
+        and the cloud upload that runs in the calling thread.
+
         Why subprocess at all: ctranslate2's WhisperModel and pyannote's
-        CUDA state conflict on destruction, crashing the main process with
-        a C-level abort. Running pyannote in a fresh interpreter sidesteps
-        the interaction — the OS cleans up all CUDA resources when the
-        subprocess exits.
+        CUDA state conflict on destruction, crashing the main process
+        with a C-level abort. Running pyannote in a fresh interpreter
+        sidesteps the interaction — the OS cleans up all CUDA resources
+        when the subprocess exits.
 
         Returns a handle dict consumed by ``_await_diarization_subprocess``:
         proc, audio_path, stdout/stderr buffers, consumer threads.
@@ -312,7 +322,12 @@ class Transcriber:
 
         worker = _DIARIZE_WORKER_PATH
         env = dict(os.environ)
-        env["DIARIZE_WAIT"] = "1"
+        # Only set DIARIZE_WAIT when the local path needs the GO-protocol
+        # synchronization. Hybrid path passes wait_for_go=False — no
+        # Whisper local means no VRAM contention, and we want maximum
+        # parallelism with the cloud upload in the calling thread.
+        if wait_for_go:
+            env["DIARIZE_WAIT"] = "1"
         # Reduce CUDA allocator fragmentation. On 4 GB cards, pyannote's
         # segmentation pass hits "reserved but unallocated" OOM that surfaces
         # as cuBLAS_NOT_INITIALIZED on the first matmul. Expandable segments
@@ -537,6 +552,62 @@ class Transcriber:
             max_speakers=max_speakers,
         )
 
+        try:
+            result = self._run_cloud_stt(
+                audio_path=audio_path,
+                provider=provider,
+                opts=opts,
+                denoise_audio=denoise_audio,
+                on_status=on_status,
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+        except ProviderError as e:
+            # Surface the user-facing message verbatim, preserving the
+            # original cause for the crash log via __cause__.
+            raise RuntimeError(str(e)) from e
+
+        # Cache for SRT/VTT export (mirrors the local path's
+        # ``self.last_segments = transcript_segments`` line below).
+        self.last_segments = result.segments
+
+        if on_progress:
+            on_progress(100.0)
+
+        # Pick the same formatter the local path uses, based on whether
+        # any segment carries a speaker label.
+        has_speakers = any("speaker" in seg for seg in result.segments)
+        if diarize and has_speakers:
+            return format_diarized(result.segments)
+        return format_timed(result.segments)
+
+    def _run_cloud_stt(
+        self,
+        audio_path: str,
+        provider,
+        opts,
+        *,
+        denoise_audio: bool,
+        on_status,
+        on_progress,
+        cancel_event,
+    ):
+        """Run the cloud STT call (single upload or chunked) and return
+        the raw :class:`providers.base.TranscriptionResult`.
+
+        Extracted from ``_transcribe_via_cloud`` so the hybrid path
+        (``_transcribe_via_cloud_with_local_diarize``) can reuse the
+        denoise-pre-step + chunker-dispatch logic without inheriting
+        the formatting step. The cloud-only path formats and returns a
+        string; the hybrid path needs the raw segments+words[] for
+        speaker alignment.
+
+        Lifecycle: optional pre-denoise to a temp WAV (when
+        ``denoise_audio=True``), then dispatch to the chunker if the
+        file would exceed the provider's upload cap, else upload as-is
+        via ``provider.transcribe``. Denoised tempfile is cleaned in a
+        finally block on every exit path.
+        """
         # Optional pre-denoise: when the user opted in via Settings, run
         # the source through RNNoise (via ensure_wav's denoise flag)
         # BEFORE handing audio to the provider or chunker. Cleaned WAV is
@@ -562,42 +633,22 @@ class Transcriber:
             # those paths skip the chunker entirely and upload as-is.
             from transcriber.cloud_chunker import needs_chunking, transcribe_chunked
 
-            try:
-                if needs_chunking(upload_path, provider):
-                    result = transcribe_chunked(
-                        audio_path=upload_path,
-                        provider=provider,
-                        options=opts,
-                        on_status=on_status,
-                        on_progress=on_progress,
-                        cancel_event=cancel_event,
-                    )
-                else:
-                    result = provider.transcribe(
-                        upload_path,
-                        opts,
-                        on_status=on_status,
-                        on_progress=on_progress,
-                        cancel_event=cancel_event,
-                    )
-            except ProviderError as e:
-                # Surface the user-facing message verbatim, preserving the
-                # original cause for the crash log via __cause__.
-                raise RuntimeError(str(e)) from e
-
-            # Cache for SRT/VTT export (mirrors the local path's
-            # ``self.last_segments = transcript_segments`` line below).
-            self.last_segments = result.segments
-
-            if on_progress:
-                on_progress(100.0)
-
-            # Pick the same formatter the local path uses, based on whether
-            # any segment carries a speaker label.
-            has_speakers = any("speaker" in seg for seg in result.segments)
-            if diarize and has_speakers:
-                return format_diarized(result.segments)
-            return format_timed(result.segments)
+            if needs_chunking(upload_path, provider):
+                return transcribe_chunked(
+                    audio_path=upload_path,
+                    provider=provider,
+                    options=opts,
+                    on_status=on_status,
+                    on_progress=on_progress,
+                    cancel_event=cancel_event,
+                )
+            return provider.transcribe(
+                upload_path,
+                opts,
+                on_status=on_status,
+                on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
         finally:
             # Always clean the denoised tempfile — success, cancel, error,
             # or any provider failure.
@@ -606,6 +657,163 @@ class Transcriber:
                     os.unlink(upload_path)
                 except OSError:
                     pass
+
+    def _transcribe_via_cloud_with_local_diarize(
+        self,
+        audio_path: str,
+        *,
+        language: str | None,
+        diarize_device: str,
+        hf_token: str | None,
+        hotwords: str | None,
+        num_speakers: int | None,
+        min_speakers: int | None,
+        max_speakers: int | None,
+        voice_lib_path: str | None,
+        cloud_provider: str,
+        cloud_api_key: str,
+        denoise_audio: bool = False,
+        on_progress,
+        on_status,
+        cancel_event,
+    ) -> str:
+        """Hybrid path: cloud STT + local pyannote diarization.
+
+        Engages automatically from ``transcribe()``'s cloud short-circuit
+        when ``cloud_provider`` is set, ``diarize=True``, and the
+        provider has ``supports_diarization = False`` (Groq, OpenAI
+        Whisper). For providers that DO offer native diarization
+        (Deepgram, AssemblyAI, Gladia, Speechmatics), the original
+        ``_transcribe_via_cloud`` runs and the cloud's own speaker
+        labels surface.
+
+        Choreography (true parallelism — no VRAM contention because no
+        Whisper is loaded locally):
+
+        1. Spawn pyannote diarize subprocess on the FULL ORIGINAL audio.
+           ``wait_for_go=False`` so the worker starts pyannote
+           immediately rather than blocking on stdin. Original audio
+           (not the denoise-temp copy) is used so the speaker turns
+           land on the same physical timeline as the cloud's
+           timestamps — denoising can subtly shift speech boundaries
+           which would misalign the merge.
+        2. Run cloud STT in this thread via ``_run_cloud_stt`` —
+           handles optional denoising, chunker dispatch, single upload,
+           and returns word-level ``TranscriptionResult``.
+        3. Validate ``segments[].words`` populated. Hybrid alignment
+           requires word-level data; providers/models that don't return
+           it (gpt-4o-transcribe family) raise a user-actionable
+           Russian error pointing at the model choice.
+        4. Wait for diarize subprocess (``_await_diarization_subprocess``
+           handles cancel + crash + timeout). Returns ordered list of
+           ``(start, end, speaker_label)`` turns.
+        5. Merge via ``speaker_aligner._assign_speakers_word_level``
+           (the same pure aligner the local path uses).
+        6. Format with ``format_diarized``.
+
+        Cleanup invariant: if anything fails between subprocess spawn
+        and consume — provider error, words-missing guard, cancel —
+        the subprocess is killed in the ``finally`` block so it
+        doesn't outlive the parent run holding GPU memory.
+        """
+        from providers import ProviderError, TranscriptionOptions, get_provider
+
+        try:
+            provider = get_provider(cloud_provider, cloud_api_key)
+        except ProviderError as e:
+            raise RuntimeError(str(e)) from e
+
+        hotword_list: list[str] = []
+        if hotwords and hotwords.strip():
+            hotword_list = [
+                h.strip() for h in hotwords.split(",") if h.strip()
+            ]
+        opts = TranscriptionOptions(
+            language=language,
+            diarize=False,  # cloud STT only — diariz comes from local pyannote
+            hotwords=hotword_list,
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+        )
+
+        diarize_handle: dict | None = None
+        try:
+            if on_status:
+                on_status("Запуск локальной диаризации (параллельно с облаком)...")
+            diarize_handle = self._launch_diarization_subprocess(
+                audio_path=audio_path,  # ORIGINAL audio (not denoised temp)
+                device=diarize_device,
+                hf_token=hf_token,
+                num_speakers=num_speakers,
+                min_speakers=min_speakers,
+                max_speakers=max_speakers,
+                voice_lib_path=voice_lib_path,
+                on_status=None,    # cloud STT thread owns status messages
+                on_progress=None,  # cloud thread owns progress bar
+                wait_for_go=False,  # no Whisper to wait for → start now
+            )
+
+            try:
+                result = self._run_cloud_stt(
+                    audio_path=audio_path,
+                    provider=provider,
+                    opts=opts,
+                    denoise_audio=denoise_audio,
+                    on_status=on_status,
+                    on_progress=on_progress,
+                    cancel_event=cancel_event,
+                )
+            except ProviderError as e:
+                raise RuntimeError(str(e)) from e
+
+            # Hybrid alignment requires word-level timestamps. Without
+            # them, _assign_speakers_word_level falls back to segment-
+            # level max-overlap — the very failure mode the word-level
+            # path was built to fix. Surface a clear error pointing the
+            # user at model choice instead of silently producing
+            # misaligned output.
+            has_words = any(seg.get("words") for seg in result.segments)
+            if not has_words:
+                raise RuntimeError(
+                    "Облачный провайдер не вернул пословные тайминги "
+                    "(word-level timestamps). Локальная диаризация требует "
+                    "их для точного сопоставления спикеров. Выбери модель "
+                    "whisper-large-v3 в Настройках или отключи диаризацию."
+                )
+
+            if on_status:
+                on_status("Ожидание локальной диаризации...")
+            speaker_turns = self._await_diarization_subprocess(
+                diarize_handle, cancel_event=cancel_event,
+            )
+            diarize_handle = None  # consumed — suppress finally-cleanup
+
+            if on_status:
+                on_status("Объединение текста и спикеров...")
+            labeled = _assign_speakers_word_level(
+                result.segments, speaker_turns,
+            )
+
+            self.last_segments = labeled
+            if on_progress:
+                on_progress(100.0)
+            return format_diarized(labeled)
+        finally:
+            # If we spawned the diarize subprocess but bailed before
+            # consuming it (provider error, words-missing guard, cancel),
+            # kill it so it doesn't outlive the parent run with a CUDA
+            # context held.
+            if diarize_handle is not None:
+                proc = diarize_handle["proc"]
+                if proc.poll() is None:
+                    try:
+                        proc.kill()
+                        proc.wait(timeout=5)
+                    except Exception:
+                        logger.exception(
+                            "failed to clean up hybrid diarize subprocess"
+                        )
 
     def _decode_chunk_single(
         self,
@@ -915,6 +1123,39 @@ class Transcriber:
                         f"{cloud_provider} ещё не поддерживает «Смешанный (KZ+RU+EN)». "
                         "Выбери другой язык или провайдер."
                     )
+
+            # Hybrid routing: when the user wants diarization but the
+            # chosen cloud provider has no native speaker support,
+            # route to the hybrid orchestrator that runs cloud STT in
+            # parallel with local pyannote. Providers WITH native
+            # diarization (Deepgram, AssemblyAI, Gladia, Speechmatics)
+            # fall through to the original cloud-only path so their
+            # built-in speaker labels surface.
+            if diarize:
+                from providers import PROVIDERS as _PROVIDERS
+                provider_cls = _PROVIDERS.get(cloud_provider)
+                if (
+                    provider_cls is not None
+                    and not provider_cls.supports_diarization
+                ):
+                    return self._transcribe_via_cloud_with_local_diarize(
+                        audio_path,
+                        language=language,
+                        diarize_device=diarize_device,
+                        hf_token=hf_token,
+                        hotwords=hotwords,
+                        num_speakers=num_speakers,
+                        min_speakers=min_speakers,
+                        max_speakers=max_speakers,
+                        voice_lib_path=voice_lib_path,
+                        cloud_provider=cloud_provider,
+                        cloud_api_key=cloud_api_key or "",
+                        denoise_audio=denoise_audio,
+                        on_progress=on_progress,
+                        on_status=on_status,
+                        cancel_event=cancel_event,
+                    )
+
             return self._transcribe_via_cloud(
                 audio_path,
                 language=language,
