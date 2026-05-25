@@ -115,7 +115,18 @@ def needs_chunking(audio_path: str, provider: TranscriptionProvider) -> bool:
     cap = provider.max_upload_bytes
     if cap is None:
         return False
-    size = os.path.getsize(audio_path)
+    # Missing/inaccessible files: return False so the routing falls
+    # through to provider.transcribe(), which already raises a
+    # user-actionable ProviderError("Файл не найден...") via its own
+    # isfile() check. Without this guard, FileNotFoundError would
+    # escape past the ProviderError handler in _transcribe_via_cloud
+    # and surface as a raw Python traceback in the UI. (Codex P2 fix
+    # on PR #54 — bug introduced when needs_chunking() was inserted
+    # AHEAD of the existing provider-level file check.)
+    try:
+        size = os.path.getsize(audio_path)
+    except OSError:
+        return False
     return size >= cap * _CHUNK_TRIGGER_RATIO
 
 
