@@ -279,6 +279,35 @@ def test_needs_chunking_false_when_provider_has_no_cap(real_wav_tempfile):
         assert needs_chunking(real_wav_tempfile, p) is False
 
 
+def test_needs_chunking_false_for_missing_file_does_not_raise():
+    """Regression for Codex P2 on PR #54: needs_chunking() unconditionally
+    called os.path.getsize, which raises FileNotFoundError for missing
+    paths. That exception escaped the ProviderError handler in
+    _transcribe_via_cloud and surfaced as a raw Python traceback in the UI
+    — masking the Russian "Файл не найден" message the provider used to
+    return.
+
+    Fix: needs_chunking returns False on any OSError so the routing falls
+    through to provider.transcribe(), where the existing isfile() check
+    raises a proper user-facing ProviderError."""
+    p = _StubProvider(results=[])
+    missing = "/no/such/path/does/not/exist.wav"
+    # Must not raise — this used to crash with FileNotFoundError.
+    result = needs_chunking(missing, p)
+    assert result is False
+
+
+def test_needs_chunking_false_for_missing_file_even_with_no_cap():
+    """Sanity: missing-file safety is independent of the cap-check
+    short-circuit. The no-cap branch returned False without touching
+    the file anyway (this is just a regression guard against someone
+    later moving the getsize call above the cap check)."""
+    p = _StubProvider(results=[])
+    p.max_upload_bytes = None
+    result = needs_chunking("/no/such/path.wav", p)
+    assert result is False
+
+
 # ── transcribe_chunked (integration with mocked I/O) ─────────────────
 
 
