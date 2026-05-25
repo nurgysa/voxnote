@@ -21,6 +21,7 @@ import soundfile as sf
 
 from audio_io import (
     SAMPLE_RATE,
+    _escape_ffmpeg_filter_path,
     _ffmpeg_time,
     _get_rnnoise_model_path,
     ensure_16khz_mono,
@@ -424,6 +425,87 @@ def test_ensure_wav_denoise_true_normalize_false_omits_loudnorm(tmp_path):
 
     chain = _captured_filter_chain(captured["cmd"])
     assert chain == "highpass=f=80,arnndn=m=/fake/path/sh.rnnn"
+    try:
+        os.unlink(out_path)
+    except OSError:
+        pass
+
+
+# ── _escape_ffmpeg_filter_path (Codex P1 fix for PR #56) ──────────
+
+
+def test_escape_ffmpeg_filter_path_unix_path_is_noop():
+    """Unix paths have no backslashes and no colons → escape is a no-op.
+    Defends against a future "clever" fix that breaks the Unix case
+    while solving Windows."""
+    p = "/home/user/.audio-transcriber/models/rnnoise/sh.rnnn"
+    assert _escape_ffmpeg_filter_path(p) == p
+
+
+def test_escape_ffmpeg_filter_path_windows_path_normalizes_separators_and_escapes_colon():
+    """Regression for Codex P1 on PR #56. ffmpeg filtergraph syntax
+    treats `:` as a filter-parameter separator and `\\` as an escape
+    char. A raw Windows path like C:\\Users\\nurgisa\\sh.rnnn dumped
+    into `arnndn=m=<path>` is parsed by ffmpeg as filter `arnndn` with
+    param m=C, then \\Users\\nurgisa\\sh.rnnn as a junk continuation —
+    filter parse fails and ensure_wav crashes the whole transcription.
+
+    Fix: backslashes → forward slashes (ffmpeg accepts both on Windows),
+    then escape the drive-letter colon with a backslash. So
+    C:\\Users\\foo → C\\:/Users/foo, which ffmpeg unescapes back to the
+    valid path C:/Users/foo at the filter-arg layer."""
+    p = r"C:\Users\nurgisa\.audio-transcriber\models\rnnoise\sh.rnnn"
+    escaped = _escape_ffmpeg_filter_path(p)
+    # No raw backslashes remain (would be ambiguous in ffmpeg syntax).
+    assert "\\Users" not in escaped
+    # Drive-letter colon is escaped.
+    assert escaped.startswith(r"C\:")
+    # Forward slashes replaced the backslashes.
+    assert "/Users/nurgisa/" in escaped
+
+
+def test_escape_ffmpeg_filter_path_handles_colon_in_middle_of_path():
+    """An NTFS alternate data stream path like C:\\foo:bar would have
+    two colons; both must be escaped. Pathological but defensive."""
+    p = r"C:\foo:bar\baz.rnnn"
+    escaped = _escape_ffmpeg_filter_path(p)
+    # Both colons escaped.
+    assert escaped.count(r"\:") == 2
+    assert ":" not in escaped.replace(r"\:", "")
+
+
+def test_ensure_wav_denoise_true_uses_escaped_windows_path_in_filter(tmp_path):
+    """Integration: a Windows-style model path returned by
+    _get_rnnoise_model_path is escaped before insertion into the filter
+    chain string. Without escaping, this would produce a malformed
+    `arnndn=m=C:\\...` filter that ffmpeg rejects with a parse error,
+    breaking denoising for every Windows user."""
+    src = tmp_path / "in.mp3"
+    src.write_bytes(b"fake mp3")
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        with open(cmd[-1], "wb") as f:
+            f.write(b"")
+        return MagicMock(returncode=0)
+
+    windows_path = r"C:\Users\nurgisa\.audio-transcriber\models\rnnoise\sh.rnnn"
+    with patch("audio_io.subprocess.run", side_effect=fake_run), \
+         patch(
+            "audio_io._get_rnnoise_model_path",
+            return_value=windows_path,
+         ):
+        out_path, _is_temp = ensure_wav(str(src), normalize=True, denoise=True)
+
+    chain = _captured_filter_chain(captured["cmd"])
+    assert chain is not None
+    # The raw Windows path with `:` and `\` must NOT appear unescaped
+    # anywhere in the filter chain — that's the precise failure mode
+    # Codex flagged.
+    assert "arnndn=m=C:\\" not in chain
+    # The escaped form must appear: `arnndn=m=C\:/Users/...`
+    assert r"arnndn=m=C\:/Users/nurgisa/" in chain
     try:
         os.unlink(out_path)
     except OSError:

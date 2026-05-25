@@ -38,6 +38,37 @@ _RNNOISE_MODEL_URL = (
 _RNNOISE_MODEL_BASENAME = "sh.rnnn"
 
 
+def _escape_ffmpeg_filter_path(path: str) -> str:
+    """Escape a filesystem path for safe use as an ffmpeg filter argument.
+
+    ffmpeg filtergraph syntax treats ``:`` as the parameter separator
+    between filter arguments and ``\\`` as an escape character. A raw
+    Windows path like ``C:\\Users\\nurgisa\\sh.rnnn`` injected into
+    ``arnndn=m=<path>`` is therefore parsed as the ``arnndn`` filter
+    with parameter ``m=C``, followed by garbage — the filter parse
+    fails and the whole ffmpeg invocation crashes. Same hazard for
+    spaces in some filter contexts.
+
+    Fix: convert backslashes to forward slashes (ffmpeg accepts both
+    on Windows for file paths) and then escape any remaining colons
+    with a backslash. ``C:\\Users\\foo`` becomes ``C\\:/Users/foo``,
+    which ffmpeg unescapes back to the valid path ``C:/Users/foo`` at
+    the filter-argument layer.
+
+    No-op on Unix paths (no backslashes, no colons), so cross-platform
+    safe.
+
+    Background: Codex P1 finding on PR #56 — without this escaping,
+    the RNNoise denoise feature is unusable on Windows. Tests cover
+    both Windows-style paths and the Unix no-op case to prevent
+    accidental regressions in either direction.
+    """
+    # Forward slashes first so the colon-escape pass sees a normalized
+    # path. Order doesn't matter for correctness but keeps the result
+    # readable in error messages.
+    return path.replace("\\", "/").replace(":", r"\:")
+
+
 def _get_rnnoise_model_path() -> str:
     """Path to the RNNoise .rnnn model file for ffmpeg's ``arnndn`` filter.
 
@@ -182,8 +213,12 @@ def ensure_wav(
     filters: list[str] = ["highpass=f=80"]
     if denoise:
         # Model fetch happens here, not at module load — so users who
-        # never enable denoising never pay the download cost.
-        filters.append(f"arnndn=m={_get_rnnoise_model_path()}")
+        # never enable denoising never pay the download cost. Path is
+        # escaped for ffmpeg filtergraph syntax — see
+        # _escape_ffmpeg_filter_path for the why (Windows paths with
+        # `:` and `\` break filter parsing without escaping).
+        model_path = _escape_ffmpeg_filter_path(_get_rnnoise_model_path())
+        filters.append(f"arnndn=m={model_path}")
     if normalize:
         filters.append("loudnorm=I=-16:TP=-1.5:LRA=11")
     cmd += ["-af", ",".join(filters)]
