@@ -90,7 +90,7 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 416 tests
+pytest                       # must show green; baseline = 438 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
                              # cloud/UI tests, +4 segmenter, +15 mixed-mode,
                              # +8 from sampling-rate / VAD-resample fixes,
@@ -107,7 +107,10 @@ pytest                       # must show green; baseline = 416 tests
                              # +6 from transparent opus compression for
                              #   files > 25 MB (Phase 6.5 PR-A.1),
                              # +3 regression for word-interval check in
-                             #   _to_segments (Codex P2 fix on PR #51))
+                             #   _to_segments (Codex P2 fix on PR #51),
+                             # +4 max_upload_bytes ABC attribute +
+                             #   18 cloud_chunker for 2-5h audio
+                             #   (Phase 6.5 PR-C))
 python -m ruff check .       # must be clean
 ```
 
@@ -126,7 +129,7 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 | Entry point + faulthandler bootstrap | `app.py` |
 | Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
 | All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `voices.py`, `terms.py`, `system_monitor.py`) |
-| Whisper transcription | `transcriber/` package (`__init__.py` + `cuda_utils`, `progress`, `prompt`, `speaker_aligner` — split via PR #4) |
+| Whisper transcription | `transcriber/` package (`__init__.py` + `cuda_utils`, `progress`, `prompt`, `speaker_aligner`, `cloud_chunker` — last added Phase 6.5 PR-C) |
 | Diarization subprocess | `diarize_worker.py` |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |

@@ -42,6 +42,10 @@ class OpenAIWhisperProvider(TranscriptionProvider):
     display_name = "OpenAI Whisper"
     # No speakers in the response; the UI must offer no-diarization runs only.
     supports_diarization = False
+    # OpenAI's whisper-1 endpoint has a 25 MB hard cap at the gateway.
+    # The cloud chunker uses this to decide whether to split a file
+    # into chunks before upload.
+    max_upload_bytes = _MAX_FILE_BYTES
     # whisper-1 has no native code-switching; for "mixed" we omit the language
     # field so OpenAI auto-detects (best-effort).  Verified 2026-05-21:
     # https://platform.openai.com/docs/api-reference/audio/createTranscription

@@ -536,14 +536,31 @@ class Transcriber:
             max_speakers=max_speakers,
         )
 
+        # Chunker dispatch: when the file would exceed the provider's
+        # documented upload cap, split it at silence boundaries and
+        # transcribe each chunk. needs_chunking() returns False when
+        # the provider declares no cap (Deepgram, AssemblyAI, etc.) so
+        # those paths skip the chunker entirely and upload as-is.
+        from transcriber.cloud_chunker import needs_chunking, transcribe_chunked
+
         try:
-            result = provider.transcribe(
-                audio_path,
-                opts,
-                on_status=on_status,
-                on_progress=on_progress,
-                cancel_event=cancel_event,
-            )
+            if needs_chunking(audio_path, provider):
+                result = transcribe_chunked(
+                    audio_path=audio_path,
+                    provider=provider,
+                    options=opts,
+                    on_status=on_status,
+                    on_progress=on_progress,
+                    cancel_event=cancel_event,
+                )
+            else:
+                result = provider.transcribe(
+                    audio_path,
+                    opts,
+                    on_status=on_status,
+                    on_progress=on_progress,
+                    cancel_event=cancel_event,
+                )
         except ProviderError as e:
             # Surface the user-facing message verbatim, preserving the
             # original cause for the crash log via __cause__.

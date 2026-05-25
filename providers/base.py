@@ -94,6 +94,19 @@ class TranscriptionProvider(ABC):
     #: static introspectable capability.
     supports_mixed: bool = False
 
+    #: Maximum upload size in bytes that the provider's HTTP gateway
+    #: will accept. ``None`` means no provider-side hard cap (the cloud
+    #: chunker still respects sane HTTP timeouts and any compression
+    #: heuristics). Used by :mod:`transcriber.cloud_chunker` to decide
+    #: whether to split a file into chunks vs upload it as-is. Set on
+    #: subclasses for providers with documented caps:
+    #:   GroqProvider           = 25 MB (Free tier)
+    #:   OpenAIWhisperProvider  = 25 MB (whisper-1 gateway)
+    #: Providers without a documented small cap (Deepgram, AssemblyAI,
+    #: Gladia, Speechmatics — all advertise multi-GB upload limits)
+    #: leave this as None.
+    max_upload_bytes: int | None = None
+
     @abstractmethod
     def transcribe(
         self,

@@ -79,6 +79,12 @@ class GroqProvider(TranscriptionProvider):
     # means at our UI layer. No code_switching flag is required by Groq;
     # omitting the form field is the documented path.
     supports_mixed = True
+    # Groq Free tier hard cap. Dev tier raises this to 100 MB but is
+    # currently unavailable (per console.groq.com/settings/billing/plans
+    # — "Developer tier upgrades are temporarily unavailable due to high
+    # demand"). The cloud chunker uses this to decide whether to split
+    # a file into chunks before upload.
+    max_upload_bytes = _MAX_FILE_BYTES
 
     def __init__(self, api_key: str, model: str = _DEFAULT_MODEL):
         if not api_key or not api_key.strip():
