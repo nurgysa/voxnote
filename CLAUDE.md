@@ -90,7 +90,7 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 407 tests
+pytest                       # must show green; baseline = 413 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
                              # cloud/UI tests, +4 segmenter, +15 mixed-mode,
                              # +8 from sampling-rate / VAD-resample fixes,
@@ -103,7 +103,9 @@ pytest                       # must show green; baseline = 407 tests
                              # +1 from backup-failure state-sync regression
                              #   (Codex P2 fix #49),
                              # +27 from Groq STT provider with word-level
-                             #   granularities (Phase 6.5 PR-A))
+                             #   granularities (Phase 6.5 PR-A),
+                             # +6 from transparent opus compression for
+                             #   files > 25 MB (Phase 6.5 PR-A.1))
 python -m ruff check .       # must be clean
 ```
 
