@@ -41,32 +41,50 @@ _RNNOISE_MODEL_BASENAME = "sh.rnnn"
 def _escape_ffmpeg_filter_path(path: str) -> str:
     """Escape a filesystem path for safe use as an ffmpeg filter argument.
 
-    ffmpeg filtergraph syntax treats ``:`` as the parameter separator
-    between filter arguments and ``\\`` as an escape character. A raw
-    Windows path like ``C:\\Users\\nurgisa\\sh.rnnn`` injected into
-    ``arnndn=m=<path>`` is therefore parsed as the ``arnndn`` filter
-    with parameter ``m=C``, followed by garbage — the filter parse
-    fails and the whole ffmpeg invocation crashes. Same hazard for
-    spaces in some filter contexts.
+    ffmpeg's filtergraph parser runs TWO escape passes on the same
+    string before reaching the filter-argument layer (see
+    https://ffmpeg.org/ffmpeg-filters.html#Notes-on-filtergraph-escaping):
 
-    Fix: convert backslashes to forward slashes (ffmpeg accepts both
-    on Windows for file paths) and then escape any remaining colons
-    with a backslash. ``C:\\Users\\foo`` becomes ``C\\:/Users/foo``,
-    which ffmpeg unescapes back to the valid path ``C:/Users/foo`` at
-    the filter-argument layer.
+    1. First level — filter option value parsing. Special chars: ``\\``,
+       ``'``, ``:``. To pass a literal ``:`` through this layer you
+       write ``\\:``.
+    2. Second level — whole filter description parsing. Special chars:
+       ``\\``, ``'``, ``[``, ``]``, ``,``, ``;``. To pass a literal
+       ``\\`` through this layer you write ``\\\\``.
+
+    Both passes apply, so to embed a literal ``:`` (drive-letter colon
+    on Windows) inside a filter value, the source string must contain
+    ``\\\\:`` (4 chars: backslash, backslash, colon, which Python
+    source ``r"\\\\:"`` produces as 3 output chars ``\\``, ``\\``, ``:``).
+    Second-level unescapes ``\\\\`` → ``\\``, leaving ``\\:`` for the
+    first-level layer, which unescapes to ``:``.
+
+    Plus convert backslashes to forward slashes (ffmpeg accepts both
+    on Windows for file paths) — keeps the path readable and avoids
+    backslash-as-escape collision in the rest of the path.
 
     No-op on Unix paths (no backslashes, no colons), so cross-platform
     safe.
 
-    Background: Codex P1 finding on PR #56 — without this escaping,
-    the RNNoise denoise feature is unusable on Windows. Tests cover
-    both Windows-style paths and the Unix no-op case to prevent
-    accidental regressions in either direction.
+    History:
+    - PR #56 introduced raw paths in arnndn=m=<path> — broken on
+      Windows immediately.
+    - PR #57 added ``\\:`` (single backslash) escape — Codex flagged
+      the original raw path but my fix only handled ONE of the two
+      escape levels. Real Windows users still saw "No option name
+      near '/Users/...'" because ffmpeg consumed the single backslash
+      at the second-level pass, leaving ``:`` as a literal separator
+      at the first-level pass.
+    - This commit: ``\\\\:`` (two backslashes) survives both passes.
+      Verified manually against ffmpeg 6 on Windows by the test
+      ``test_ensure_wav_denoise_with_real_ffmpeg`` which is gated on
+      ``_FFMPEG_AVAILABLE`` AND model-cache presence.
     """
     # Forward slashes first so the colon-escape pass sees a normalized
-    # path. Order doesn't matter for correctness but keeps the result
-    # readable in error messages.
-    return path.replace("\\", "/").replace(":", r"\:")
+    # path. Order matters for the colon-escape: we don't want to
+    # accidentally escape a backslash-colon combination already present
+    # in the source. r"\\:" in Python source is 3 chars: \, \, :.
+    return path.replace("\\", "/").replace(":", r"\\:")
 
 
 def _get_rnnoise_model_path() -> str:

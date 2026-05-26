@@ -90,7 +90,7 @@ Whisper-large and pyannote can't be in VRAM at the same time on this card.
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline = 461 tests
+pytest                       # must show green; baseline = 462 tests
                              # (was 285 pre-code-switching; +30 from Phase 1
                              # cloud/UI tests, +4 segmenter, +15 mixed-mode,
                              # +8 from sampling-rate / VAD-resample fixes,
@@ -118,7 +118,11 @@ pytest                       # must show green; baseline = 461 tests
                              # +4 Windows ffmpeg filter-path escape
                              #   (Codex P1 fix on PR #56),
                              # +10 hybrid cloud-STT + local-pyannote
-                             #   diarization (Phase 6.5 PR-B))
+                             #   diarization (Phase 6.5 PR-B),
+                             # +1 real-ffmpeg integration test for RNNoise
+                             #   escape (PR #57 was incomplete — single
+                             #   backslash didn't survive ffmpeg's two-
+                             #   level filtergraph parser))
 python -m ruff check .       # must be clean
 ```
 
