@@ -442,36 +442,44 @@ def test_escape_ffmpeg_filter_path_unix_path_is_noop():
     assert _escape_ffmpeg_filter_path(p) == p
 
 
-def test_escape_ffmpeg_filter_path_windows_path_normalizes_separators_and_escapes_colon():
-    """Regression for Codex P1 on PR #56. ffmpeg filtergraph syntax
-    treats `:` as a filter-parameter separator and `\\` as an escape
-    char. A raw Windows path like C:\\Users\\nurgisa\\sh.rnnn dumped
-    into `arnndn=m=<path>` is parsed by ffmpeg as filter `arnndn` with
-    param m=C, then \\Users\\nurgisa\\sh.rnnn as a junk continuation —
-    filter parse fails and ensure_wav crashes the whole transcription.
+def test_escape_ffmpeg_filter_path_windows_path_double_escapes_colon():
+    """Regression for the SECOND-LEVEL escape bug shipped in PR #57.
+    My original "fix" used a single-backslash colon escape (``\\:``);
+    that handled only the filter-argument layer. ffmpeg's filtergraph
+    parser ALSO does a higher-level escape pass first that consumes one
+    backslash. Net effect: real Windows users still saw "No option name
+    near '/Users/...'" because by the time the value reached the inner
+    parser, ``\\:`` had been peeled to ``:`` and was again treated as a
+    separator. Manually reproduced against ffmpeg 6 on Windows before
+    fixing.
 
-    Fix: backslashes → forward slashes (ffmpeg accepts both on Windows),
-    then escape the drive-letter colon with a backslash. So
-    C:\\Users\\foo → C\\:/Users/foo, which ffmpeg unescapes back to the
-    valid path C:/Users/foo at the filter-arg layer."""
+    The correct escape: ``\\\\:`` (two backslashes + colon in the SOURCE
+    string, which Python ``r"\\\\:"`` produces). Outer layer consumes
+    one backslash → ``\\:`` reaches inner layer → unescapes to ``:``.
+
+    Cross-platform safe: Unix paths have no backslashes and no colons,
+    so the replace passes leave them untouched.
+    """
     p = r"C:\Users\nurgisa\.audio-transcriber\models\rnnoise\sh.rnnn"
     escaped = _escape_ffmpeg_filter_path(p)
-    # No raw backslashes remain (would be ambiguous in ffmpeg syntax).
+    # No raw backslashes remain (forward-slash conversion done).
     assert "\\Users" not in escaped
-    # Drive-letter colon is escaped.
-    assert escaped.startswith(r"C\:")
+    # Drive-letter colon is double-escaped so it survives BOTH
+    # filtergraph-parser passes.
+    assert escaped.startswith(r"C\\:")
     # Forward slashes replaced the backslashes.
     assert "/Users/nurgisa/" in escaped
 
 
 def test_escape_ffmpeg_filter_path_handles_colon_in_middle_of_path():
     """An NTFS alternate data stream path like C:\\foo:bar would have
-    two colons; both must be escaped. Pathological but defensive."""
+    two colons; both must be double-escaped. Pathological but defensive."""
     p = r"C:\foo:bar\baz.rnnn"
     escaped = _escape_ffmpeg_filter_path(p)
-    # Both colons escaped.
-    assert escaped.count(r"\:") == 2
-    assert ":" not in escaped.replace(r"\:", "")
+    # Both colons double-escaped (\\: in raw repr).
+    assert escaped.count(r"\\:") == 2
+    # No bare unescaped colons remain.
+    assert ":" not in escaped.replace(r"\\:", "")
 
 
 def test_ensure_wav_denoise_true_uses_escaped_windows_path_in_filter(tmp_path):
@@ -502,14 +510,69 @@ def test_ensure_wav_denoise_true_uses_escaped_windows_path_in_filter(tmp_path):
     assert chain is not None
     # The raw Windows path with `:` and `\` must NOT appear unescaped
     # anywhere in the filter chain — that's the precise failure mode
-    # Codex flagged.
+    # Codex flagged on PR #56 (and that my "fix" PR #57 still triggered
+    # because of the second-level escape — see
+    # test_escape_ffmpeg_filter_path_windows_path_double_escapes_colon).
     assert "arnndn=m=C:\\" not in chain
-    # The escaped form must appear: `arnndn=m=C\:/Users/...`
-    assert r"arnndn=m=C\:/Users/nurgisa/" in chain
+    # The DOUBLE-escaped form must appear: `arnndn=m=C\\:/Users/...`
+    # (raw repr shows two backslashes — needed to survive ffmpeg's
+    # two-level filtergraph parser).
+    assert r"arnndn=m=C\\:/Users/nurgisa/" in chain
     try:
         os.unlink(out_path)
     except OSError:
         pass
+
+
+# ── Real-ffmpeg integration tests (the safety net we should have ──
+# ── had on PR #57 — mocks verify string composition, only a real    ──
+# ── ffmpeg verifies that string is PARSEABLE) ────────────────────────
+
+
+@pytest.mark.skipif(not _FFMPEG_AVAILABLE, reason="ffmpeg not on PATH")
+def test_ensure_wav_with_denoise_runs_real_ffmpeg(tmp_path):
+    """Run the FULL denoise path through real ffmpeg and assert it
+    doesn't crash. Mocked tests can verify the filter chain we BUILD,
+    but only a real ffmpeg can verify that string is PARSEABLE.
+
+    Background: PR #56 introduced the arnndn filter, PR #57 "fixed"
+    Windows escape but used single-backslash which still failed in
+    production. Both PRs had passing mocked tests. This is the test
+    that would have caught both bugs in CI on Day 0.
+
+    Requires the RNNoise model to already be cached locally. We don't
+    download in tests (offline-safe principle); if absent, skip with
+    a hint so a developer running locally can warm the cache once.
+    """
+    cached_model = os.path.join(
+        os.path.expanduser("~"),
+        ".audio-transcriber", "models", "rnnoise", "sh.rnnn",
+    )
+    if not os.path.isfile(cached_model):
+        pytest.skip(
+            f"RNNoise model not cached at {cached_model}. Enable "
+            f"'Подавлять шум' in the app once to download it, then "
+            f"re-run this test."
+        )
+
+    src = tmp_path / "real_input.wav"
+    _write_silent_wav(src, 1.0)
+
+    with patch("audio_io._get_rnnoise_model_path", return_value=cached_model):
+        # If the filter chain is malformed, ensure_wav raises
+        # RuntimeError with the ffmpeg stderr — test fails loudly
+        # exactly the way the user saw it crash in production.
+        out_path, is_temp = ensure_wav(
+            str(src), normalize=True, denoise=True,
+        )
+
+    # ffmpeg accepted the filter chain and produced a WAV.
+    assert os.path.isfile(out_path)
+    if is_temp:
+        try:
+            os.unlink(out_path)
+        except OSError:
+            pass
 
 
 def test_ensure_wav_wav_input_normalize_false_denoise_true_runs_ffmpeg(tmp_path):
