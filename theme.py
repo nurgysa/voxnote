@@ -45,6 +45,11 @@ BLUE_SURFACE = ("#E8F0FE", "#2D3B4E")
 GREEN = ("#137333", "#81C995")
 RED = ("#C5221F", "#F28B82")
 YELLOW = ("#F29900", "#FDD663")
+# First-run banner text — fixed dark in BOTH modes because YELLOW resolves
+# to a bright color in both light and dark (Material's amber/canary).
+# TEXT_PRIMARY's near-white dark-mode value would have unreadable contrast
+# on the bright yellow.
+BANNER_TEXT_ON_YELLOW = ("#202124", "#202124")
 
 PROGRESS_BG = ("#E8EAED", "#3C4043")
 INPUT_BG = ("#FFFFFF", "#303030")

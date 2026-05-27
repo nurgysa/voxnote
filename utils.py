@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 from datetime import datetime
 
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a"}
@@ -28,9 +29,58 @@ def save_transcript(text: str, output_path: str) -> None:
         f.write(text)
 
 
+def _get_vendored_binary(name: str) -> str | None:
+    """Return absolute path to a vendored binary inside the PyInstaller bundle.
+
+    Frozen mode: look in sys._MEIPASS/vendor/ffmpeg/<name>.exe. Returns the
+    path if the file exists, None otherwise. Source mode (no sys.frozen):
+    always returns None so callers fall through to PATH lookup.
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    meipass = getattr(sys, "_MEIPASS", None)
+    if not meipass:
+        return None
+    candidate = os.path.join(meipass, "vendor", "ffmpeg", f"{name}.exe")
+    return candidate if os.path.isfile(candidate) else None
+
+
+def get_ffmpeg_path() -> str | None:
+    """Return absolute path to ffmpeg, or None if neither bundled nor on PATH.
+
+    Resolution order:
+      1. PyInstaller bundle vendor (frozen mode only) — sys._MEIPASS/vendor/ffmpeg/ffmpeg.exe
+      2. System PATH — shutil.which("ffmpeg")
+      3. None — caller's responsibility to surface a user-friendly error
+
+    audio_io.py and transcriber/cloud_chunker.py use this in place of bare
+    `"ffmpeg"` subprocess args so the cloud-only PyInstaller bundle works
+    without ffmpeg on the user's PATH (vendored binaries from gyan.dev
+    release-essentials live under vendor/ffmpeg/ — see audio_transcriber.spec).
+    """
+    vendored = _get_vendored_binary("ffmpeg")
+    if vendored:
+        return vendored
+    return shutil.which("ffmpeg")
+
+
+def get_ffprobe_path() -> str | None:
+    """Mirror of get_ffmpeg_path for ffprobe.
+
+    Currently no production code paths call ffprobe directly (the codebase
+    uses ffmpeg's -i input for probing too), but the helper is symmetric
+    with get_ffmpeg_path so future code that needs ffprobe metadata reads
+    has a one-import home for the resolver.
+    """
+    vendored = _get_vendored_binary("ffprobe")
+    if vendored:
+        return vendored
+    return shutil.which("ffprobe")
+
+
 def check_ffmpeg() -> bool:
-    """Return True if ffmpeg is found in PATH."""
-    return shutil.which("ffmpeg") is not None
+    """Return True if ffmpeg is available (bundled OR on PATH)."""
+    return get_ffmpeg_path() is not None
 
 
 def load_config() -> dict:

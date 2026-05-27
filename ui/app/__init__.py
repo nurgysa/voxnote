@@ -118,6 +118,14 @@ class App(
         # Populated in _on_complete; consumed by _open_extract_tasks_dialog.
         self._last_history_folder: str | None = None
 
+        # First-run detection — builder.py uses this to conditionally render
+        # the yellow banner at row=0 prompting the user to enter API keys.
+        # Triggers when the AssemblyAI key is empty after config load.
+        # AssemblyAI is the MVP default + only provider that delivers a
+        # diarized transcript out of the box; without its key the app
+        # can't do its primary job.
+        self._first_run = not self._cloud_api_keys.get("AssemblyAI", "").strip()
+
         build_ui(self)
 
 

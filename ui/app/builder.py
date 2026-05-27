@@ -17,6 +17,7 @@ from __future__ import annotations
 import customtkinter as ctk
 
 from theme import (
+    BANNER_TEXT_ON_YELLOW,
     BLUE,
     BLUE_DIM,
     BORDER,
@@ -26,6 +27,7 @@ from theme import (
     SURFACE,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    YELLOW,
 )
 from ui.widgets import (
     card,
@@ -45,11 +47,43 @@ from .constants import (
 def build_ui(app):
     """Build the main window's widget tree and bind state vars onto ``app``."""
     app.grid_columnconfigure(0, weight=1)
-    app.grid_rowconfigure(6, weight=1)  # text result row
+    # Text result row shifted +1 to make room for the first-run banner.
+    # Without the banner present the row is just empty; with banner it
+    # occupies row=0 and everything below shifts down by 1.
+    app.grid_rowconfigure(7, weight=1)
 
-    # --- Header ---
+    # --- First-run banner (row=0, conditional) ---
+    # Shown when no AssemblyAI key is configured — pushes the user toward
+    # Settings on first launch. Yellow strip with a "Открыть настройки →"
+    # shortcut. State flag is set in App.__init__ before build_ui runs.
+    # When the banner isn't rendered, row=0 is empty (zero height) so the
+    # rest of the layout looks identical to pre-Task-7.
+    if getattr(app, "_first_run", False):
+        banner = ctk.CTkFrame(app, fg_color=YELLOW, corner_radius=0, height=42)
+        banner.grid(row=0, column=0, sticky="ew")
+        banner.grid_columnconfigure(0, weight=1)
+        ctk.CTkLabel(
+            banner,
+            text=(
+                "Первый запуск. Откройте Настройки → введите "
+                "AssemblyAI API key + OpenRouter ключ."
+            ),
+            text_color=BANNER_TEXT_ON_YELLOW,
+            font=ctk.CTkFont(family=FONT, size=12),
+            anchor="w",
+        ).grid(row=0, column=0, padx=16, pady=10, sticky="w")
+        ctk.CTkButton(
+            banner, text="Открыть настройки →",
+            command=app._open_settings_dialog,
+            width=180, height=28,
+            fg_color=SURFACE, hover_color=BORDER,
+            text_color=BANNER_TEXT_ON_YELLOW,
+        ).grid(row=0, column=1, padx=8, pady=6)
+        app._first_run_banner = banner
+
+    # --- Header (row=1 — was row=0 before banner) ---
     header = ctk.CTkFrame(app, fg_color=SURFACE, corner_radius=0, height=52)
-    header.grid(row=0, column=0, sticky="ew")
+    header.grid(row=1, column=0, sticky="ew")
     header.grid_columnconfigure(1, weight=1)
 
     ctk.CTkLabel(
@@ -65,9 +99,9 @@ def build_ui(app):
     )
     app._lbl_status.grid(row=0, column=1, padx=24, pady=12, sticky="e")
 
-    # --- File card ---
+    # --- File card (row=2 — was row=1 before banner) ---
     file_card = card(app)
-    file_card.grid(row=1, column=0, padx=16, pady=(12, 6), sticky="ew")
+    file_card.grid(row=2, column=0, padx=16, pady=(12, 6), sticky="ew")
     file_card.grid_columnconfigure(1, weight=1)
 
     app._btn_file = tonal_button(
@@ -84,9 +118,9 @@ def build_ui(app):
     )
     app._btn_transcribe.grid(row=0, column=2, padx=16, pady=14)
 
-    # --- Recorder card ---
+    # --- Recorder card (row=3 — was row=2 before banner) ---
     rec_card = card(app)
-    rec_card.grid(row=2, column=0, padx=16, pady=6, sticky="ew")
+    rec_card.grid(row=3, column=0, padx=16, pady=6, sticky="ew")
     rec_card.grid_columnconfigure(2, weight=1)
 
     app._btn_rec = ctk.CTkButton(
@@ -238,7 +272,7 @@ def build_ui(app):
     # model, HF token, normalize, devices, dictionaries) lives in the
     # Settings dialog, opened via the button on the right.
     run_card = card(app)
-    run_card.grid(row=3, column=0, padx=16, pady=6, sticky="ew")
+    run_card.grid(row=4, column=0, padx=16, pady=6, sticky="ew")
     run_card.grid_columnconfigure(2, weight=1)
 
     app._diar_check = ctk.CTkCheckBox(
@@ -283,7 +317,7 @@ def build_ui(app):
         app, height=4, corner_radius=2,
         fg_color=PROGRESS_BG, progress_color=BLUE,
     )
-    app._progress.grid(row=5, column=0, padx=16, pady=(10, 0), sticky="ew")
+    app._progress.grid(row=6, column=0, padx=16, pady=(10, 0), sticky="ew")
     app._progress.set(0)
 
     # --- Text result ---
@@ -292,11 +326,11 @@ def build_ui(app):
         fg_color=SURFACE, text_color=TEXT_PRIMARY,
         font=ctk.CTkFont(family=FONT, size=14),
     )
-    app._textbox.grid(row=6, column=0, padx=16, pady=(8, 8), sticky="nsew")
+    app._textbox.grid(row=7, column=0, padx=16, pady=(8, 8), sticky="nsew")
 
     # --- Action buttons ---
     btn_frame = ctk.CTkFrame(app, fg_color="transparent")
-    btn_frame.grid(row=7, column=0, padx=16, pady=(0, 14), sticky="ew")
+    btn_frame.grid(row=8, column=0, padx=16, pady=(0, 14), sticky="ew")
 
     app._btn_save = tonal_button(
         btn_frame, text="Сохранить (TXT/SRT/VTT)", command=app._save_txt,
