@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import threading
 from typing import TYPE_CHECKING
 
@@ -120,14 +119,6 @@ class App(
         self._last_history_folder: str | None = None
 
         build_ui(self)
-
-        # Token resolution order: config.json (set via "Вставить" button) →
-        # HF_TOKEN env var. Env-sourced tokens are NOT written back to
-        # config.json, so users who prefer env-only auth can keep their
-        # secret out of disk state.
-        saved_token = self._config.get("hf_token", "") or os.environ.get("HF_TOKEN", "")
-        if saved_token:
-            self._hf_token_var.set(saved_token)
 
 
 

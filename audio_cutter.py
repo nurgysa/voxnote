@@ -18,7 +18,6 @@ import tkinter as tk
 import customtkinter as ctk
 import numpy as np
 import sounddevice as sd
-import soundfile as sf
 
 from audio_io import ffmpeg_trim, load_mono_float32
 from theme import (
@@ -74,10 +73,6 @@ class AudioCutter(ctk.CTkToplevel):
 
         # Drag state
         self._dragging: str | None = None  # "start", "end", or None
-
-        # Silence-removal state (set after "Убрать паузы" runs)
-        self._silence_ranges_sec: list[tuple[float, float]] = []
-        self._silence_result = None  # SilenceRemovalResult | None
 
         self._build_ui()
 
@@ -223,15 +218,6 @@ class AudioCutter(ctk.CTkToplevel):
         )
         self._btn_split.grid(row=0, column=2, padx=4, pady=10)
 
-        # Remove silences
-        self._btn_silence = ctk.CTkButton(
-            btn_frame, text="✂  Убрать паузы", width=150, height=38, corner_radius=19,
-            font=ctk.CTkFont(family=FONT, size=13),
-            fg_color=BLUE_SURFACE, hover_color=SURFACE_BRIGHT, text_color="#8AB4F8",
-            command=self._remove_silences, state="disabled",
-        )
-        self._btn_silence.grid(row=0, column=3, padx=4, pady=10)
-
         # Add split point
         self._btn_add_split = ctk.CTkButton(
             btn_frame, text="+ Точка разреза", width=140, height=38, corner_radius=19,
@@ -239,7 +225,7 @@ class AudioCutter(ctk.CTkToplevel):
             fg_color=BLUE_SURFACE, hover_color=SURFACE_BRIGHT, text_color=YELLOW,
             command=self._add_split_point, state="disabled",
         )
-        self._btn_add_split.grid(row=0, column=4, padx=4, pady=10)
+        self._btn_add_split.grid(row=0, column=3, padx=4, pady=10)
 
         # Clear splits
         self._btn_clear_splits = ctk.CTkButton(
@@ -248,7 +234,7 @@ class AudioCutter(ctk.CTkToplevel):
             fg_color="transparent", hover_color=BORDER, text_color=TEXT_SECONDARY,
             command=self._clear_split_points, state="disabled",
         )
-        self._btn_clear_splits.grid(row=0, column=5, padx=4, pady=10)
+        self._btn_clear_splits.grid(row=0, column=4, padx=4, pady=10)
 
         # Status
         self._lbl_status = ctk.CTkLabel(
@@ -256,8 +242,8 @@ class AudioCutter(ctk.CTkToplevel):
             font=ctk.CTkFont(family=FONT, size=12),
             text_color=TEXT_SECONDARY,
         )
-        self._lbl_status.grid(row=0, column=6, padx=12, pady=10, sticky="e")
-        btn_frame.grid_columnconfigure(6, weight=1)
+        self._lbl_status.grid(row=0, column=5, padx=12, pady=10, sticky="e")
+        btn_frame.grid_columnconfigure(5, weight=1)
 
     # ── File loading ──────────────────────────────────────────
 
@@ -288,8 +274,6 @@ class AudioCutter(ctk.CTkToplevel):
             self._start_sec = 0.0
             self._end_sec = self._duration
             self._split_points.clear()
-            self._silence_ranges_sec = []
-            self._silence_result = None
 
             self._update_time_labels()
             self._lbl_file.configure(text=os.path.basename(path), text_color=TEXT_PRIMARY)
@@ -297,7 +281,7 @@ class AudioCutter(ctk.CTkToplevel):
 
             # Enable buttons
             for btn in (self._btn_play, self._btn_cut, self._btn_split,
-                        self._btn_add_split, self._btn_clear_splits, self._btn_silence):
+                        self._btn_add_split, self._btn_clear_splits):
                 btn.configure(state="normal")
 
             self._draw_waveform()
@@ -377,16 +361,6 @@ class AudioCutter(ctk.CTkToplevel):
                 font=(FONT, 9), anchor="s",
             )
             cur_t += interval
-
-        # Draw silence overlays (red, semi-transparent via stipple — Tk has no alpha)
-        red_str = t(RED)
-        for s_start, s_end in self._silence_ranges_sec:
-            sx1 = self._sec_to_x(s_start, w)
-            sx2 = self._sec_to_x(s_end, w)
-            self._canvas.create_rectangle(
-                sx1, 0, sx2, h,
-                fill=red_str, outline="", stipple="gray25",
-            )
 
         # Draw start marker
         start_color = t(MARKER_START_COLOR)
@@ -629,99 +603,6 @@ class AudioCutter(ctk.CTkToplevel):
             )
         except subprocess.CalledProcessError as e:
             self._lbl_status.configure(text=f"Ошибка: {e}", text_color=RED)
-
-    # ── Silence removal ───────────────────────────────────────
-
-    def _remove_silences(self):
-        """Run VAD in background, show silence regions, then prompt save."""
-        if self._samples is None:
-            return
-
-        self._btn_silence.configure(state="disabled")
-        self._lbl_status.configure(text="Анализ речи...", text_color=TEXT_SECONDARY)
-        self.update()
-
-        samples = self._samples
-        sr = self._sample_rate
-
-        def worker():
-            try:
-                import silence_remover
-                result = silence_remover.remove_silences(samples, sr)
-                self.after(0, self._on_vad_done, result)
-            except ImportError as e:
-                self.after(0, self._on_vad_error,
-                           f"Обновите faster-whisper: pip install -U faster-whisper ({e})")
-            except NotImplementedError as e:
-                self.after(0, self._on_vad_error, str(e))
-            except Exception as e:
-                self.after(0, self._on_vad_error, str(e))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_vad_done(self, result):
-        """Handle VAD result on the main thread: update UI and prompt save."""
-        self._btn_silence.configure(state="normal")
-        self._silence_result = result
-        self._silence_ranges_sec = result.silence_ranges_sec
-        self._draw_waveform()
-
-        if result.num_silences == 0 and result.kept_sec > 0:
-            self._lbl_status.configure(
-                text="Пауз не найдено — файл уже без пауз",
-                text_color=TEXT_SECONDARY,
-            )
-            return
-
-        if result.kept_sec == 0:
-            self._lbl_status.configure(text="Речь не обнаружена", text_color=RED)
-            return
-
-        self._lbl_status.configure(
-            text=(
-                f"Найдено {result.num_silences} пауз "
-                f"(−{self._fmt(result.removed_sec)}), "
-                f"останется {self._fmt(result.kept_sec)}"
-            ),
-            text_color=GREEN,
-        )
-        self._save_no_silences_dialog()
-
-    def _on_vad_error(self, msg: str):
-        self._btn_silence.configure(state="normal")
-        self._lbl_status.configure(text=f"Ошибка: {msg}", text_color=RED)
-
-    def _save_no_silences_dialog(self):
-        """Prompt for output path and write speech-only audio as WAV."""
-        if self._silence_result is None or len(self._silence_result.speech_samples) == 0:
-            return
-
-        from tkinter import filedialog
-        base, _ = os.path.splitext(os.path.basename(self._audio_path))
-        default_name = f"{base}_nopauses.wav"
-
-        path = filedialog.asksaveasfilename(
-            title="Сохранить без пауз",
-            initialfile=default_name,
-            defaultextension=".wav",
-            filetypes=[("WAV files", "*.wav"), ("All files", "*.*")],
-        )
-        if not path:
-            return
-
-        try:
-            sf.write(
-                path,
-                self._silence_result.speech_samples,
-                self._sample_rate,
-                subtype="PCM_16",
-            )
-            self._lbl_status.configure(
-                text=f"Сохранено: {os.path.basename(path)}",
-                text_color=GREEN,
-            )
-        except OSError as e:
-            self._lbl_status.configure(text=f"Ошибка сохранения: {e}", text_color=RED)
 
     # ── Split ─────────────────────────────────────────────────
 

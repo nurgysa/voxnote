@@ -37,9 +37,7 @@ from ui.widgets import (
 
 from .constants import (
     APPEARANCE_MODES,
-    DEVICES,
     LANGUAGES,
-    MODELS,
     SPEAKER_COUNTS,
 )
 
@@ -124,15 +122,10 @@ def build_ui(app):
     app._lang_var = ctk.StringVar(
         value=saved_lang if saved_lang in LANGUAGES else "Авто-определение",
     )
-    # Default to large-v3 (maximum quality). On this machine large-v3
-    # int8_float16 is verified at ~1.5 GB VRAM and 5.7× realtime on GTX
-    # 1650 Ti — fast enough to be the everyday default.
-    saved_model = app._config.get("model", "large-v3 (максимум)")
-    app._model_var = ctk.StringVar(
-        value=saved_model if saved_model in MODELS else "large-v3 (максимум)",
-    )
-    app._diar_var = ctk.BooleanVar(value=False)
-    app._hf_token_var = ctk.StringVar()
+    # Diarization default ON for the cloud-only build — AssemblyAI's built-in
+    # diarization is the whole point of choosing it. Clients shouldn't have to
+    # toggle a checkbox to get speaker labels.
+    app._diar_var = ctk.BooleanVar(value=True)
     saved_spk = app._config.get("speaker_count", "Авто")
     app._spk_count_var = ctk.StringVar(
         value=saved_spk if saved_spk in SPEAKER_COUNTS else "Авто",
@@ -140,29 +133,16 @@ def build_ui(app):
     app._normalize_var = ctk.BooleanVar(
         value=bool(app._config.get("normalize_audio", True)),
     )
-    # RNNoise (arnndn) — opt-in, default off. When enabled, ensure_wav
-    # inserts an RNNoise stage between highpass and loudnorm in the
-    # ffmpeg filter chain (local path) AND the cloud path runs a
-    # pre-denoise pass before sending audio to the provider/chunker.
+    # RNNoise (arnndn) — opt-in, default off. When enabled, the cloud
+    # path runs a pre-denoise pass via ffmpeg before sending audio to
+    # the provider.
     app._denoise_var = ctk.BooleanVar(
         value=bool(app._config.get("denoise_audio", False)),
     )
-    saved_tr_dev = app._config.get("transcribe_device", "Авто")
-    app._tr_device_var = ctk.StringVar(
-        value=saved_tr_dev if saved_tr_dev in DEVICES else "Авто",
-    )
-    saved_di_dev = app._config.get("diarize_device", "Авто")
-    app._di_device_var = ctk.StringVar(
-        value=saved_di_dev if saved_di_dev in DEVICES else "Авто",
-    )
 
-    # Cloud (managed-API) state. When _cloud_enabled_var is True, the
-    # device pickers above are bypassed and transcription is routed to
-    # the chosen provider. Default is False — opt-in only, since the
-    # audio leaves the user's machine.
-    app._cloud_enabled_var = ctk.BooleanVar(
-        value=bool(app._config.get("cloud_enabled", False)),
-    )
+    # Cloud provider state. Whisper-model / GPU-device pickers and the
+    # cloud-enabled toggle were removed in the 2026-05-28 rip-out — cloud
+    # is now the only mode, AssemblyAI is the default provider.
     app._cloud_provider_var = ctk.StringVar(
         value=app._config.get("cloud_provider", "AssemblyAI"),
     )

@@ -1,9 +1,10 @@
 """Settings dialog — collects all rarely-changed configuration in one window.
 
 Per-run controls (Diarization toggle, Speaker count) stay on the main window.
-This dialog owns the persistent settings: language, model, HF token, audio
-normalization, transcribe device, diarize device, plus shortcuts to the
-hotword and voice library editors.
+This dialog owns the persistent cloud-only settings: language, audio
+normalization, cloud provider + API key, plus the LLM-side OpenRouter /
+Linear / Glide / Google Drive integrations. Whisper-model / GPU-device /
+HF-token / voice-library entries were removed in the 2026-05-28 rip-out.
 
 State model: the App owns the StringVar/BooleanVar instances; widgets here
 bind to them directly. Closing the dialog destroys widgets but leaves the
@@ -59,7 +60,7 @@ _CURATED_MODELS = {
 
 
 class SettingsDialog(ctk.CTkToplevel):
-    """Modal settings dialog. Mirrors the structure of TermsDialog/VoicesDialog."""
+    """Modal settings dialog. Mirrors the structure of TermsDialog."""
 
     def __init__(self, parent):
         super().__init__(parent)
@@ -95,7 +96,6 @@ class SettingsDialog(ctk.CTkToplevel):
 
         self._build_appearance_section(body)
         self._build_transcription_section(body)
-        self._build_diarization_section(body)
         self._build_audio_section(body)
         self._build_cloud_section(body)
         self._build_dictionaries_section(body)
@@ -192,8 +192,6 @@ class SettingsDialog(ctk.CTkToplevel):
         ).grid(row=1, column=0, columnspan=2, padx=4, pady=(0, 4), sticky="w")
 
     def _build_transcription_section(self, parent) -> None:
-        from ui.app import DEVICES, MODELS
-
         section = self._section_card(parent, "Транскрипция", row=1)
 
         label(section, "Язык").grid(row=0, column=0, padx=(4, 8), pady=6, sticky="w")
@@ -201,66 +199,6 @@ class SettingsDialog(ctk.CTkToplevel):
             section, self._parent._lang_var, list(LANGUAGES.keys()),
             command=self._parent._on_language_changed,
         ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-
-        label(section, "Модель").grid(row=1, column=0, padx=(4, 8), pady=6, sticky="w")
-        option_menu(
-            section, self._parent._model_var, list(MODELS.keys()),
-            command=self._parent._on_model_changed,
-        ).grid(row=1, column=1, padx=4, pady=6, sticky="w")
-
-        label(section, "Устройство").grid(row=2, column=0, padx=(4, 8), pady=6, sticky="w")
-        option_menu(
-            section, self._parent._tr_device_var, list(DEVICES.keys()),
-            command=self._parent._on_transcribe_device_changed,
-        ).grid(row=2, column=1, padx=4, pady=6, sticky="w")
-
-    def _build_diarization_section(self, parent) -> None:
-        from ui.app import DEVICES
-
-        section = self._section_card(parent, "Диаризация", row=2)
-
-        label(section, "HF Token").grid(row=0, column=0, padx=(4, 8), pady=6, sticky="w")
-        token_entry = ctk.CTkEntry(
-            section, textvariable=self._parent._hf_token_var, height=36,
-            corner_radius=10, border_color=BORDER, border_width=1,
-            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT, size=12),
-            placeholder_text="hf_...",
-        )
-        token_entry.grid(row=0, column=1, padx=4, pady=6, sticky="ew")
-        tonal_button(
-            section, text="Вставить", command=self._parent._paste_token_btn,
-            width=100,
-        ).grid(row=0, column=2, padx=(4, 4), pady=6)
-
-        label(section, "Устройство").grid(row=1, column=0, padx=(4, 8), pady=6, sticky="w")
-        di_menu = option_menu(
-            section, self._parent._di_device_var, list(DEVICES.keys()),
-            command=self._on_diarize_device_changed,
-        )
-        di_menu.grid(row=1, column=1, padx=4, pady=6, sticky="w")
-
-        # CPU-diarization warning. Only shown when the diarize device is CPU.
-        # We place a label in a fixed slot and toggle visibility via grid()/
-        # grid_remove() so the row layout is stable across selections.
-        self._cpu_warning = label(
-            section, "⚠ CPU-диаризация в 10-20× медленнее GPU", anchor="w",
-        )
-        self._cpu_warning.grid(
-            row=2, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w",
-        )
-        self._update_cpu_warning()
-
-    def _on_diarize_device_changed(self, value: str) -> None:
-        """Forward to App's persistence callback, then refresh local warning."""
-        self._parent._on_diarize_device_changed(value)
-        self._update_cpu_warning()
-
-    def _update_cpu_warning(self) -> None:
-        if self._parent._di_device_var.get() == "CPU":
-            self._cpu_warning.grid()
-        else:
-            self._cpu_warning.grid_remove()
 
     def _update_mixed_warning(self, *_args) -> None:
         """Show or hide the inline incompatibility warning in the cloud section.
@@ -300,7 +238,7 @@ class SettingsDialog(ctk.CTkToplevel):
             self._mixed_warning.grid_remove()
 
     def _build_audio_section(self, parent) -> None:
-        section = self._section_card(parent, "Аудио", row=3)
+        section = self._section_card(parent, "Аудио", row=2)
         check = ctk.CTkCheckBox(
             section, text="Нормализовать громкость (EBU R128 + 80 Hz HPF)",
             variable=self._parent._normalize_var,
@@ -329,30 +267,15 @@ class SettingsDialog(ctk.CTkToplevel):
         )
 
     def _build_cloud_section(self, parent) -> None:
-        section = self._section_card(parent, "Облако (опционально)", row=4)
-
-        # Toggle. When ON, the local device pickers above are bypassed
-        # and all transcription goes through the chosen provider. The
-        # checkbox state is the single source of truth — provider
-        # selection / API key only matter when this is checked.
-        check = ctk.CTkCheckBox(
-            section, text="Использовать облако вместо локального движка",
-            variable=self._parent._cloud_enabled_var,
-            command=self._parent._on_cloud_enabled_changed,
-            font=ctk.CTkFont(family=FONT, size=13),
-            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
-            border_color=BORDER, corner_radius=4,
-            checkbox_height=20, checkbox_width=20,
-        )
-        check.grid(row=0, column=0, columnspan=3, padx=4, pady=(2, 8), sticky="w")
+        section = self._section_card(parent, "Облачный провайдер", row=3)
 
         label(section, "Провайдер").grid(
-            row=1, column=0, padx=(4, 8), pady=6, sticky="w",
+            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
         )
         option_menu(
             section, self._parent._cloud_provider_var, list(PROVIDERS.keys()),
             command=self._parent._on_cloud_provider_changed,
-        ).grid(row=1, column=1, padx=4, pady=6, sticky="w")
+        ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
 
         # Inline warning shown when language=mixed AND the chosen provider
         # has supports_mixed=False (currently only Deepgram). Initially
@@ -365,12 +288,12 @@ class SettingsDialog(ctk.CTkToplevel):
             wraplength=340,
         )
         self._mixed_warning.grid(
-            row=2, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w",
+            row=1, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w",
         )
         self._mixed_warning.grid_remove()  # hidden until needed
 
         label(section, "API key").grid(
-            row=3, column=0, padx=(4, 8), pady=6, sticky="w",
+            row=2, column=0, padx=(4, 8), pady=6, sticky="w",
         )
         ctk.CTkEntry(
             section, textvariable=self._parent._cloud_api_key_var, height=36,
@@ -379,41 +302,32 @@ class SettingsDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(family=FONT, size=12),
             placeholder_text="API ключ провайдера",
             show="•",  # Mask the key visually — same UX as a password field.
-        ).grid(row=3, column=1, padx=4, pady=6, sticky="ew")
+        ).grid(row=2, column=1, padx=4, pady=6, sticky="ew")
         tonal_button(
             section, text="Вставить",
             command=self._parent._paste_cloud_api_key, width=100,
-        ).grid(row=3, column=2, padx=(4, 4), pady=6)
+        ).grid(row=2, column=2, padx=(4, 4), pady=6)
 
-        # Disclosure. Cloud means audio leaves the user's machine and
-        # ends up on a third-party server, which has privacy/compliance
-        # implications. Surfacing this right next to the toggle is the
-        # cheapest mitigation.
+        # Disclosure. Audio leaves the user's machine and ends up on a
+        # third-party server, which has privacy/compliance implications.
+        # Surfacing this in the cloud section is the cheapest mitigation.
         label(
             section,
-            "⚠ При включении аудио загружается на сервер провайдера. "
+            "⚠ Аудио загружается на сервер провайдера. "
             "Не используй для конфиденциальных записей.",
             anchor="w",
-        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(2, 6), sticky="w")
+        ).grid(row=3, column=0, columnspan=3, padx=4, pady=(2, 6), sticky="w")
         # Static price summary. Cheapest with diarization first.
-        # OpenAI Whisper sits on its own line because it is the only
-        # provider without speaker labels.
         label(
             section,
             "ℹ Цены с диаризацией: AssemblyAI ~$0.17/ч • "
             "Deepgram ~$0.43/ч • Gladia ~$0.61/ч • "
             "Speechmatics ~$1.04/ч.",
             anchor="w",
-        ).grid(row=5, column=0, columnspan=3, padx=4, pady=(0, 2), sticky="w")
-        label(
-            section,
-            "ℹ OpenAI Whisper ~$0.36/ч — только транскрипция, "
-            "без определения спикеров.",
-            anchor="w",
-        ).grid(row=6, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
+        ).grid(row=4, column=0, columnspan=3, padx=4, pady=(0, 4), sticky="w")
 
     def _build_dictionaries_section(self, parent) -> None:
-        section = self._section_card(parent, "Словари", row=5)
+        section = self._section_card(parent, "Словари", row=4)
 
         tonal_button(
             section, text="Словарь терминов",
@@ -424,21 +338,15 @@ class SettingsDialog(ctk.CTkToplevel):
         self._terms_summary = label(section, "", anchor="w")
         self._terms_summary.grid(row=0, column=1, padx=(8, 4), pady=6, sticky="ew")
 
-        tonal_button(
-            section, text="Голоса",
-            command=self._parent._open_voices_dialog, width=200,
-        ).grid(row=1, column=0, padx=4, pady=6, sticky="w")
-        self._voices_summary = label(section, "", anchor="w")
-        self._voices_summary.grid(row=1, column=1, padx=(8, 4), pady=6, sticky="ew")
-
         self._refresh_summaries()
 
     def _refresh_summaries(self) -> None:
-        """Mirror App's existing summary-rendering for terms and voices.
+        """Mirror App's existing summary-rendering for terms.
 
-        Pulls the current strings via parent helpers if they exist, otherwise
-        falls back to plain counts. Keeps this dialog independent of internal
-        helper signatures while still showing live data.
+        Pulls the current string via parent helpers if they exist, otherwise
+        falls back to a plain count. Keeps this dialog independent of internal
+        helper signatures while still showing live data. Voices summary was
+        removed in the 2026-05-28 rip-out (voice library deleted).
         """
         terms = self._parent._config.get("hotwords", []) or []
         if terms:
@@ -449,16 +357,6 @@ class SettingsDialog(ctk.CTkToplevel):
         else:
             self._terms_summary.configure(text="Нет сохранённых терминов")
 
-        voices = self._parent._config.get("voices", []) or []
-        if voices:
-            names = [v.get("name", "?") for v in voices[:5]]
-            preview = ", ".join(names)
-            if len(voices) > 5:
-                preview += f", … (+{len(voices) - 5})"
-            self._voices_summary.configure(text=preview)
-        else:
-            self._voices_summary.configure(text="Голоса не записаны")
-
     # ── OpenRouter section (Phase 6.0 Task 13) ────────────────────────
 
     def _build_openrouter_section(self, parent) -> None:
@@ -467,7 +365,7 @@ class SettingsDialog(ctk.CTkToplevel):
         Layout: title, [api_key field][Вставить], [Проверить ключ][status],
         default model dropdown.
         """
-        section = self._section_card(parent, "OpenRouter", row=6)
+        section = self._section_card(parent, "OpenRouter", row=5)
 
         # API key row — entry + paste button
         label(section, "API ключ").grid(
@@ -530,7 +428,7 @@ class SettingsDialog(ctk.CTkToplevel):
         enabled-checkbox above; when off, Linear is hidden from the
         backend dropdown in ExtractTasksDialog (effect wired in 6.4.1).
         """
-        section = self._section_card(parent, "Linear", row=7)
+        section = self._section_card(parent, "Linear", row=6)
 
         ctk.CTkCheckBox(
             section, text="Использовать Linear",
@@ -635,7 +533,7 @@ class SettingsDialog(ctk.CTkToplevel):
         Linear section above: enabled-checkbox at top, paste, validate
         (saves on success), shows ✓/✗ status next to the button.
         """
-        section = self._section_card(parent, "Glide", row=8)
+        section = self._section_card(parent, "Glide", row=7)
 
         ctk.CTkCheckBox(
             section, text="Использовать Glide",
@@ -811,7 +709,7 @@ class SettingsDialog(ctk.CTkToplevel):
         via `self.after(0, ...)` so widget updates happen on the main
         thread. Mirrors the _validate_openrouter pattern.
         """
-        section = self._section_card(parent, "Google Drive", row=9)
+        section = self._section_card(parent, "Google Drive", row=8)
 
         # Status row — badge bound to the App's _gdrive_status_var.
         label(section, "Статус").grid(

@@ -1,19 +1,25 @@
 """Settings handlers — paste helpers, change callbacks, file picker.
 
-Extracted from ``ui/app/__init__.py`` (F4-PR-2d). 16 methods that own the
+Extracted from ``ui/app/__init__.py`` (F4-PR-2d). Methods that own the
 "a settings dropdown / checkbox / button changed → persist to config and
 maybe refresh widgets" surface. Includes ``_select_file`` (the audio-file
 picker) for historical reasons — the original author grouped it under the
 same section comment, and the method has identical persistence shape
 (read a value, write to App state).
 
+The HF-token paste handler, Whisper-model / GPU-device change callbacks,
+and cloud-enabled toggle handler were removed in the 2026-05-28 cloud-only
+rip-out (their dialog widgets are gone too).
+
 Mixin contract: relies on App providing ``self._config`` (mutable dict),
-``self._hf_token_var``, ``self._diar_var``, ``self._spk_count_menu``,
-``self._normalize_var``, ``self._cloud_*_var``, ``self._linear_*_var``,
-``self._glide_*_var``, ``self._openrouter_*_var``, ``self._appearance_var``,
-``self._transcriber`` (cleared on device change), ``self._cloud_api_keys``
-(dict), ``self._audio_path``, ``self._lbl_file``, ``self._btn_transcribe``,
-and the dialog refs ``self._settings_dialog`` / ``self._monitor_dialog`` /
+``self._diar_var``, ``self._spk_count_menu``, ``self._normalize_var``,
+``self._denoise_var``, ``self._cloud_provider_var``,
+``self._cloud_api_key_var``, ``self._cloud_api_keys`` (dict), the
+``self._linear_*_var`` / ``self._glide_*_var`` / ``self._openrouter_*_var``
+/ ``self._appearance_var`` / ``self._gdrive_*`` families,
+``self._transcriber`` (lazy, never invalidated in cloud-only mode),
+``self._audio_path``, ``self._lbl_file``, ``self._btn_transcribe``, and
+the dialog refs ``self._settings_dialog`` / ``self._monitor_dialog`` /
 ``self._cutter`` (used by the live appearance-mode switch).
 """
 from __future__ import annotations
@@ -36,37 +42,15 @@ logger = get_logger(__name__)
 class SettingsMixin:
     """Persistence-and-side-effect callbacks for the Settings dialog widgets."""
 
-    def _paste_token_btn(self):
-        """Handle paste via button click.
-
-        TclError = empty clipboard or non-text content (silent — user just
-        clicked Paste without anything to paste). OSError = config save
-        failed (real problem: token won't persist across launches).
-        """
-        try:
-            text = self.clipboard_get().strip()
-            self._hf_token_var.set(text)
-            if text:
-                self._config["hf_token"] = text
-                save_config(self._config)
-        except tk.TclError:
-            return
-        except OSError as e:
-            logger.warning("Failed to persist HF token to config.json: %s", e)
-
     def _toggle_diarization(self):
-        # Only the speaker-count menu lives on the main window; HF Token and
-        # device pickers were moved to the Settings dialog (own enable state).
+        # Only the speaker-count menu lives on the main window; device
+        # pickers and HF-token field were removed in the cloud-only rip-out.
         state = "normal" if self._diar_var.get() else "disabled"
         self._spk_count_menu.configure(state=state)
 
     def _on_speaker_count_changed(self, value: str) -> None:
         """Persist the dropdown choice immediately so it survives restarts."""
         self._config["speaker_count"] = value
-        save_config(self._config)
-
-    def _on_model_changed(self, value: str) -> None:
-        self._config["model"] = value
         save_config(self._config)
 
     def _on_language_changed(self, value: str) -> None:
@@ -83,34 +67,6 @@ class SettingsMixin:
         Opt-in (default False) because aggressive denoising can clip soft
         consonants on already-clean recordings."""
         self._config["denoise_audio"] = bool(self._denoise_var.get())
-        save_config(self._config)
-
-    def _on_transcribe_device_changed(self, value: str) -> None:
-        """
-        Persist the choice and invalidate the cached Transcriber.
-
-        Device is baked into the WhisperModel at load_model() time, so a
-        device change requires a fresh Transcriber. Setting to None here
-        causes _start_transcription's existing reuse-or-recreate check to
-        rebuild it with the new device on the next run.
-        """
-        self._config["transcribe_device"] = value
-        save_config(self._config)
-        self._transcriber = None
-
-    def _on_diarize_device_changed(self, value: str) -> None:
-        """
-        Persist the choice. The CPU-slow warning lives in the Settings dialog
-        and refreshes itself there; nothing to update on the main window.
-        """
-        self._config["diarize_device"] = value
-        save_config(self._config)
-
-    def _on_cloud_enabled_changed(self) -> None:
-        """Persist the cloud toggle. No widget reshuffling needed — the
-        Settings dialog rebuilds itself on next open, and _start_transcription
-        reads the var directly when starting a job."""
-        self._config["cloud_enabled"] = bool(self._cloud_enabled_var.get())
         save_config(self._config)
 
     def _on_linear_enabled_changed(self) -> None:
@@ -262,11 +218,13 @@ class SettingsMixin:
                 pass
 
     def _paste_cloud_api_key(self) -> None:
-        """Same paste-from-clipboard helper as the HF token, scoped to
-        the cloud API key field. Persists into the per-provider dict
-        under the *currently selected* provider name.
+        """Paste-from-clipboard helper scoped to the cloud API key field.
+        Persists into the per-provider dict under the *currently selected*
+        provider name.
 
-        See ``_paste_token_btn`` for exception-handling rationale.
+        TclError = empty clipboard or non-text content (silent — user just
+        clicked Paste without anything to paste). OSError = config save
+        failed (real problem: key won't persist across launches).
         """
         try:
             text = self.clipboard_get().strip()

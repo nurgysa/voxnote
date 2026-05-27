@@ -1,14 +1,17 @@
-"""Dialog launchers — opens Settings/Monitor/History/Voices/Terms/Cutter/Extract.
+"""Dialog launchers — opens Settings/Monitor/History/Terms/Cutter/Extract.
 
-Extracted from ``ui/app/__init__.py`` (F4-PR-2e). 11 methods covering the
-seven dialogs the App can launch, plus the history-load callback and the
+Extracted from ``ui/app/__init__.py`` (F4-PR-2e). Methods covering the
+six dialogs the App can launch, plus the history-load callback and the
 singleton-state cleanup hooks. The Settings and System Monitor dialogs are
-singletons (re-click lifts the existing window); History, Terms, Voices,
+singletons (re-click lifts the existing window); History, Terms,
 ExtractTasks are modal; Audio Cutter is loosely tracked (latest instance
 only) so the live-theme switch can repaint its Canvas.
 
+Voices dialog was removed in the 2026-05-28 cloud-only rip-out — voice
+enrollment depended on local pyannote embeddings which are gone.
+
 Mixin contract: relies on App providing ``self._config``, ``self._settings_dialog``,
-``self._monitor_dialog``, ``self._cutter``, ``self._hf_token_var``,
+``self._monitor_dialog``, ``self._cutter``,
 ``self._textbox``, ``self._lbl_status``, ``self._lbl_file``,
 ``self._btn_save``, ``self._btn_copy``, ``self._btn_transcribe``,
 ``self._btn_extract_tasks``, ``self._lang_var``, ``self._audio_path``,
@@ -28,7 +31,6 @@ from ui.dialogs.history import HistoryDialog
 from ui.dialogs.settings import SettingsDialog
 from ui.dialogs.system_monitor import SystemMonitorDialog
 from ui.dialogs.terms import TermsDialog
-from ui.dialogs.voices import VoicesDialog
 
 from .constants import LANGUAGES
 
@@ -92,14 +94,6 @@ class DialogsMixin:
 
     def _open_terms_dialog(self):
         TermsDialog(self, self._config, self._refresh_settings_summaries)
-
-    def _open_voices_dialog(self):
-        # Pass the CURRENT HF token value (from the field, may be unsaved).
-        # Enrollment worker needs HF auth to download pyannote/embedding.
-        hf_token = self._hf_token_var.get().strip() or None
-        VoicesDialog(
-            self, self._config, hf_token, self._refresh_settings_summaries,
-        )
 
     def _open_history_dialog(self):
         HistoryDialog(self, on_load_to_main=self._load_history_into_main)
