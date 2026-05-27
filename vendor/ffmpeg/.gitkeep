@@ -1,0 +1,8 @@
+# Placeholder so the otherwise-empty vendor/ffmpeg/ directory is tracked.
+#
+# The actual ffmpeg.exe + ffprobe.exe live here at build time but are
+# gitignored (~80 MB each — too large for the repo). Download them from
+# https://www.gyan.dev/ffmpeg/builds/ (release-essentials build) and
+# extract the two .exe files from bin/ into this directory.
+#
+# scripts/build_exe.ps1 verifies their presence before invoking PyInstaller.

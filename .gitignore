@@ -23,3 +23,10 @@ venv/
 *.swp
 .claude/
 .superpowers/
+
+# PyInstaller bundle outputs (Task 4 of v5 plan)
+build/
+dist/
+*.zip
+vendor/ffmpeg/*.exe
+.venv-build/
