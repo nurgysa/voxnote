@@ -65,6 +65,39 @@ Locked-in choices from the brainstorm session:
 | Speaker contact storage | **Frontmatter** in `<vault>/People/<name>.md` (synced with vault). Fields: `email`, `telegram_chat_id`, `auto_distribute_protocols` (default true; per-speaker opt-out), `protocol_distribution_channels` (priority order). At-first-contact-entry warning: «контакты идут с vault при cloud-sync». See §3.5 + §7.15. |
 | Distribution audit log | **Dual: SQLite `distributions` table** (queryable) + `<vault>/.audio-transcriber/distributions.log` JSONL (portable, Cowork-readable). Same pattern as segments.jsonl/meeting_segments and tasks.json/meeting_tasks — «files own content, SQLite owns index» per §3.3. See §4.3 + §7.15. |
 | Repo structure | Monorepo (Approach A) |
+| Frontend stack pinning | **React 19 + TS 5.x + Vite + TanStack Query / Router + shadcn/ui + Tailwind v4 + Zustand + Vitest + Playwright** (see §2.1 for justification). Chosen 2026-05-28 — pins versions and adds the previously-implicit Vite / TanStack / Tailwind / state / test layers. |
+
+## 2.1 Frontend tech stack pinning (added 2026-05-28)
+
+The §2 decisions table set the high-level frame (Tauri 2 + React + TS + shadcn/ui + pnpm) but left several layers implicit. This subsection pins each layer with an exact choice + rationale so plan-writing time isn't burned re-litigating. Versions reflect what's current and well-supported on Windows desktop in 2026; minor-version drift during the ~6-month build is expected and fine, but cross-major bumps need explicit revisit.
+
+| Layer | Choice | Version pin | Why |
+|---|---|---|---|
+| Frontend framework | React | 19.x | Strongest training-data coverage in Claude/Codex/Cowork → highest agent-generated code quality. React 19 ships Server Components + the new compiler — relevant if/when we add server-side rendering hooks for shared content. Svelte 5 considered + rejected: smaller bundle but ~10× less LLM training data → noticeably worse agent output, and that's the bottleneck for a solo-dev 6-month build. |
+| Language | TypeScript | 5.x | Mandatory at this scale. The `packages/shared-types` OpenAPI-generated `.d.ts` (§3.3) is the cross-stack contract — turning a backend breakage into a TS compile error is the whole point. |
+| Build tool | Vite | 6.x (or current major at build start) | De-facto standard for React + TS in 2026; Tauri 2's `create-tauri-app --template react-ts` defaults to it. Esbuild dev + Rollup prod = fast iteration, small bundles. Reject: Webpack (legacy DX), Turbopack (still beta for non-Next.js usage as of plan-writing). |
+| Routing | TanStack Router | 1.x | Type-safe routes (compile-time path/param checking matches our TS-everywhere discipline), file-based routing supported but optional. React Router was strongly considered (more mindshare) but TanStack Router's typed-search-params model fits the meeting-detail / project-detail / chat URL surface we'll have. |
+| Data fetching | TanStack Query | 5.x | Cache + revalidation + optimistic updates + SSE/WebSocket integration — all the patterns we need for `/api/v1/billing/*`, `/api/v1/transcribe/*` SSE streams, and Supabase Realtime subscriptions. Default for any non-trivial React app in 2026. Reject: SWR (less feature-rich), Redux Toolkit Query (more coupled to Redux). |
+| UI primitives | shadcn/ui | latest (copy-paste model, not versioned) | Component-source-in-repo model. Agents read + modify components like normal source files — no opaque library abstractions. Tailwind-native. |
+| CSS | Tailwind | v4.x | shadcn/ui v4-compatible release. Tailwind v4 dropped the JS config file in favor of CSS-native `@theme` directive — simpler. PostCSS-free pipeline reduces moving parts. |
+| State management | **Zustand** | 5.x | Most app state is global-by-default (current vault, signed-in user, active meeting, UI prefs) → Zustand's single-store-with-slices model fits. Reject **Jotai**: better for fine-grained atomic dependencies (Figma-like graphs, complex form state) but we don't have that pattern — would be over-engineered. Component-local state stays in React `useState` per usual. |
+| Unit tests | Vitest | 3.x | Vite-native test runner — same config + transforms as the dev build. Drop-in Jest-compatible API. |
+| E2E / desktop tests | Playwright | 1.x | Tauri 2 has a `@tauri-apps/cli test` runner that drives Playwright under the hood — same author-once-run-everywhere flow as web Playwright tests. |
+| Package manager | pnpm | 9.x | Already specified in §3.2. Strict-node_modules layout catches phantom dependencies — important when bundling. |
+| Workspace tool | pnpm workspaces | — | TS side. Python side stays uv workspaces (`apps/api`, `packages/mcp-tools`). |
+| MCP SDK (client + server) | `@modelcontextprotocol/sdk` | latest TS | Already specified in §6. Most mature SDK in the MCP ecosystem; first-party Anthropic. |
+| Backend bridge | Tauri 2 + Rust | 2.x | Already specified throughout. Native FS, IPC, system tray, auto-updater, OS keychain via the `keyring` crate, deep-link via `tauri-plugin-deep-link`. |
+| CI / cross-build | GitHub Actions + `tauri-action` | latest | Cross-compiles Windows MSI/NSIS + macOS DMG (if ever added) + Linux AppImage from a single workflow. Code-signing certificate flow built in. |
+| Code signing | Windows: EV cert (provisioned during release prep) | — | Avoids SmartScreen warnings for end users. EV cert procurement is a manual founder-task before v1.0 ship; v0.x betas can ship unsigned with a SmartScreen warning + install instructions. |
+
+**Things this section does NOT pin** — left to plan-writing or first-implementation discretion:
+- Animation library (Framer Motion likely, but maybe none if shadcn primitives are enough).
+- Form library (React Hook Form likely if forms grow complex; bare controlled inputs are fine for the few we have).
+- i18n library (out of scope v1.0 — Russian + English markdown content; UI strings stay hardcoded Russian as in the legacy app).
+- Telemetry / error tracking SDK (Sentry / PostHog / etc. — decide when wiring observability, not now).
+- Markdown renderer for transcript/protocol viewers (likely `react-markdown` + `remark-gfm`; verify when building §7.14 chat UI).
+
+**Phase 2 candidates** (deferred): server-side rendering hooks (React 19 RSC) if we ever surface meeting content on a web view; Cowork plugin packaging if community demand emerges.
 
 ## 3. Architecture
 
