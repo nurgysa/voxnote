@@ -19,7 +19,6 @@ needed». Phase 2 may extract this from transcript via a separate
 """
 from dataclasses import dataclass
 
-
 MOM_5_BLOCK_TEMPLATE = """# Протокол встречи
 
 ## Метаданные
