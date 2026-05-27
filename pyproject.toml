@@ -16,3 +16,10 @@ select = [
 # Tests intentionally re-import names for symmetry with the module under
 # test; F401 (unused-import) noise outweighs signal.
 "tests/*" = ["F401"]
+# Protocol generator carries a ~1.5 KB Russian LLM system prompt as a
+# multiline string. Splitting individual sentences at 100 chars would
+# either insert paragraph breaks the LLM reads as semantic separators
+# OR force tedious implicit-concat at every comma. The prompt is the
+# source of truth for the contract; readability inside the file matters
+# more than enforcing line length on string literals.
+"tasks/protocol_generator.py" = ["E501"]
