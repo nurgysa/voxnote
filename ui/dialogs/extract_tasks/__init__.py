@@ -96,6 +96,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # Undo stack (5 deep) of deepcopy(self._tasks) snapshots before destructive ops.
         self._undo_stack: deque = deque(maxlen=5)
 
+        # Task 6 (MVP v5): opt-in protocol-generation pass. Default ON so
+        # first-time users see protocol.md without opting in. _run_extraction
+        # checks this flag AFTER save_tasks_raw and reuses the same OpenRouter
+        # client + model the user picked for task extraction.
+        self.generate_protocol = ctk.BooleanVar(value=True)
+
         # If tasks.json exists in the history folder (e.g., user re-opened the
         # dialog after a half-finished edit), load it instead of waiting for a
         # fresh extract.
@@ -238,6 +244,19 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             header, text="Извлечь", command=self._on_extract, width=120,
         )
         self._btn_extract.grid(row=0, column=7)
+
+        # Task 6 (MVP v5): protocol-generation opt-in checkbox.
+        # Spans the full header width so the long Russian label has room.
+        # State var `self.generate_protocol` was created in __init__ (kept
+        # together with other state); only the widget binding lives here.
+        ctk.CTkCheckBox(
+            header,
+            text="Также сгенерировать протокол встречи (protocol.md)",
+            variable=self.generate_protocol,
+            font=ctk.CTkFont(family=FONT, size=12),
+            text_color=TEXT_SECONDARY,
+            checkbox_height=18, checkbox_width=18,
+        ).grid(row=1, column=0, columnspan=8, padx=0, pady=(8, 0), sticky="w")
 
         # --- Status / cost hint row ---
         self._status_label = label(self, "", anchor="w")
@@ -582,6 +601,54 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 "transcript_lang": self._transcript_lang or "auto",
             }
             save_tasks_raw(self._history_folder, result["tasks"], meta)
+
+            # Task 6 (MVP v5): opt-in protocol generation, reusing the same
+            # OpenRouter client and user-chosen model. Runs AFTER save_tasks_raw
+            # so a protocol-generation failure never blocks the (successful)
+            # task-extraction commit. Logs warning + continues on
+            # ProtocolGenerationError — the user still gets their tasks.
+            #
+            # Lazy imports match the existing pattern in this method
+            # (line 531-536): keep tasks.* off the import chain of dialogs that
+            # don't extract. The source-text test test_dialog_imports_protocol_generator
+            # scans the whole file, so lazy-import placement still satisfies it.
+            #
+            # No module-level logger exists in this file — use inline
+            # logging.getLogger(__name__) per Codex sanity-check #6 in the v4
+            # plan (a bare `logger.warning(...)` would NameError and crash
+            # the worker thread after save_tasks_raw already succeeded).
+            if self.generate_protocol.get() and not self._cancel_event.is_set():
+                import logging as _logging
+                from pathlib import Path
+
+                from tasks import protocol_generator
+                from tasks.protocol_generator import ProtocolGenerationError
+
+                _proto_logger = _logging.getLogger(__name__)
+                self.after(0, self._status_label.configure, {
+                    "text": f"Генерация протокола ({model})...",
+                    "text_color": TEXT_SECONDARY,
+                })
+                try:
+                    proto_result = protocol_generator.generate(
+                        transcript=self._transcript,
+                        speakers=[],  # cloud-only build has no voice library
+                        meeting_date="",  # not tracked at dialog level in v1.0
+                        lang=self._transcript_lang,
+                        model=model,
+                        openrouter_client=openrouter,
+                    )
+                    proto_path = Path(self._history_folder) / "protocol.md"
+                    proto_path.write_text(
+                        proto_result.markdown, encoding="utf-8",
+                    )
+                    _proto_logger.info("protocol saved to %s", proto_path)
+                except ProtocolGenerationError as e:
+                    # Don't block task extraction on protocol failure.
+                    _proto_logger.warning("protocol generation failed: %s", e)
+                except OSError as e:
+                    # Disk full / permission denied writing protocol.md.
+                    _proto_logger.warning("protocol.md write failed: %s", e)
 
             self._remember_recent_model(model)
 
