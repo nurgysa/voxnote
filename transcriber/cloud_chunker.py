@@ -57,6 +57,7 @@ from providers.base import (
     TranscriptionProvider,
     TranscriptionResult,
 )
+from utils import get_ffmpeg_path
 
 # Target chunk length in seconds. 90 minutes = 5400s. At opus 32 kbps mono
 # 16 kHz, one chunk holds ~21 MB worth — safely under the 25 MB cap with
@@ -412,7 +413,7 @@ def _find_silence_boundaries(wav_path: str) -> list[tuple[float, float]]:
     start — we drop the incomplete entry.
     """
     cmd = [
-        "ffmpeg", "-nostdin", "-i", wav_path,
+        get_ffmpeg_path(), "-nostdin", "-i", wav_path,
         "-af", f"silencedetect=noise={_SILENCE_NOISE_DB}:d={_SILENCE_MIN_DURATION}",
         "-f", "null", "-",
     ]
@@ -460,7 +461,7 @@ def _extract_chunk(wav_path: str, start_sec: float, end_sec: float) -> str:
     tmp = tempfile.NamedTemporaryFile(suffix=".opus", delete=False)
     tmp.close()
     cmd = [
-        "ffmpeg", "-nostdin", "-v", "error", "-y",
+        get_ffmpeg_path(), "-nostdin", "-v", "error", "-y",
         "-ss", f"{start_sec:.3f}",
         "-to", f"{end_sec:.3f}",
         "-i", wav_path,

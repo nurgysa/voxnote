@@ -19,6 +19,8 @@ import urllib.request
 import numpy as np
 import soundfile as sf
 
+from utils import get_ffmpeg_path
+
 # Single source of truth for the speech pipeline's sample rate.
 # Whisper, Silero VAD, and pyannote all expect 16 kHz — changing this is
 # not a normal configuration knob, it's a "rewrite the pipeline" decision.
@@ -222,7 +224,7 @@ def ensure_wav(
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp.close()
     cmd: list[str] = [
-        "ffmpeg", "-v", "error", "-y", "-i", audio_path,
+        get_ffmpeg_path(), "-v", "error", "-y", "-i", audio_path,
     ]
     # Build the filter chain in the documented order. highpass is always
     # present because (a) it's effectively free, (b) it improves both
@@ -288,7 +290,7 @@ def ensure_16khz_mono(audio_path: str) -> tuple[str, bool]:
     try:
         subprocess.run(
             [
-                "ffmpeg", "-v", "error", "-y", "-i", audio_path,
+                get_ffmpeg_path(), "-v", "error", "-y", "-i", audio_path,
                 "-ar", str(SAMPLE_RATE), "-ac", "1", tmp.name,
             ],
             capture_output=True, check=True,
@@ -357,7 +359,7 @@ def resample_to_16khz_mono(samples: np.ndarray, sample_rate: int) -> np.ndarray:
     try:
         result = subprocess.run(
             [
-                "ffmpeg", "-v", "error",
+                get_ffmpeg_path(), "-v", "error",
                 "-f", "f32le", "-ar", str(sample_rate), "-ac", "1",
                 "-i", "pipe:0",
                 "-f", "f32le", "-ar", str(SAMPLE_RATE), "-ac", "1",
@@ -425,7 +427,7 @@ def ffmpeg_trim(src: str, start_sec: float, end_sec: float, dst: str) -> None:
     end_str = _ffmpeg_time(end_sec)
     try:
         subprocess.run(
-            ["ffmpeg", "-y", "-i", src,
+            [get_ffmpeg_path(), "-y", "-i", src,
              "-ss", start_str, "-to", end_str,
              "-c", "copy", dst],
             capture_output=True, check=True,
@@ -434,7 +436,7 @@ def ffmpeg_trim(src: str, start_sec: float, end_sec: float, dst: str) -> None:
         # Fallback: re-encode. Slower, but handles non-keyframe-aligned cuts
         # and codec-incompatible containers.
         subprocess.run(
-            ["ffmpeg", "-y", "-i", src,
+            [get_ffmpeg_path(), "-y", "-i", src,
              "-ss", start_str, "-to", end_str, dst],
             capture_output=True, check=True,
         )
@@ -525,7 +527,7 @@ def split_wav_into_chunks(
         try:
             subprocess.run(
                 [
-                    "ffmpeg", "-v", "error", "-y",
+                    get_ffmpeg_path(), "-v", "error", "-y",
                     "-ss", _ffmpeg_time(chunk_start_abs),
                     "-t", f"{chunk_len_s:.3f}",
                     "-i", wav_path,
