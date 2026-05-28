@@ -322,12 +322,17 @@ def test_assemblyai_supports_mixed_true():
 
 def test_submit_mixed_uses_multilingual_config():
     """When TranscriptionOptions.language == 'mixed', the submitted body must:
-    - set language_detection=True (enable per-file auto language detection)
-    - send speech_models=['universal-2'] (REQUIRED on every request since the
-      2026-05 AssemblyAI API contract change — singular `speech_model` is
-      deprecated per
-      https://www.assemblyai.com/docs/api-reference/transcripts/submit)
-    - NOT include language_code (mixed mode must not force a single language)
+    - set language_detection=True
+    - constrain autodetect to ['kk','ru','en'] via
+      language_detection_options.expected_languages (so AssemblyAI does NOT
+      pick from all 99 languages and mis-route Kazakh → Azerbaijani — verified
+      live on 2026-05-28 dev smoke; user spoke pure Kazakh, model returned
+      Azerbaijani Latin transcript on unconstrained autodetect)
+    - enable code_switching so different utterances can be detected
+      separately (covers the 'meetings span KZ+RU+EN simultaneously' use case)
+    - send speech_models=['universal-2'] (REQUIRED on every request since
+      the 2026-05 AssemblyAI API contract change)
+    - NOT include language_code (mixed must not force a single language)
     """
     p = AssemblyAIProvider("test-key")
 
@@ -342,6 +347,10 @@ def test_submit_mixed_uses_multilingual_config():
         p._submit("https://cdn.aai/mixed.wav", TranscriptionOptions(language="mixed"))
 
     assert submitted_body.get("language_detection") is True
+    assert submitted_body.get("language_detection_options") == {
+        "expected_languages": ["kk", "ru", "en"],
+        "code_switching": True,
+    }
     assert submitted_body.get("speech_models") == ["universal-2"]
     # speech_model (singular) is the deprecated form — must NOT be sent;
     # AssemblyAI 400s with "must be a non-empty list" if either is wrong.
@@ -376,4 +385,5 @@ def test_submit_single_language_includes_required_speech_models():
     assert submitted_body.get("speech_models") == ["universal-2"]
     # Mixed-branch keys must not appear; deprecated singular form must not appear.
     assert "language_detection" not in submitted_body
+    assert "language_detection_options" not in submitted_body
     assert "speech_model" not in submitted_body

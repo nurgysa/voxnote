@@ -191,12 +191,20 @@ class AssemblyAIProvider(TranscriptionProvider):
         }
         # Language handling (Universal-2 is multilingual, so the model itself
         # is the same across all branches — only the routing differs):
-        #   "mixed" → enable language_detection so AssemblyAI auto-detects
-        #     each utterance's language (KZ + RU + EN code-switching).
+        #   "mixed" → constrain autodetect to {kk, ru, en} + enable
+        #     code_switching so AssemblyAI segments per-utterance and routes
+        #     each to the right language. Without expected_languages the
+        #     autodetect picks from all 99 supported languages and frequently
+        #     mis-routes Kazakh → Azerbaijani (close Turkic neighbours, common
+        #     on short clips) — verified live on 2026-05-28 dev smoke.
         #   Explicit code (kk/ru/en) → force that single language.
-        #   None → auto-detect a single dominant language.
+        #   None → auto-detect a single dominant language across all 99.
         if options.language == "mixed":
             body["language_detection"] = True
+            body["language_detection_options"] = {
+                "expected_languages": ["kk", "ru", "en"],
+                "code_switching": True,
+            }
         elif options.language:
             body["language_code"] = options.language
         else:
