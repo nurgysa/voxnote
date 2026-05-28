@@ -36,13 +36,22 @@ from utils import (
 
 
 def _read_transcript(folder_path: str) -> str:
-    """Read transcript.txt from a history folder. Empty string on failure."""
-    txt_path = os.path.join(folder_path, "transcript.txt")
-    try:
-        with open(txt_path, encoding="utf-8") as f:
-            return f.read()
-    except OSError:
-        return ""
+    """Read transcript from a meeting folder. Empty string on failure.
+
+    Tries transcript.md first (new convention since 2026-05-28), falls
+    back to transcript.txt for older meeting folders. Returning "" on
+    both failures matches the caller's empty-state UI (textbox shows a
+    "(empty)" placeholder).
+    """
+    for filename in ("transcript.md", "transcript.txt"):
+        path = os.path.join(folder_path, filename)
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    return f.read()
+            except OSError:
+                continue
+    return ""
 
 
 class MeetingViewerDialog(ctk.CTkToplevel):
@@ -82,7 +91,7 @@ class MeetingViewerDialog(ctk.CTkToplevel):
             font=ctk.CTkFont(family=FONT, size=13),
         )
         textbox.grid(row=1, column=0, padx=16, pady=8, sticky="nsew")
-        textbox.insert("1.0", self._text or "(transcript.txt пуст или отсутствует)")
+        textbox.insert("1.0", self._text or "(transcript отсутствует или пуст)")
         # Keep editable so the user can copy a partial selection; we don't
         # write back to disk, the file remains the source of truth.
 
@@ -125,9 +134,12 @@ class MeetingViewerDialog(ctk.CTkToplevel):
     def _save_as(self):
         path = filedialog.asksaveasfilename(
             title="Сохранить транскрипцию",
-            defaultextension=".txt",
-            initialfile="transcript.txt",
-            filetypes=[("Text files", "*.txt")],
+            defaultextension=".md",
+            initialfile="transcript.md",
+            filetypes=[
+                ("Markdown", "*.md"),
+                ("Text files", "*.txt"),
+            ],
             parent=self,
         )
         if path:
@@ -271,7 +283,7 @@ class MeetingsDialog(ctk.CTkToplevel):
             if entry.get("audio_file"):
                 files.append(entry["audio_file"])
             if entry.get("has_transcript"):
-                files.append("transcript.txt")
+                files.append("transcript.md")
             files.append("description.md")
             meta = f"{date}   •   {', '.join(files)}"
             ctk.CTkLabel(

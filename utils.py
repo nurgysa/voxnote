@@ -18,9 +18,13 @@ def validate_audio(path: str) -> bool:
 
 
 def get_output_path(audio_path: str) -> str:
-    """Return the default .txt output path next to the audio file."""
+    """Return the default .md output path next to the audio file.
+
+    Switched from .txt to .md on 2026-05-28 (user request) so the saved
+    transcript renders cleanly in Obsidian and other markdown viewers.
+    """
     base, _ = os.path.splitext(audio_path)
-    return base + ".txt"
+    return base + ".md"
 
 
 def save_transcript(text: str, output_path: str) -> None:
@@ -209,9 +213,15 @@ def create_history_entry(
     language: str | None,
     model: str,
 ) -> str:
-    """Create a meeting folder with audio copy, transcript.txt and description.md.
+    """Create a meeting folder with audio copy, transcript.md and description.md.
 
     Returns the path to the created folder.
+
+    New meetings (2026-05-28+) write transcript.md so Obsidian / markdown
+    viewers render the file natively. Pre-existing transcript.txt files
+    in older meeting folders remain readable — list_history_entries and
+    the meetings dialog _read_transcript helper both accept either
+    extension (.md preferred, .txt fallback).
     """
     meetings_dir = get_meetings_dir()
 
@@ -226,9 +236,10 @@ def create_history_entry(
     if os.path.isfile(audio_file_path):
         shutil.copy2(audio_file_path, os.path.join(folder_path, audio_name))
 
-    # Save transcript
-    txt_path = os.path.join(folder_path, "transcript.txt")
-    with open(txt_path, "w", encoding="utf-8") as f:
+    # Save transcript as Markdown (plain text content — no actual markdown
+    # formatting yet; just the extension that lets viewers render).
+    transcript_path = os.path.join(folder_path, "transcript.md")
+    with open(transcript_path, "w", encoding="utf-8") as f:
         f.write(transcript_text)
 
     # Save description.md
@@ -260,14 +271,14 @@ def list_history_entries() -> list[dict]:
         if not os.path.isdir(folder_path):
             continue
 
-        # Find audio file (not .txt, not .md)
+        # Find audio file + check for transcript (either .md new or .txt legacy)
         audio_file = None
         has_transcript = False
         for f in os.listdir(folder_path):
             ext = os.path.splitext(f)[1].lower()
             if ext in SUPPORTED_EXTENSIONS:
                 audio_file = f
-            elif f == "transcript.txt":
+            elif f in ("transcript.md", "transcript.txt"):
                 has_transcript = True
 
         # Parse date from folder name (YYYY-MM-DD_HH-MM-SS_...)

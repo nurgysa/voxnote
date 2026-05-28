@@ -25,13 +25,14 @@ class SaveMixin:
         if not text:
             return
         default_path = (
-            get_output_path(self._audio_path) if self._audio_path else "transcript.txt"
+            get_output_path(self._audio_path) if self._audio_path else "transcript.md"
         )
         path = filedialog.asksaveasfilename(
             title="Сохранить транскрипцию",
-            defaultextension=".txt",
+            defaultextension=".md",
             initialfile=os.path.basename(default_path),
             filetypes=[
+                ("Markdown", "*.md"),
                 ("Text files", "*.txt"),
                 ("SubRip subtitles", "*.srt"),
                 ("WebVTT subtitles", "*.vtt"),
