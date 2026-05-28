@@ -68,8 +68,11 @@ class App(
         super().__init__()
 
         self.title("Audio Transcriber")
-        self.geometry("780x700")
-        self.minsize(680, 600)
+        # Generous default geometry — used when the user un-maximizes; minsize
+        # prevents collapsing the dialog content past the point where the
+        # extract-tasks split-pane (180 task list + 360 form + padding) fits.
+        self.geometry("1280x800")
+        self.minsize(960, 680)
         # Set the window title-bar icon. CustomTkinter sets its own default
         # icon during super().__init__() so we must call iconbitmap AFTER.
         # The .exe-embedded icon (Explorer/Taskbar) is set separately via
@@ -85,6 +88,16 @@ class App(
                 # when the file exists — fall back silently rather than
                 # blocking app startup over a cosmetic icon.
                 pass
+
+        # Maximize the window on launch — modern desktop apps (Obsidian,
+        # VS Code, Slack) all open maximized. 'zoomed' is the Tk equivalent
+        # on Windows; the un-maximize size falls back to self.geometry above.
+        # macOS/Linux Tk may not recognise 'zoomed' — silently fall back to
+        # the geometry default instead of crashing.
+        try:
+            self.state("zoomed")
+        except tk.TclError:
+            pass
         # Apply the saved appearance mode BEFORE constructing widgets so
         # tuple colors in theme.py resolve to the right palette on first
         # paint. Default "system" follows the OS setting. Persisted via

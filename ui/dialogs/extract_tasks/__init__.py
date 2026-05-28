@@ -1092,7 +1092,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 on_select=self._select_task,
                 on_toggle=self._on_row_toggle,
             )
-            row.grid(sticky="ew", padx=2, pady=1)
+            # Generous spacing — padx=8 lets cards breathe against the
+            # scrollable-frame edge, pady=4 puts visible separation between
+            # adjacent task cards instead of the cramped 1px default.
+            row.grid(sticky="ew", padx=8, pady=4)
             # Re-apply non-PENDING status badges so re-opened/restored sessions
             # render their badges instead of a fresh checkbox.
             if task.status is not TaskStatus.PENDING:

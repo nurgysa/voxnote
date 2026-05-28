@@ -55,17 +55,17 @@ class _TaskRow(ctk.CTkFrame):
 
         self._lbl_title = ctk.CTkLabel(
             self, text=task.title or "(без заголовка)",
-            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
+            font=ctk.CTkFont(family=FONT, size=14, weight="bold"),
             text_color=TEXT_PRIMARY, anchor="w",
         )
-        self._lbl_title.grid(row=0, column=1, padx=2, pady=(4, 0), sticky="ew")
+        self._lbl_title.grid(row=0, column=1, padx=4, pady=(8, 2), sticky="ew")
 
         self._lbl_summary = ctk.CTkLabel(
             self, text=self._summary_text(),
-            font=ctk.CTkFont(family=FONT, size=11),
+            font=ctk.CTkFont(family=FONT, size=12),
             text_color=TEXT_SECONDARY, anchor="w",
         )
-        self._lbl_summary.grid(row=1, column=1, padx=2, pady=(0, 4), sticky="ew")
+        self._lbl_summary.grid(row=1, column=1, padx=4, pady=(0, 8), sticky="ew")
 
         # Click anywhere on the body (except the checkbox) to select.
         for w in (self, self._lbl_title, self._lbl_summary):
