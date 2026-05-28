@@ -28,6 +28,6 @@ def test_settings_calls_api_key_row_at_least_four_times():
     via 'api_key_row(' rather than 'api_key_row,' to skip import lines."""
     source = SETTINGS_PATH.read_text(encoding="utf-8")
     n_calls = source.count("api_key_row(")
-    assert n_calls >= 1, (
-        f"Expected ≥ 1 api_key_row(...) call after Task 2, got {n_calls}"
+    assert n_calls >= 2, (
+        f"Expected ≥ 2 api_key_row(...) calls after Task 3, got {n_calls}"
     )

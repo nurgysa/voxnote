@@ -411,108 +411,41 @@ class SettingsDialog(ctk.CTkToplevel):
     def _build_linear_section(self, parent) -> None:
         """Linear API key + connection status.
 
-        No team picker here — that's per-run in the ExtractTasksDialog
-        (Phase 6.1). Settings only persists the key. Phase 6.4 adds the
-        enabled-checkbox above; when off, Linear is hidden from the
-        backend dropdown in ExtractTasksDialog (effect wired in 6.4.1).
+        enable-checkbox + API key handling delegated to api_key_row.
+        No team picker here — that's per-run in ExtractTasksDialog.
         """
         section = self._section_card(parent, "Linear", row=6)
 
-        ctk.CTkCheckBox(
-            section, text="Использовать Linear",
-            variable=self._parent._linear_enabled_var,
-            command=self._parent._on_linear_enabled_changed,
-            font=ctk.CTkFont(family=FONT, size=13),
-            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
-            border_color=BORDER, corner_radius=4,
-            checkbox_height=20, checkbox_width=20,
-        ).grid(row=0, column=0, columnspan=3, padx=4, pady=(2, 8), sticky="w")
-
-        label(section, "API ключ").grid(
-            row=1, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        ctk.CTkEntry(
-            section, textvariable=self._parent._linear_key_var, height=36,
-            corner_radius=10, border_color=BORDER, border_width=1,
-            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT, size=12),
-            placeholder_text="lin_api_...",
-            show="•",
-        ).grid(row=1, column=1, padx=4, pady=6, sticky="ew")
-        tonal_button(
-            section, text="Вставить",
-            command=self._paste_linear_key, width=100,
-        ).grid(row=1, column=2, padx=(4, 4), pady=6)
-
-        tonal_button(
-            section, text="Проверить ключ",
-            command=self._validate_linear, width=140,
-        ).grid(row=2, column=0, padx=4, pady=6, sticky="w")
-        self._linear_status = label(section, "", anchor="w")
-        self._linear_status.grid(
-            row=2, column=1, columnspan=2, padx=(8, 4), pady=6, sticky="ew",
-        )
-
-    def _paste_linear_key(self) -> None:
-        """Paste-from-clipboard. Mirrors _paste_openrouter_key."""
-        try:
-            text = self.clipboard_get().strip()
-            self._parent._linear_key_var.set(text)
-            if text:
-                self._parent._config["linear_api_key"] = text
-                save_config(self._parent._config)
-        except tk.TclError:
-            return  # empty clipboard / non-text — silent
-        except OSError as e:
-            _logger.warning("Failed to persist Linear key: %s", e)
-
-    def _validate_linear(self) -> None:
-        """Make a single viewer GraphQL query. Show display name on success.
-
-        Same threading pattern as _validate_openrouter. Saves the key to
-        config.json only on successful validation.
-        """
-        key = self._parent._linear_key_var.get().strip()
-        if not key:
-            self._linear_status.configure(
-                text="Введите API ключ", text_color=RED,
-            )
-            return
-
-        self._linear_status.configure(
-            text="Проверка...", text_color=TEXT_SECONDARY,
-        )
-
-        def worker():
-            try:
-                # Lazy import — same rationale as _validate_openrouter.
-                from tasks.linear_client import LinearClient, LinearError
-                client = LinearClient(key)
-                try:
-                    viewer = client.validate_key()
-                finally:
-                    client.close()
-            except LinearError as e:
-                self.after(0, self._linear_status.configure, {
-                    "text": f"✗ {e}", "text_color": RED,
-                })
-                return
-            except Exception as e:
-                self.after(0, self._linear_status.configure, {
-                    "text": f"✗ {e}", "text_color": RED,
-                })
-                return
-
-            # Key works — persist it.
+        def _persist(key: str, _info: dict) -> None:
             self._parent._config["linear_api_key"] = key
             save_config(self._parent._config)
 
-            name = viewer.get("name") or viewer.get("email") or "(unknown)"
-            self.after(0, self._linear_status.configure, {
-                "text": f"✓ Подключено: {name}", "text_color": GREEN,
-            })
+        def _on_validate(key: str) -> dict:
+            from tasks.linear_client import LinearClient
+            client = LinearClient(key)
+            try:
+                return client.validate_key()
+            finally:
+                client.close()
 
-        threading.Thread(target=worker, daemon=True).start()
+        def _format_success(info: dict) -> str:
+            name = info.get("name") or info.get("email") or "(unknown)"
+            return f"✓ Подключено: {name}"
+
+        refs = api_key_row(
+            section,
+            label_text="API ключ",
+            key_var=self._parent._linear_key_var,
+            placeholder="lin_api_...",
+            on_validate=_on_validate,
+            on_key_persisted=_persist,
+            enabled_var=self._parent._linear_enabled_var,
+            enabled_label="Использовать Linear",
+            on_enabled_changed=self._parent._on_linear_enabled_changed,
+            format_success=_format_success,
+            row=0,
+        )
+        self._linear_status = refs["status"]
 
     def _build_glide_section(self, parent) -> None:
         """Glide API key + connection status (Phase 6.4).
