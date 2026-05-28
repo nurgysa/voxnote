@@ -115,15 +115,17 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # had stripped both the X button AND the Task Manager Apps-view
         # entry). Keep the normal title bar — that's the user's exit.
         parent.update_idletasks()
-        # Cap dimensions so the dialog doesn't gobble the whole fullscreen
-        # parent (1920-mon → 1840-wide dialog felt cavernous). Floor still
-        # enforces 960x680 minimum — fits the master-detail layout.
-        w = min(1280, max(960, parent.winfo_width() - 80))
-        h = min(820, max(680, parent.winfo_height() - 80))
-        # Re-center to parent after capping (otherwise we'd cling to
-        # parent's top-left corner with empty space on the right).
-        x = parent.winfo_rootx() + max(40, (parent.winfo_width() - w) // 2)
-        y = parent.winfo_rooty() + max(40, (parent.winfo_height() - h) // 2)
+        # Match parent's geometry exactly — the main window opens in kiosk
+        # fullscreen (commits 88a17c0 → c2a2d24), so the dialog should
+        # feel like a natural overlay on the full screen rather than a
+        # small floating box. User feedback (2026-05-28) explicitly
+        # requested this after a brief 1280-cap iteration in PR #73
+        # felt cramped. Floor at 960x680 covers the (unlikely) case
+        # where the parent itself was resized small.
+        w = max(960, parent.winfo_width())
+        h = max(680, parent.winfo_height())
+        x = parent.winfo_rootx()
+        y = parent.winfo_rooty()
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.minsize(960, 680)
         self.configure(fg_color=BG)
