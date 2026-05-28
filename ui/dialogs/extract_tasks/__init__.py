@@ -115,10 +115,15 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # had stripped both the X button AND the Task Manager Apps-view
         # entry). Keep the normal title bar — that's the user's exit.
         parent.update_idletasks()
-        w = max(960, parent.winfo_width() - 80)
-        h = max(680, parent.winfo_height() - 80)
-        x = parent.winfo_rootx() + 40
-        y = parent.winfo_rooty() + 40
+        # Cap dimensions so the dialog doesn't gobble the whole fullscreen
+        # parent (1920-mon → 1840-wide dialog felt cavernous). Floor still
+        # enforces 960x680 minimum — fits the master-detail layout.
+        w = min(1280, max(960, parent.winfo_width() - 80))
+        h = min(820, max(680, parent.winfo_height() - 80))
+        # Re-center to parent after capping (otherwise we'd cling to
+        # parent's top-left corner with empty space on the right).
+        x = parent.winfo_rootx() + max(40, (parent.winfo_width() - w) // 2)
+        y = parent.winfo_rooty() + max(40, (parent.winfo_height() - h) // 2)
         self.geometry(f"{w}x{h}+{x}+{y}")
         self.minsize(960, 680)
         self.configure(fg_color=BG)
@@ -311,9 +316,20 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         )
         self._btn_delete.grid(row=0, column=3, padx=2, sticky="ew")
 
-        # Right: form for editing selected task.
-        self._form_panel = ctk.CTkFrame(editor, fg_color=SURFACE, corner_radius=10)
-        self._form_panel.grid(row=0, column=1, padx=(6, 0), sticky="nsew")
+        # Right: form for editing selected task. The form has ~7 fields
+        # stacked vertically (autofill textbox + title + priority +
+        # assignee + labels + date + description) that overflow at
+        # smaller dialog heights. Wrap in a CTkScrollableFrame so the
+        # footer (Send/Retry/Close) always stays visible regardless of
+        # form height.
+        form_outer = ctk.CTkFrame(editor, fg_color=SURFACE, corner_radius=10)
+        form_outer.grid(row=0, column=1, padx=(6, 0), sticky="nsew")
+        form_outer.grid_columnconfigure(0, weight=1)
+        form_outer.grid_rowconfigure(0, weight=1)
+        self._form_panel = ctk.CTkScrollableFrame(
+            form_outer, fg_color="transparent", corner_radius=0,
+        )
+        self._form_panel.grid(row=0, column=0, sticky="nsew")
         self._form_panel.grid_columnconfigure(0, weight=1)
         self._build_form()
 
