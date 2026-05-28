@@ -19,8 +19,8 @@ Mixin contract: relies on App providing ``self._config`` (mutable dict),
 / ``self._appearance_var`` / ``self._gdrive_*`` families,
 ``self._transcriber`` (lazy, never invalidated in cloud-only mode),
 ``self._audio_path``, ``self._lbl_file``, ``self._btn_transcribe``, and
-the dialog refs ``self._settings_dialog`` / ``self._monitor_dialog`` /
-``self._cutter`` (used by the live appearance-mode switch).
+the dialog refs ``self._settings_dialog`` / ``self._cutter`` (used by
+the live appearance-mode switch).
 """
 from __future__ import annotations
 
@@ -205,11 +205,6 @@ class SettingsMixin:
 
         # Notify Canvas-using children — plain tk.Canvas doesn't react
         # to set_appearance_mode automatically.
-        if self._monitor_dialog is not None:
-            try:
-                self._monitor_dialog._apply_theme()
-            except tk.TclError:
-                pass
         if self._cutter is not None:
             try:
                 if self._cutter.winfo_exists():

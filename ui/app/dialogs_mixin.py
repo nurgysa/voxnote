@@ -1,17 +1,19 @@
-"""Dialog launchers — opens Settings/Monitor/History/Terms/Cutter/Extract.
+"""Dialog launchers — opens Settings/History/Terms/Cutter/Extract.
 
 Extracted from ``ui/app/__init__.py`` (F4-PR-2e). Methods covering the
-six dialogs the App can launch, plus the history-load callback and the
-singleton-state cleanup hooks. The Settings and System Monitor dialogs are
-singletons (re-click lifts the existing window); History, Terms,
-ExtractTasks are modal; Audio Cutter is loosely tracked (latest instance
-only) so the live-theme switch can repaint its Canvas.
+five dialogs the App can launch, plus the history-load callback and the
+singleton-state cleanup hooks. The Settings dialog is a singleton
+(re-click lifts the existing window); History, Terms, ExtractTasks
+are modal; Audio Cutter is loosely tracked (latest instance only) so
+the live-theme switch can repaint its Canvas.
 
 Voices dialog was removed in the 2026-05-28 cloud-only rip-out — voice
-enrollment depended on local pyannote embeddings which are gone.
+enrollment depended on local pyannote embeddings which are gone. The
+System Monitor dialog was removed in the same rip-out — its GPU/CPU/RAM
+panels were CUDA-era diagnostics with no purpose in cloud-only mode.
 
 Mixin contract: relies on App providing ``self._config``, ``self._settings_dialog``,
-``self._monitor_dialog``, ``self._cutter``,
+``self._cutter``,
 ``self._textbox``, ``self._lbl_status``, ``self._lbl_file``,
 ``self._btn_save``, ``self._btn_copy``, ``self._btn_transcribe``,
 ``self._btn_extract_tasks``, ``self._lang_var``, ``self._audio_path``,
@@ -29,14 +31,13 @@ from audio_cutter import AudioCutter
 from theme import TEXT_PRIMARY, TEXT_SECONDARY
 from ui.dialogs.history import HistoryDialog
 from ui.dialogs.settings import SettingsDialog
-from ui.dialogs.system_monitor import SystemMonitorDialog
 from ui.dialogs.terms import TermsDialog
 
 from .constants import LANGUAGES
 
 
 class DialogsMixin:
-    """Launchers + singleton-state callbacks for the seven App dialogs."""
+    """Launchers + singleton-state callbacks for the App dialogs."""
 
     def _open_settings_dialog(self):
         # Track the open dialog so terms/voices saves can refresh its
@@ -61,27 +62,6 @@ class DialogsMixin:
         # avoid clearing the reference on inner widget destruction.
         if event.widget is self._settings_dialog:
             self._settings_dialog = None
-
-    def _open_monitor_dialog(self) -> None:
-        # Singleton: re-clicking the button while the monitor is open
-        # just lifts the existing window. Avoids duplicate timer chains
-        # and duplicate NVML handles competing for the same device.
-        if self._monitor_dialog is not None:
-            try:
-                self._monitor_dialog.lift()
-                self._monitor_dialog.focus_set()
-                return
-            except tk.TclError:
-                # Same race as in _open_settings_dialog — dialog gone, refresh.
-                self._monitor_dialog = None
-        self._monitor_dialog = SystemMonitorDialog(self)
-        self._monitor_dialog.bind(
-            "<Destroy>", lambda _e: self._on_monitor_dialog_closed(_e),
-        )
-
-    def _on_monitor_dialog_closed(self, event) -> None:
-        if event.widget is self._monitor_dialog:
-            self._monitor_dialog = None
 
     def _refresh_settings_summaries(self) -> None:
         """If the Settings dialog is open, re-render its term/voice summaries."""

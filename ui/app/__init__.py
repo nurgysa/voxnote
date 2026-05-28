@@ -41,7 +41,6 @@ if TYPE_CHECKING:
     from audio_cutter import AudioCutter
     from transcriber import Transcriber
     from ui.dialogs.settings import SettingsDialog
-    from ui.dialogs.system_monitor import SystemMonitorDialog
 
 init_logging()
 
@@ -193,10 +192,6 @@ class App(
         # Open Settings dialog reference (singleton). Lets terms/voices saves
         # refresh its summaries live; None when dialog is closed.
         self._settings_dialog: SettingsDialog | None = None
-        # Open System Monitor dialog reference (singleton). Non-modal —
-        # designed to stay open during transcription. Re-clicking the
-        # button just brings the existing window to the front.
-        self._monitor_dialog: SystemMonitorDialog | None = None
         # Most recently opened AudioCutter instance. Tracked only so that
         # _on_appearance_changed can ping it to redraw its Canvas — the
         # cutter is otherwise free to be reopened/recreated freely.

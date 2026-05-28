@@ -6,9 +6,9 @@ natively and pick the right value based on ``ctk.get_appearance_mode()``,
 so widget colors live-update on theme change with zero code in the
 caller.
 
-Plain ``tk.Canvas`` (waveform in audio_cutter, sparkline in
-system_monitor) does not understand tuples — pass colors through
-``t(color)`` to resolve to the current mode's hex string. Canvas
+Plain ``tk.Canvas`` (waveform in audio_cutter) does not understand
+tuples — pass colors through ``t(color)`` to resolve to the current
+mode's hex string. Canvas
 widgets that need to react to theme changes must redraw themselves
 on ``_apply_theme()``; the App orchestrates this.
 
@@ -56,7 +56,7 @@ INPUT_BG = ("#FFFFFF", "#303030")
 
 FONT = "Segoe UI"
 
-# ───────────── audio_cutter waveform / system_monitor sparklines ────────
+# ────────────────────── audio_cutter waveform ───────────────────────────
 # Same dual-tuple form. Resolved via t() at draw time on tk.Canvas.
 WAVE_COLOR = ("#1A73E8", "#5E97D0")
 WAVE_SELECTED = ("#1A73E8", "#8AB4F8")

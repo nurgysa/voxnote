@@ -100,7 +100,7 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 |---|---|
 | Entry point + faulthandler bootstrap | `app.py` |
 | Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
-| All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `terms.py`, `system_monitor.py`) — `voices.py` removed in the 2026-05-28 rip-out |
+| All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `terms.py`) — `voices.py` and `system_monitor.py` removed in the 2026-05-28 rip-out (latter was CUDA-era GPU/CPU/RAM diagnostics; useless in cloud-only mode) |
 | Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~250 LOC after the rip-out) and `cloud_chunker.py` (silence-aware splitter for files > provider upload cap). The old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules were deleted in the 2026-05-28 rip-out. |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
