@@ -1,6 +1,23 @@
-# Tauri Lite-Rewrite — Phase 1: Foundation Implementation Plan
+# Tauri Lite-Rewrite — Phase 1: Foundation Implementation Plan (v2, post-Codex review)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:executing-plans` to implement this plan task-by-task. (Subagent-driven dispatch is blocked in this environment per memory `feedback_subagent_dispatch_blocked_by_mcp_overhead` — inline execution with TDD discipline.) Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Changes from v1 (post-Codex review 2026-05-28, 9 P1 + 5 P2 findings, all confirmed against v0.1 code):**
+
+- **Sidecar build switched to PyInstaller `--onefile`** (Task 14). The plan v1 used `--onedir`, which produces an exe + sibling `_internal/` directory that doesn't fit Tauri 2's `externalBin` single-file contract (Codex P1 finding #1). `--onefile` packs everything into one `.exe` at `binaries/audio-transcriber-core-<triple>.exe` — slower startup (~1-3s for runtime archive extraction) but trivial Tauri staging.
+- **`_handle_transcribe` now forwards `min_speakers` + `max_speakers`** (Task 4, Task 12 schema). v1 dropped these AssemblyAI-supported knobs that v0.1 `Transcriber.transcribe` accepts (Codex P1 finding #2).
+- **`_handle_extract_tasks` serialises `Task` dataclasses + preserves all 7 return keys** (Task 5, Task 12). v1 returned raw `extract()` output, but v0.1 puts `Task` dataclass instances in `result["tasks"]` (not JSON-serialisable as-is) and includes `raw_response`/`members`/`labels` keys the v1 schema dropped. `corrections` is an `int` (count), not `list[dict]` (Codex P1 findings #3, #4).
+- **`GenerateProtocolResult` schema rewritten to match `ProtocolResult`** (Task 6, Task 12). v1 had `markdown` + `blocks` + `usage`; actual dataclass at `tasks/protocol_generator.py:35` is `markdown` + `raw_llm_response` + `placeholders: Placeholders` — no usage field (Codex P1 finding #5).
+- **`_handle_send_tasks` rewritten end-to-end** (Task 7). v1 splatted JSON into `send_tasks_iter(**params)`, but `tasks/sender.py:42` takes `list[Task]` + `container_id` + `backend` (BackendProtocol instance) + `on_status_change` + `cancel_check` + `retry_failed`. Handler now reconstructs Task via `Task.from_dict()`, instantiates `LinearBackend`/`GlideBackend` by name, wires cancel_check to `_cancel_event`, and yields `Task.to_dict()` (Codex P1 finding #6).
+- **`_handle_gdrive_backup` calls `auth.load_tokens()` + `is_signed_in()` explicitly** (Task 8). v1 assumed `GDriveAuth()` constructor read cached creds — but `gdrive/auth.py:55` docstring explicitly says the constructor doesn't touch disk (Codex P1 finding #7).
+- **`CommandChild.clone()` removed** (Task 16). `tauri-plugin-shell` 2's `CommandChild` is not `Clone`; the writer task now owns the single child handle exclusively. Cancel still works because it sends a normal JSON-RPC message via the mpsc (Codex P1 finding #8).
+- **Tauri 2 capabilities file added** (Task 15 Step 3.5). Tauri 2 moved plugin permissions out of `tauri.conf.json::plugins` into `src-tauri/capabilities/<name>.json`. v1's `plugins.shell.scope` + `plugins.fs.scope` were ignored at runtime (Codex P1 finding #9 + P2 finding #10).
+- **`_handle_list_history` derives timestamp from folder name + reads `description.md` instead of `meta.json`** (Task 9). v1 assumed a `meta.json` file that doesn't exist — v0.1 `utils.py:122-125` writes folders as `{ISO-timestamp}_{audio_base}/` with `transcript.txt` + optional `description.md` (Codex P2 finding #11).
+- **Transcribe progress normalised 0..100 → 0..1 in the handler** (Task 4). v0.1 cloud providers emit 0..100 percentages (`providers/base.py:125`); the React store + UI work in 0..1 (Codex P2 finding #12).
+- **`_handle_trim_audio` null-checks `get_ffmpeg_path()`** (Task 10). The helper returns `str | None` (Codex P2 finding #13).
+- **Manual smoke in Task 17 imports `tauri::Manager`** for `.state()` (Codex P2 finding #14).
+
+---
 
 **Goal:** Build the Foundation of the Tauri lite-rewrite — a Python JSON-RPC sidecar, a minimal Tauri Rust bridge, and a React scaffold capable of demonstrating a working end-to-end transcribe flow (record → sidecar → cloud API → segments rendered in React).
 
@@ -11,7 +28,7 @@
 **Decisions resolved from spec §12 open questions (2026-05-28):**
 
 - **Q4 Error UX → Sonner.** Single toast library imported via `sonner@^1.7.0`. Banner-style `FirstRunBanner` is a separate React component (not a Sonner toast) because banners are persistent UI affordances, not transient notifications.
-- **Q5 Sidecar version compat → ping returns version + log warning on mismatch.** `_handle_ping` returns `{pong: true, version: "0.2.0"}`. Tauri Rust core compares the version to its own `CARGO_PKG_VERSION` env and logs a `tracing::warn!` if the major versions differ, but does **not** block startup. Rationale: sidecar is bundled in the same artifact as Tauri (PyInstaller --onedir staged into `src-tauri/binaries/`), so drift is unlikely; logging-only catches the unlikely case without adding friction.
+- **Q5 Sidecar version compat → ping returns version + log warning on mismatch.** `_handle_ping` returns `{pong: true, version: "0.2.0"}`. Tauri Rust core compares the version to its own `CARGO_PKG_VERSION` env and logs a `tracing::warn!` if the major versions differ, but does **not** block startup. Rationale: sidecar is bundled in the same artifact as Tauri (PyInstaller `--onefile` staged into `src-tauri/binaries/`), so drift is unlikely; logging-only catches the unlikely case without adding friction.
 - **Q6 PyInstaller spec → fresh.** New `python-sidecar/audio_transcriber_sidecar.spec` written from scratch with `console=True`, entry point `sidecar_main.py`, no CTk/Tk hidden imports. The v0.1 `audio_transcriber.spec` is consulted as reference for the ffmpeg vendoring + `runtime_hook_imports.py` pattern, but not copied wholesale.
 
 ---
@@ -699,10 +716,15 @@ def _handle_transcribe(params: dict[str, Any]) -> dict[str, Any]:
         diarize=params.get("diarize", False),
         hotwords=params.get("hotwords"),
         num_speakers=params.get("num_speakers"),
+        min_speakers=params.get("min_speakers"),
+        max_speakers=params.get("max_speakers"),
         denoise_audio=params.get("denoise_audio", False),
         cloud_provider=params["cloud_provider"],
         cloud_api_key=params["cloud_api_key"],
-        on_progress=lambda pct: _emit_notification("progress", {"pct": pct}),
+        # v0.1 providers emit progress as 0..100 (see providers/base.py:125 +
+        # transcriber/__init__.py:226). Normalise to 0..1 here so the React
+        # store + UI assume a single scale. Status messages pass through.
+        on_progress=lambda pct: _emit_notification("progress", {"pct": pct / 100.0}),
         on_status=lambda msg: _emit_notification("status", {"message": msg}),
         cancel_event=_cancel_event,
     )
@@ -777,7 +799,7 @@ git commit -m "feat(sidecar): _handle_transcribe + _handle_cancel + cancel_event
 - Modify: `python-sidecar/sidecar_main.py` (add `_handle_extract_tasks`, register in DISPATCH)
 - Create: `python-sidecar/tests/test_handle_extract_tasks.py`
 
-**Context:** v0.1 `tasks.extractor.extract(*, transcript, model, lang, openrouter_client, members, labels, team_id, linear_client)` returns a dict (`tasks`, `corrections`, `usage`, `model`, `raw_response`). The handler constructs `OpenRouterClient` from `openrouter_api_key` param + optional `LinearClient` from `linear_api_key`, then calls `extract(...)`.
+**Context:** v0.1 `tasks.extractor.extract(*, transcript, model, lang, openrouter_client, members, labels, team_id, linear_client)` returns a dict at `tasks/extractor.py:302` with these keys: `tasks` (list[Task] — `tasks.schema.Task` **dataclasses**, not plain dicts), `corrections` (int — count of self-corrections), `usage` (dict), `model` (str), `raw_response` (str), `members` (list[dict]), `labels` (list[dict]). The handler must call `Task.to_dict()` per task to make them JSON-serialisable, and PRESERVE all 7 keys (not just `tasks`/`corrections`). The handler constructs `OpenRouterClient` from `openrouter_api_key` param + optional `LinearClient` from `linear_api_key`.
 
 - [ ] **Step 1: Write failing tests**
 
@@ -787,17 +809,39 @@ Create `python-sidecar/tests/test_handle_extract_tasks.py`:
 """_handle_extract_tasks — wraps tasks.extractor.extract with constructed clients."""
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.conftest import feed_request, parse_responses
 
 
+def _fake_task(title: str, **kwargs) -> MagicMock:
+    """Build a mock Task dataclass with to_dict() returning a plain dict.
+
+    The real Task lives at tasks/schema.py::Task — we don't need its full surface
+    in unit tests, just the to_dict contract the handler depends on.
+    """
+    t = MagicMock()
+    t.to_dict.return_value = {"title": title, **kwargs}
+    return t
+
+
 @patch("sidecar_main._extract")
 @patch("sidecar_main.OpenRouterClient")
-def test_extract_constructs_openrouter_client(MockOR, mock_extract, fake_stdin, capsys):
+def test_extract_constructs_openrouter_client_and_serialises_tasks(
+    MockOR, mock_extract, fake_stdin, capsys
+):
     from sidecar_main import main
 
-    mock_extract.return_value = {"tasks": [{"title": "T1"}], "corrections": [], "usage": {}}
+    # Real extract() returns the full 7-key dict — match that shape.
+    mock_extract.return_value = {
+        "tasks": [_fake_task("T1", assignee="Alice")],
+        "corrections": 0,
+        "usage": {"total_tokens": 1234},
+        "model": "gpt-4o",
+        "raw_response": "...llm raw...",
+        "members": [],
+        "labels": [],
+    }
 
     feed_request(fake_stdin, "extract_tasks", {
         "transcript": "...",
@@ -817,7 +861,14 @@ def test_extract_constructs_openrouter_client(MockOR, mock_extract, fake_stdin, 
 
     responses = parse_responses(capsys.readouterr().out)
     final = next(r for r in responses if r.get("id") == 20)
-    assert final["result"]["tasks"] == [{"title": "T1"}]
+    # Handler must serialise Task dataclasses + preserve ALL 7 dict keys.
+    assert final["result"]["tasks"] == [{"title": "T1", "assignee": "Alice"}]
+    assert final["result"]["corrections"] == 0
+    assert final["result"]["usage"]["total_tokens"] == 1234
+    assert final["result"]["model"] == "gpt-4o"
+    assert final["result"]["raw_response"] == "...llm raw..."
+    assert final["result"]["members"] == []
+    assert final["result"]["labels"] == []
 
 
 @patch("sidecar_main._extract")
@@ -828,7 +879,15 @@ def test_extract_constructs_linear_client_when_key_present(
 ):
     from sidecar_main import main
 
-    mock_extract.return_value = {"tasks": [], "corrections": []}
+    mock_extract.return_value = {
+        "tasks": [],
+        "corrections": 0,
+        "usage": {},
+        "model": "gpt-4o",
+        "raw_response": "",
+        "members": [{"name": "Alice"}],
+        "labels": [{"name": "bug"}],
+    }
 
     feed_request(fake_stdin, "extract_tasks", {
         "transcript": "x",
@@ -871,7 +930,13 @@ Add handler after `_handle_cancel`:
 
 ```python
 def _handle_extract_tasks(params: dict[str, Any]) -> dict[str, Any]:
-    """Wrap tasks.extractor.extract; construct OpenRouter + optional Linear clients."""
+    """Wrap tasks.extractor.extract; construct OpenRouter + optional Linear clients.
+
+    v0.1 extract() returns Task dataclass instances in `result["tasks"]` (see
+    tasks/schema.py::Task). Serialise via Task.to_dict() per task; preserve
+    the rest of the dict verbatim — the schema (Task 12) expects all 7 keys
+    (tasks, corrections, usage, model, raw_response, members, labels).
+    """
     openrouter = OpenRouterClient(api_key=params["openrouter_api_key"])
     linear = None
     if params.get("linear_api_key"):
@@ -887,7 +952,13 @@ def _handle_extract_tasks(params: dict[str, Any]) -> dict[str, Any]:
         team_id=params.get("team_id"),
         linear_client=linear,
     )
-    return result
+    # Task instances → JSON-friendly dicts. The other keys (corrections int,
+    # usage dict, model str, raw_response str, members list, labels list) are
+    # already JSON-safe.
+    return {
+        **result,
+        "tasks": [t.to_dict() for t in result["tasks"]],
+    }
 ```
 
 Register in DISPATCH:
@@ -919,7 +990,7 @@ git commit -m "feat(sidecar): _handle_extract_tasks handler"
 - Modify: `python-sidecar/sidecar_main.py`
 - Create: `python-sidecar/tests/test_handle_generate_protocol.py`
 
-**Context:** v0.1 `tasks.protocol_generator.generate(transcript, speakers, meeting_date, lang, model, openrouter_client) -> ProtocolResult` (a dataclass — see `tasks/protocol_generator.py:172`). Handler must serialize the dataclass via `dataclasses.asdict()` so JSON.dumps works.
+**Context:** v0.1 `tasks.protocol_generator.generate(transcript, speakers, meeting_date, lang, model, openrouter_client) -> ProtocolResult` — a frozen dataclass at `tasks/protocol_generator.py:35` with three fields: `markdown: str`, `raw_llm_response: str`, `placeholders: Placeholders`. `Placeholders` is itself a dataclass (5-block MoM: meeting_type, participants, agenda, theses_and_decisions, action_items). `dataclasses.asdict()` recursively converts both — `_to_jsonable` (Task 6 step 3) handles this. There is **no** `usage` or `blocks` field on `ProtocolResult` (the v0.1 protocol path doesn't surface OpenRouter usage — that's only in `extract()`).
 
 - [ ] **Step 1: Write failing tests**
 
@@ -936,10 +1007,20 @@ from tests.conftest import feed_request, parse_responses
 
 
 @dataclass
+class FakePlaceholders:
+    meeting_type: str
+    participants: str
+    agenda: str
+    theses_and_decisions: str
+    action_items: str
+
+
+@dataclass
 class FakeProtocolResult:
+    """Matches tasks.protocol_generator.ProtocolResult (markdown, raw_llm_response, placeholders)."""
     markdown: str
-    blocks: dict
-    usage: dict
+    raw_llm_response: str
+    placeholders: FakePlaceholders
 
 
 @patch("sidecar_main._generate_protocol")
@@ -949,8 +1030,14 @@ def test_generate_protocol_serialises_dataclass(MockOR, mock_gen, fake_stdin, ca
 
     mock_gen.return_value = FakeProtocolResult(
         markdown="## Block1\n...",
-        blocks={"participants": "..."},
-        usage={"total_tokens": 1000},
+        raw_llm_response="LLM raw text",
+        placeholders=FakePlaceholders(
+            meeting_type="Standup",
+            participants="A, B",
+            agenda="- Item 1",
+            theses_and_decisions="- Decision 1",
+            action_items="- Action 1 (A)",
+        ),
     )
 
     feed_request(fake_stdin, "generate_protocol", {
@@ -966,14 +1053,23 @@ def test_generate_protocol_serialises_dataclass(MockOR, mock_gen, fake_stdin, ca
     responses = parse_responses(capsys.readouterr().out)
     final = next(r for r in responses if r.get("id") == 30)
     assert final["result"]["markdown"].startswith("## Block1")
-    assert final["result"]["usage"]["total_tokens"] == 1000
+    assert final["result"]["raw_llm_response"] == "LLM raw text"
+    assert final["result"]["placeholders"]["meeting_type"] == "Standup"
+    assert final["result"]["placeholders"]["action_items"] == "- Action 1 (A)"
 
 
 @patch("sidecar_main._generate_protocol")
 @patch("sidecar_main.OpenRouterClient")
 def test_generate_protocol_passes_empty_speakers_when_omitted(MockOR, mock_gen, fake_stdin, capsys):
     from sidecar_main import main
-    mock_gen.return_value = FakeProtocolResult(markdown="", blocks={}, usage={})
+    mock_gen.return_value = FakeProtocolResult(
+        markdown="",
+        raw_llm_response="",
+        placeholders=FakePlaceholders(
+            meeting_type="", participants="", agenda="",
+            theses_and_decisions="", action_items="",
+        ),
+    )
 
     feed_request(fake_stdin, "generate_protocol", {
         "transcript": "x",
@@ -1060,28 +1156,49 @@ git commit -m "feat(sidecar): _handle_generate_protocol + _to_jsonable helper"
 - Modify: `python-sidecar/sidecar_main.py`
 - Create: `python-sidecar/tests/test_handle_send_tasks.py`
 
-**Context:** v0.1 `tasks.sender.send_tasks_iter(...)` is a generator yielding per-task result dicts. Handler must materialise the generator to a list before JSON-encoding.
+**Context:** v0.1 `tasks.sender.send_tasks_iter(tasks: list[Task], *, container_id, backend, on_status_change, cancel_check, retry_failed=False)` at `tasks/sender.py:42` is a generator that yields `Task` instances after each transitions to terminal `SENT`/`FAILED` status. The signature is **not** a free-form `**params` splat — it needs:
+- `tasks`: `list[Task]` (constructed via `Task.from_dict()` from JSON input)
+- `container_id`: Linear team ID OR Glide container name (caller picks per backend)
+- `backend`: an instance of `tasks.backends.base.BackendProtocol` (LinearBackend or GlideBackend)
+- `on_status_change(task, new_status)`: callback for status transitions
+- `cancel_check() -> bool`: polled before each send
+- `retry_failed`: optional bool
+
+Sidecar handler must (1) deserialise input JSON into Task dataclasses, (2) instantiate the chosen backend class with its API key, (3) provide a `cancel_check` wired to `_cancel_event`, (4) collect Task instances yielded from the generator into a list via `Task.to_dict()`. Phase 1 does NOT stream per-task status as a notification (UI consumes the final list); Phase 2 may add per-task progress events.
 
 - [ ] **Step 1: Write failing test**
 
 Create `python-sidecar/tests/test_handle_send_tasks.py`:
 
 ```python
-"""_handle_send_tasks — materialises send_tasks_iter generator to list."""
+"""_handle_send_tasks — Task.from_dict, backend instantiation, generator drain."""
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from tests.conftest import feed_request, parse_responses
 
 
+@patch("sidecar_main.LinearBackend")
 @patch("sidecar_main.send_tasks_iter")
-def test_send_tasks_materialises_generator(mock_sender, fake_stdin, capsys):
+@patch("sidecar_main.Task")
+def test_send_tasks_linear_backend(MockTask, mock_sender, MockBackend, fake_stdin, capsys):
     from sidecar_main import main
 
-    def fake_gen(**_kwargs):
-        yield {"task_id": 1, "status": "ok", "url": "https://linear.app/x/1"}
-        yield {"task_id": 2, "status": "error", "error": "duplicate"}
+    # Task.from_dict reconstructs Task instances. We mock the dataclass entirely.
+    task_in_1 = MagicMock(name="task1")
+    task_in_2 = MagicMock(name="task2")
+    MockTask.from_dict.side_effect = [task_in_1, task_in_2]
+
+    # Yielded Task instances after status transitions
+    yielded_task_1 = MagicMock()
+    yielded_task_1.to_dict.return_value = {"title": "T1", "status": "SENT"}
+    yielded_task_2 = MagicMock()
+    yielded_task_2.to_dict.return_value = {"title": "T2", "status": "FAILED"}
+
+    def fake_gen(*_args, **_kwargs):
+        yield yielded_task_1
+        yield yielded_task_2
 
     mock_sender.side_effect = fake_gen
 
@@ -1089,15 +1206,61 @@ def test_send_tasks_materialises_generator(mock_sender, fake_stdin, capsys):
         "tasks": [{"title": "T1"}, {"title": "T2"}],
         "backend": "linear",
         "linear_api_key": "lin-key",
-        "team_id": "T",
+        "container_id": "TEAM_X",
     }, req_id=40)
     main()
 
+    # Linear backend constructed with the key
+    MockBackend.assert_called_once_with(api_key="lin-key")
+    # send_tasks_iter called with proper kwargs — verify signature contract
+    call_args, call_kwargs = mock_sender.call_args
+    assert call_args[0] == [task_in_1, task_in_2]  # positional `tasks`
+    assert call_kwargs["container_id"] == "TEAM_X"
+    assert call_kwargs["backend"] is MockBackend.return_value
+    assert callable(call_kwargs["on_status_change"])
+    assert callable(call_kwargs["cancel_check"])
+
     responses = parse_responses(capsys.readouterr().out)
     final = next(r for r in responses if r.get("id") == 40)
-    assert len(final["result"]) == 2
-    assert final["result"][0]["status"] == "ok"
-    assert final["result"][1]["error"] == "duplicate"
+    assert final["result"] == [
+        {"title": "T1", "status": "SENT"},
+        {"title": "T2", "status": "FAILED"},
+    ]
+
+
+@patch("sidecar_main.GlideBackend")
+@patch("sidecar_main.send_tasks_iter")
+@patch("sidecar_main.Task")
+def test_send_tasks_glide_backend(MockTask, mock_sender, MockBackend, fake_stdin, capsys):
+    from sidecar_main import main
+    MockTask.from_dict.return_value = MagicMock()
+    mock_sender.return_value = iter([])
+
+    feed_request(fake_stdin, "send_tasks", {
+        "tasks": [{"title": "T1"}],
+        "backend": "glide",
+        "glide_api_key": "glide-key",
+        "container_id": "appXYZ:Sheet1",
+    }, req_id=41)
+    main()
+
+    MockBackend.assert_called_once_with(api_key="glide-key")
+
+
+def test_send_tasks_unknown_backend_returns_error(fake_stdin, capsys):
+    from sidecar_main import main
+
+    feed_request(fake_stdin, "send_tasks", {
+        "tasks": [],
+        "backend": "trello",  # not supported in v0.2 parity
+        "container_id": "x",
+    }, req_id=42)
+    main()
+
+    responses = parse_responses(capsys.readouterr().out)
+    final = next(r for r in responses if r.get("id") == 42)
+    assert "error" in final
+    assert "trello" in final["error"]["message"].lower()
 ```
 
 - [ ] **Step 2: Run test — expect failure**
@@ -1108,18 +1271,54 @@ pytest tests/test_handle_send_tasks.py -v
 
 - [ ] **Step 3: Implement handler**
 
-Edit `python-sidecar/sidecar_main.py`. Add import:
+Edit `python-sidecar/sidecar_main.py`. Add imports:
 
 ```python
 from tasks.sender import send_tasks_iter
+from tasks.schema import Task
+from tasks.backends.linear import LinearBackend
+from tasks.backends.glide import GlideBackend
 ```
 
 Add handler:
 
 ```python
 def _handle_send_tasks(params: dict[str, Any]) -> list[dict[str, Any]]:
-    """Wrap tasks.sender.send_tasks_iter; materialise generator to list."""
-    return [_to_jsonable(item) for item in send_tasks_iter(**params)]
+    """Wrap tasks.sender.send_tasks_iter; instantiate backend, drain generator.
+
+    See tasks/sender.py:42 for the real signature. Caller passes raw task dicts
+    (matching ExtractedTask schema); handler reconstructs Task dataclasses,
+    picks the backend, wires a cancel_check to the global _cancel_event, and
+    returns the list of Task.to_dict() after each transitions to terminal.
+    """
+    backend_name = params["backend"]
+    if backend_name == "linear":
+        backend = LinearBackend(api_key=params["linear_api_key"])
+    elif backend_name == "glide":
+        backend = GlideBackend(api_key=params["glide_api_key"])
+    else:
+        raise ValueError(f"Unsupported backend: {backend_name!r}. Phase 1 supports 'linear'|'glide' only.")
+
+    tasks_in = [Task.from_dict(d) for d in params["tasks"]]
+    container_id = params["container_id"]
+    retry_failed = params.get("retry_failed", False)
+
+    def _on_status_change(task, new_status):
+        # Phase 1: status changes are not streamed back as notifications.
+        # Phase 2 may emit per-task notifications here.
+        logger.info("send_tasks: %r → %s", getattr(task, "local_id", "?"), new_status)
+
+    results: list[dict[str, Any]] = []
+    for task in send_tasks_iter(
+        tasks_in,
+        container_id=container_id,
+        backend=backend,
+        on_status_change=_on_status_change,
+        cancel_check=lambda: _cancel_event.is_set(),
+        retry_failed=retry_failed,
+    ):
+        results.append(task.to_dict())
+    return results
 ```
 
 Register in DISPATCH:
@@ -1150,6 +1349,8 @@ git commit -m "feat(sidecar): _handle_send_tasks handler"
 - Create: `python-sidecar/tests/test_handle_gdrive_backup.py`
 
 **Context:** v0.1 `gdrive.backup.run_backup(*, auth, config, history_dir, work_dir, app_version, on_status) -> dict`. The handler resolves `history_dir` to `$APPDATA/audio-transcriber/history/` via Tauri's `app_data_dir()` — but the sidecar doesn't have Tauri's API. Solution: the params include `history_dir` and `work_dir` passed from Rust (Rust resolves them via `tauri::api::path::app_data_dir`). On `on_status`, emit a `progress` notification.
+
+**Important** (per gdrive/auth.py:55): `GDriveAuth()` constructor does NOT touch disk. To load cached credentials from `~/.audio-transcriber/gdrive-token.json` the handler must explicitly call `auth.load_tokens()`. If `load_tokens()` returns falsy / raises (no cached token), raise a clear "user not signed in" error — `run_backup` would fail later with an opaque Google API error otherwise. The Settings dialog UI in Phase 2 is responsible for triggering `sign_in()`; the sidecar handler only consumes existing tokens.
 
 - [ ] **Step 1: Write failing test**
 
@@ -1220,9 +1421,15 @@ def _handle_gdrive_backup(params: dict[str, Any]) -> dict[str, Any]:
     """Wrap gdrive.backup.run_backup; emit status notifications + return result dict.
 
     Rust core passes resolved history_dir + work_dir (Tauri app_data_dir).
-    Auth is loaded from the OS-user-scoped token path inside GDriveAuth.
+    GDriveAuth() constructor does NOT read disk — we explicitly load_tokens()
+    and fail with a clear message if the user hasn't signed in yet.
     """
-    auth = GDriveAuth()  # reads ~/.audio-transcriber/gdrive-token.json
+    auth = GDriveAuth()
+    auth.load_tokens()  # reads ~/.audio-transcriber/gdrive-token.json
+    if not auth.is_signed_in():
+        raise RuntimeError(
+            "Google Drive не авторизован. Откройте Настройки → Google Drive → Войти."
+        )
     return run_backup(
         auth=auth,
         config=params["config"],
@@ -1259,7 +1466,7 @@ git commit -m "feat(sidecar): _handle_gdrive_backup handler"
 - Modify: `python-sidecar/sidecar_main.py`
 - Create: `python-sidecar/tests/test_handle_list_history.py`
 
-**Context:** v0.1's history is rendered by the `HistoryDialog` Tk class reading folders directly. In Tauri/React, we need a sidecar method that walks `$APPDATA/audio-transcriber/history/<run_id>/` and returns a list of summary entries for React's history list. Each entry: `{run_id, timestamp, transcript_excerpt, has_protocol, has_tasks}`. Read `meta.json` if present, otherwise infer from filenames.
+**Context:** v0.1's history is rendered by the `HistoryDialog` Tk class reading folders directly. The folder naming convention (see `utils.py:122-125`) is `{ISO_timestamp}_{audio_base_name}` (e.g. `2026-05-28_10-00-00_meeting-a/`). Inside each folder: `transcript.txt`, optional `description.md` (v0.1 metadata — Russian markdown), optional audio file, optional `tasks.json` / `protocol.md` (when those features ran). **There is no `meta.json`** — the spec example was simplified. Parse the timestamp from the folder name prefix; `transcript_excerpt` reads the first 200 chars of `transcript.txt`; `has_protocol` / `has_tasks` check for those filenames.
 
 - [ ] **Step 1: Write failing test**
 
@@ -1279,25 +1486,22 @@ from tests.conftest import feed_request, parse_responses
 
 @pytest.fixture
 def history_with_runs(tmp_path: Path) -> Path:
-    """Create a fake history dir with 2 run subfolders."""
+    """Create a fake history dir matching v0.1 utils.save_history layout."""
     h = tmp_path / "history"
     h.mkdir()
 
-    run1 = h / "2026-05-28T10-00-00_meeting-a"
+    # v0.1 naming: {YYYY-MM-DD_HH-MM-SS}_{audio_base_name}/
+    run1 = h / "2026-05-28_10-00-00_meeting-a"
     run1.mkdir()
-    (run1 / "meta.json").write_text(json.dumps({
-        "run_id": "2026-05-28T10-00-00_meeting-a",
-        "timestamp": "2026-05-28T10:00:00",
-        "duration_sec": 1800,
-    }))
     (run1 / "transcript.txt").write_text("Привет всем\nЭто тест встречи")
+    (run1 / "description.md").write_text("# meeting-a.wav\n- Дата: 2026-05-28 10:00:00")
     (run1 / "protocol.md").write_text("## Протокол")
     (run1 / "tasks.json").write_text(json.dumps([{"title": "T1"}]))
 
-    run2 = h / "2026-05-27T14-00-00_quick-call"
+    run2 = h / "2026-05-27_14-00-00_quick-call"
     run2.mkdir()
     (run2 / "transcript.txt").write_text("Короткая встреча на 5 минут")
-    # No meta.json, no protocol.md, no tasks.json
+    # No protocol.md, no tasks.json — only transcript
 
     return h
 
@@ -1315,16 +1519,21 @@ def test_list_history_returns_summary(history_with_runs, fake_stdin, capsys):
     entries = final["result"]
     assert len(entries) == 2
 
-    # Latest first
-    e1 = next(e for e in entries if e["run_id"].startswith("2026-05-28"))
+    # Latest first (sorted reverse by folder name → reverse-chrono)
+    assert entries[0]["run_id"].startswith("2026-05-28")
+    assert entries[1]["run_id"].startswith("2026-05-27")
+
+    e1 = entries[0]
     assert e1["has_protocol"] is True
     assert e1["has_tasks"] is True
     assert "Привет всем" in e1["transcript_excerpt"]
+    # Timestamp parsed from folder prefix "YYYY-MM-DD_HH-MM-SS"
     assert e1["timestamp"] == "2026-05-28T10:00:00"
 
-    e2 = next(e for e in entries if e["run_id"].startswith("2026-05-27"))
+    e2 = entries[1]
     assert e2["has_protocol"] is False
     assert e2["has_tasks"] is False
+    assert e2["timestamp"] == "2026-05-27T14:00:00"
 
 
 def test_list_history_empty_dir_returns_empty_list(tmp_path: Path, fake_stdin, capsys):
@@ -1374,11 +1583,32 @@ from pathlib import Path
 Add handler:
 
 ```python
+_FOLDER_TS_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})_")
+
+
+def _parse_folder_timestamp(folder_name: str) -> str:
+    """Extract ISO timestamp from v0.1 folder naming.
+
+    v0.1 utils.save_history writes folders as `{YYYY-MM-DD_HH-MM-SS}_{audio_base}`
+    (utils.py:122-125). Convert that prefix to ISO 8601 `YYYY-MM-DDTHH:MM:SS`
+    so the React store can sort + display.
+
+    Returns empty string if the folder doesn't match the convention (e.g. user
+    renamed it manually) — the entry still surfaces, just without a timestamp.
+    """
+    m = _FOLDER_TS_RE.match(folder_name)
+    if not m:
+        return ""
+    y, mo, d, h, mi, s = m.groups()
+    return f"{y}-{mo}-{d}T{h}:{mi}:{s}"
+
+
 def _handle_list_history(params: dict[str, Any]) -> list[dict[str, Any]]:
     """Walk $APPDATA/audio-transcriber/history/ and return summary entries.
 
     Returns a list of {run_id, timestamp, transcript_excerpt, has_protocol,
-    has_tasks}, sorted latest first by run_id (run_ids are ISO timestamps).
+    has_tasks}, sorted latest first by folder name (folder names start with
+    the ISO timestamp, so reverse-lexical sort = reverse-chrono).
     Missing or empty history dir → empty list (first-run case).
     """
     history_dir = Path(params["history_dir"])
@@ -1386,17 +1616,9 @@ def _handle_list_history(params: dict[str, Any]) -> list[dict[str, Any]]:
         return []
 
     entries: list[dict[str, Any]] = []
-    for run_dir in sorted(history_dir.iterdir(), reverse=True):
+    for run_dir in sorted(history_dir.iterdir(), key=lambda p: p.name, reverse=True):
         if not run_dir.is_dir():
             continue
-
-        meta_path = run_dir / "meta.json"
-        meta: dict = {}
-        if meta_path.exists():
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                meta = {}
 
         transcript_path = run_dir / "transcript.txt"
         excerpt = ""
@@ -1408,14 +1630,20 @@ def _handle_list_history(params: dict[str, Any]) -> list[dict[str, Any]]:
                 pass
 
         entries.append({
-            "run_id": meta.get("run_id") or run_dir.name,
-            "timestamp": meta.get("timestamp", ""),
+            "run_id": run_dir.name,
+            "timestamp": _parse_folder_timestamp(run_dir.name),
             "transcript_excerpt": excerpt,
             "has_protocol": (run_dir / "protocol.md").exists(),
             "has_tasks": (run_dir / "tasks.json").exists(),
         })
 
     return entries
+```
+
+Also add at the imports section near top of sidecar_main.py:
+
+```python
+import re
 ```
 
 Register in DISPATCH:
@@ -1572,6 +1800,14 @@ def _handle_trim_audio(params: dict[str, Any]) -> dict[str, Any]:
     if not ranges:
         raise ValueError("No ranges provided — output would be empty")
 
+    # utils.get_ffmpeg_path() returns str | None (see utils.py:48). Resolve early
+    # and surface a clear Russian error if neither bundled vendor nor PATH ffmpeg
+    # is available — subprocess.run would otherwise fail with a confusing
+    # FileNotFoundError on None.
+    ffmpeg = get_ffmpeg_path()
+    if ffmpeg is None:
+        raise RuntimeError("ffmpeg не найден. Переустановите приложение.")
+
     # Build filter_complex string: [0:a]atrim=start=A:end=B,asetpts=PTS-STARTPTS[s0];
     # ...repeat per range...; [s0][s1]concat=n=N:v=0:a=1[out]
     parts: list[str] = []
@@ -1584,7 +1820,7 @@ def _handle_trim_audio(params: dict[str, Any]) -> dict[str, Any]:
     filter_complex = ";".join(parts)
 
     cmd = [
-        get_ffmpeg_path(),
+        ffmpeg,
         "-y",
         "-i", input_path,
         "-filter_complex", filter_complex,
@@ -1891,6 +2127,11 @@ class TranscribeRequest(BaseModel):
     diarize: bool = False
     hotwords: str | None = None
     num_speakers: int | None = None
+    # min_speakers + max_speakers — AssemblyAI accepts speaker bounds when
+    # num_speakers is unknown. v0.1 Transcriber.transcribe forwards them
+    # (transcriber/__init__.py:79+204); v0.2 must too.
+    min_speakers: int | None = None
+    max_speakers: int | None = None
     denoise_audio: bool = False
 
 
@@ -1915,17 +2156,31 @@ class ExtractTasksRequest(BaseModel):
 
 
 class ExtractedTask(BaseModel):
+    # Mirrors tasks.schema.Task fields actually returned by extractor.extract().
+    # NOTE: v0.1 extract() returns Task dataclass instances (NOT plain dicts),
+    # so the handler serialises via Task.to_dict() — see Task 5.
     title: str
+    description: str | None = None
     assignee: str | None = None
     due_date: str | None = None
     priority: str | None = None
+    labels: list[str] = Field(default_factory=list)
+    status: str | None = None
+    local_id: str | None = None
 
 
 class ExtractTasksResult(BaseModel):
+    # Mirrors the dict returned by tasks.extractor.extract() at extractor.py:302.
+    # `corrections` is the COUNT of LLM self-corrections (int), not a list of
+    # dicts. `raw_response`/`members`/`labels` are preserved so the UI can render
+    # the "Show raw response" affordance + display member/label grounding.
     tasks: list[ExtractedTask]
-    corrections: list[dict] = Field(default_factory=list)
+    corrections: int = 0
     usage: dict = Field(default_factory=dict)
     model: str | None = None
+    raw_response: str | None = None
+    members: list[dict] = Field(default_factory=list)
+    labels: list[dict] = Field(default_factory=list)
 
 
 class GenerateProtocolRequest(BaseModel):
@@ -1937,7 +2192,9 @@ class GenerateProtocolRequest(BaseModel):
     language: str | None = None
 
 
-class ProtocolBlocks(BaseModel):
+class ProtocolPlaceholders(BaseModel):
+    # Mirrors tasks.protocol_generator.Placeholders (5-block MoM, parsed from LLM).
+    meeting_type: str
     participants: str
     agenda: str
     theses_and_decisions: str
@@ -1945,9 +2202,13 @@ class ProtocolBlocks(BaseModel):
 
 
 class GenerateProtocolResult(BaseModel):
+    # Mirrors tasks.protocol_generator.ProtocolResult dataclass at
+    # protocol_generator.py:35. No usage field — v0.1 doesn't surface OpenRouter
+    # usage from protocol_generator (extractor.extract() does, but the protocol
+    # generator path doesn't propagate it).
     markdown: str
-    blocks: ProtocolBlocks | dict
-    usage: dict = Field(default_factory=dict)
+    raw_llm_response: str
+    placeholders: ProtocolPlaceholders | dict
 
 
 class HistoryEntry(BaseModel):
@@ -2162,6 +2423,7 @@ git commit -m "build(v0.2): pydantic-to-typescript codegen + pre-commit hook"
 - Entry: `sidecar_main.py` instead of `app.py`
 - No `customtkinter` hidden import
 - Runtime hook redirects None streams to `%TEMP%/audio-transcriber-sidecar-bootstrap.log` (per memory `feedback_pyinstaller_windowed_stderr_none` — applies even with console=True because Tauri's CREATE_NO_WINDOW flag detaches stderr from any terminal)
+- **`--onefile` mode** (NOT `--onedir`). Tauri 2's `externalBin` convention requires a single executable at `binaries/<name>-<target_triple>.exe`. PyInstaller `--onedir` produces an exe + sibling `_internal/` directory, which doesn't fit the externalBin contract cleanly. `--onefile` produces a self-extracting single .exe (~200-400 MB after deps); startup cost ~1-3s for `_internal/` extraction to %TEMP%, which happens once per app launch — acceptable for a long-lived sidecar. (Phase 3 polish may revisit if startup latency is a problem.)
 
 - [ ] **Step 1: Write the runtime hook**
 
@@ -2275,30 +2537,28 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
+# --onefile mode: bundle everything into a single self-extracting .exe so it
+# fits Tauri 2's externalBin contract (`binaries/<name>-<target_triple>.exe`).
+# At launch the bootloader extracts the embedded archive to %TEMP% (~1-3s),
+# then runs sidecar_main.py.
 exe = EXE(
     pyz,
     a.scripts,
+    a.binaries,
+    a.zipfiles,
+    a.datas,
     [],
-    exclude_binaries=True,
     name="audio-transcriber-core",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=False,
     console=True,  # Sidecar — Tauri spawns with CREATE_NO_WINDOW so no window appears
-)
-
-coll = COLLECT(
-    exe,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    strip=False,
-    upx=False,
-    upx_exclude=[],
-    name="audio-transcriber-core",
+    runtime_tmpdir=None,
 )
 ```
+
+Note: no `COLLECT()` call — `--onefile` mode packs everything into the EXE directly.
 
 - [ ] **Step 3: Write the build helper (Windows)**
 
@@ -2315,31 +2575,27 @@ $Target = "x86_64-pc-windows-msvc"   # Windows target_triple for tauri-plugin-sh
 
 Push-Location $Sidecar
 try {
-    Write-Host "Building Python sidecar..."
+    Write-Host "Building Python sidecar (--onefile)..."
     pyinstaller audio_transcriber_sidecar.spec --noconfirm
 
-    $OutBinary = "$Sidecar/dist/audio-transcriber-core/audio-transcriber-core.exe"
+    # --onefile output is a single .exe directly under dist/, no subdir.
+    $OutBinary = "$Sidecar/dist/audio-transcriber-core.exe"
     if (-not (Test-Path $OutBinary)) {
-        throw "PyInstaller output missing: $OutBinary"
+        throw "PyInstaller output missing: $OutBinary (expected --onefile single-exe)"
     }
 
-    # Tauri tauri-plugin-shell requires sidecar binaries named with target_triple
+    # Tauri tauri-plugin-shell expects: binaries/<name>-<target_triple>.exe
+    # (flat path — externalBin in tauri.conf.json references "binaries/audio-transcriber-core")
     $StagedDir = "$RepoRoot/src-tauri/binaries"
     New-Item -ItemType Directory -Force -Path $StagedDir | Out-Null
 
-    # Stage the onedir bundle's main .exe with the target-triple suffix.
-    # The _internal/ directory must accompany it — we copy the whole bundle dir
-    # but rename the exe per Tauri convention.
-    $StagedBundle = "$StagedDir/audio-transcriber-core-$Target"
-    if (Test-Path $StagedBundle) {
-        Remove-Item -Recurse -Force $StagedBundle
+    $StagedExe = "$StagedDir/audio-transcriber-core-$Target.exe"
+    if (Test-Path $StagedExe) {
+        Remove-Item -Force $StagedExe
     }
-    Copy-Item -Recurse "$Sidecar/dist/audio-transcriber-core" $StagedBundle
+    Copy-Item $OutBinary $StagedExe
 
-    # The .exe inside also needs the target-triple suffix per Tauri docs.
-    Rename-Item -Path "$StagedBundle/audio-transcriber-core.exe" -NewName "audio-transcriber-core-$Target.exe"
-
-    Write-Host "Sidecar staged to $StagedBundle"
+    Write-Host "Sidecar staged to $StagedExe"
 }
 finally {
     Pop-Location
@@ -2352,7 +2608,7 @@ finally {
 pwsh python-sidecar/build_sidecar.ps1
 ```
 
-Expected output: bundle staged at `src-tauri/binaries/audio-transcriber-core-x86_64-pc-windows-msvc/audio-transcriber-core-x86_64-pc-windows-msvc.exe` + `_internal/` neighbour.
+Expected output: single .exe staged at `src-tauri/binaries/audio-transcriber-core-x86_64-pc-windows-msvc.exe` (no `_internal/` neighbour — onefile mode packs everything into the exe).
 
 - [ ] **Step 5: Verify the sidecar responds to ping**
 
@@ -2360,7 +2616,7 @@ Manual stdin smoke:
 
 ```powershell
 $req = '{"jsonrpc":"2.0","id":1,"method":"ping"}'
-$req | & "src-tauri/binaries/audio-transcriber-core-x86_64-pc-windows-msvc/audio-transcriber-core-x86_64-pc-windows-msvc.exe"
+$req | & "src-tauri/binaries/audio-transcriber-core-x86_64-pc-windows-msvc.exe"
 ```
 
 Expected: prints something like `{"jsonrpc": "2.0", "id": 1, "result": {"pong": true, "version": "0.2.0"}}`. If hung — check `%TEMP%/audio-transcriber-sidecar-bootstrap.log` for crash trace.
@@ -2483,23 +2739,49 @@ Create `src-tauri/tauri.conf.json`:
     "externalBin": [
       "binaries/audio-transcriber-core"
     ]
-  },
-  "plugins": {
-    "shell": {
-      "scope": [
+  }
+}
+```
+
+- [ ] **Step 3.5: Create the Tauri 2 capabilities file**
+
+Tauri 2 moved plugin permissions out of `tauri.conf.json::plugins` into per-capability JSON files under `src-tauri/capabilities/`. Without this file the webview cannot invoke ANY plugin command (fs, shell, dialog).
+
+Create `src-tauri/capabilities/default.json`:
+
+```json
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capability for the main window — allows fs reads/writes under $APPDATA, dialog opens, and spawning the audio-transcriber-core sidecar.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$APPLOCALDATA/**" }
+      ]
+    },
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
         {
           "name": "audio-transcriber-core",
           "sidecar": true,
           "args": true
         }
       ]
-    },
-    "fs": {
-      "scope": ["$APPDATA/**", "$APPLOCALDATA/**"]
     }
-  }
+  ]
 }
 ```
+
+Note: the actual permission identifiers (`core:default`, `dialog:default`, etc.) come from each plugin's `permissions/` folder. The exact list above is the Tauri 2.0 surface as of 2026-05-28; verify against `cargo tauri permission list` if a plugin changes between now and Phase 1 execution.
 
 - [ ] **Step 4: Create placeholder icon**
 
@@ -2694,16 +2976,21 @@ fn spawn_inner(
     pending: Arc<Mutex<HashMap<i64, oneshot::Sender<Value>>>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     tracing::info!("Spawning sidecar audio-transcriber-core");
-    let (mut rx, mut child) = app
+    let (mut rx, child) = app
         .shell()
         .sidecar("audio-transcriber-core")?
         .spawn()?;
 
-    // Stdin writer task — drains the mpsc into the child's stdin.
-    let mut child_for_writer = child.clone();
+    // CommandChild is NOT Clone in tauri-plugin-shell 2. The writer task owns
+    // the child handle exclusively; if it ever needs sharing (e.g. with a
+    // separate cancel task), wrap in Arc<Mutex<CommandChild>>. For Phase 1
+    // we use the simpler model: cancel is sent as a normal JSON-RPC message
+    // via the mpsc (see commands::cancel_transcribe in Task 17), so the writer
+    // task is the only owner of the child stdin handle.
     tokio::spawn(async move {
+        let mut child = child;
         while let Some(line) = stdin_rx.recv().await {
-            if let Err(e) = child_for_writer.write(line.as_bytes()) {
+            if let Err(e) = child.write(line.as_bytes()) {
                 tracing::warn!("sidecar stdin write failed: {e}");
                 break;
             }
@@ -2892,10 +3179,12 @@ Expected: compiles. Warnings about `MAX_RESTARTS` etc are fine (Phase 1 doesn't 
 
 - [ ] **Step 4: Manual smoke — ping from Rust**
 
-Add a temporary smoke test in `src-tauri/src/main.rs` setup (will be removed in Step 5):
+Add a temporary smoke test in `src-tauri/src/main.rs` setup (will be removed in Step 5). The Manager trait import is REQUIRED for `.state()` to resolve:
 
 ```rust
-        .setup(|app| {
+use tauri::Manager;  // brings .state() / .path() / .manage() into scope
+
+// ...inside .setup(|app| { ... })
             bootstrap::seed_config_if_missing(app.handle())?;
             sidecar::spawn(app.handle())?;
 
