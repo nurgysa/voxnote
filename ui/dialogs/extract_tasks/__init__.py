@@ -1324,7 +1324,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._status_label.configure(
             text="Заполнение из текста...", text_color=TEXT_SECONDARY,
         )
-        model = self._model_var.get().strip() or "anthropic/claude-sonnet-4.5"
+        model = self._model_var.get().strip() or "google/gemini-3.5-flash"
         threading.Thread(
             target=self._run_autofill_worker,
             args=(free_text, model, api_key),

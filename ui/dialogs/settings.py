@@ -51,12 +51,7 @@ _logger = logging.getLogger(__name__)
 # Display label keeps the slug visible — power users recognize 'sonnet-4.5'
 # faster than 'Anthropic Claude Sonnet 4.5 (latest)'.
 _CURATED_MODELS = {
-    "anthropic/claude-sonnet-4.5":   "anthropic/claude-sonnet-4.5",
-    "anthropic/claude-haiku-4.5":    "anthropic/claude-haiku-4.5",
-    "openai/gpt-4o":                  "openai/gpt-4o",
-    "google/gemini-2.5-pro":          "google/gemini-2.5-pro",
     "google/gemini-3.5-flash":        "google/gemini-3.5-flash",
-    "deepseek/deepseek-v3":           "deepseek/deepseek-v3",
 }
 
 

@@ -201,7 +201,7 @@ def build_ui(app):
     )
     app._openrouter_default_model_var = ctk.StringVar(
         value=app._config.get(
-            "tasks_default_model", "anthropic/claude-sonnet-4.5",
+            "tasks_default_model", "google/gemini-3.5-flash",
         ),
     )
     app._openrouter_default_model_var.trace_add(
