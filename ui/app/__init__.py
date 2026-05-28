@@ -92,28 +92,46 @@ class App(
         # True fullscreen on launch (user request 2026-05-28). Unlike
         # state('zoomed') which only covers the working area (Windows taskbar
         # remains visible, title bar stays), `-fullscreen` covers EVERY pixel
-        # of the screen — kiosk-style, like a media player. Trade-offs:
-        #   - No title bar = no X button (must close via Alt+F4 / Esc)
-        #   - Windows taskbar hidden (can't visually switch to Chrome/Slack)
-        #   - Alt+Tab still works (lets user switch away without exiting)
-        # Bind Escape to toggle off — standard UX in fullscreen apps; without
-        # this, a confused user is trapped. F11 toggles for ergonomics.
+        # of the screen — kiosk-style, like a media player.
+        #
+        # Belt-and-suspenders: state('zoomed') applies IMMEDIATELY (max area
+        # with title bar visible), then `-fullscreen` deferred via after()
+        # kicks in on the next event-loop tick. The defer is needed because
+        # CustomTkinter's super().__init__() does its own WM manipulation
+        # that overrides attributes set in-line during __init__ — verified
+        # live on 2026-05-28 where setting -fullscreen directly produced a
+        # 1280×800 window instead of true fullscreen.
+        #
+        # Trade-offs (intentional for kiosk UX):
+        #   - No title bar = no X button (close via Alt+F4 / Esc / F11)
+        #   - Windows taskbar hidden (Alt+Tab still works for switching)
         try:
-            self.attributes("-fullscreen", True)
-            self.bind(
-                "<Escape>",
-                lambda _e: self.attributes("-fullscreen", False),
-            )
-            self.bind(
-                "<F11>",
-                lambda _e: self.attributes(
-                    "-fullscreen", not self.attributes("-fullscreen"),
-                ),
-            )
+            self.state("zoomed")
         except tk.TclError:
-            # Some Tk variants (older Linux WMs, exotic remote-desktop setups)
-            # reject -fullscreen — silent fall-back to geometry default.
             pass
+
+        def _go_fullscreen() -> None:
+            try:
+                self.attributes("-fullscreen", True)
+            except tk.TclError:
+                pass
+
+        # 50ms gives CustomTkinter + WM time to settle their own state
+        # before we apply our attribute. after(0)/after_idle also works
+        # but races more often on slow disk / cold-start startups.
+        self.after(50, _go_fullscreen)
+
+        # Bind escape hatches so user isn't trapped — standard fullscreen UX.
+        self.bind(
+            "<Escape>",
+            lambda _e: self.attributes("-fullscreen", False),
+        )
+        self.bind(
+            "<F11>",
+            lambda _e: self.attributes(
+                "-fullscreen", not self.attributes("-fullscreen"),
+            ),
+        )
         # Apply the saved appearance mode BEFORE constructing widgets so
         # tuple colors in theme.py resolve to the right palette on first
         # paint. Default "system" follows the OS setting. Persisted via
