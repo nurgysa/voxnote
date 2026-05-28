@@ -323,10 +323,10 @@ def test_assemblyai_supports_mixed_true():
 def test_submit_mixed_uses_multilingual_config():
     """When TranscriptionOptions.language == 'mixed', the submitted body must:
     - set language_detection=True (enable per-file auto language detection)
-    - set speech_model='universal' (Universal-2, AssemblyAI's 99-language model
-      that includes Kazakh — verified against AssemblyAI docs on 2026-05-21:
-      https://www.assemblyai.com/docs/pre-recorded-audio/language-detection and
-      https://assemblyai.github.io/assemblyai-node-sdk/types/Transcript.html)
+    - send speech_models=['universal-2'] (REQUIRED on every request since the
+      2026-05 AssemblyAI API contract change — singular `speech_model` is
+      deprecated per
+      https://www.assemblyai.com/docs/api-reference/transcripts/submit)
     - NOT include language_code (mixed mode must not force a single language)
     """
     p = AssemblyAIProvider("test-key")
@@ -342,16 +342,22 @@ def test_submit_mixed_uses_multilingual_config():
         p._submit("https://cdn.aai/mixed.wav", TranscriptionOptions(language="mixed"))
 
     assert submitted_body.get("language_detection") is True
-    assert submitted_body.get("speech_model") == "universal"
+    assert submitted_body.get("speech_models") == ["universal-2"]
+    # speech_model (singular) is the deprecated form — must NOT be sent;
+    # AssemblyAI 400s with "must be a non-empty list" if either is wrong.
+    assert "speech_model" not in submitted_body
     assert "language_code" not in submitted_body
 
 
-def test_submit_single_language_does_not_leak_mixed_keys():
-    """Regression for the 3-branch refactor: language='ru' must produce a body
-    with the single-language shape (language_code='ru', no language_detection,
-    no speech_model). Mirrors Gladia's test_submit_single_language_unchanged.
-    Guards against the mixed-branch accidentally falling through to the
-    single-language path on a code change.
+def test_submit_single_language_includes_required_speech_models():
+    """language='ru' must produce a body with:
+    - language_code='ru' (single-language path)
+    - speech_models=['universal-2'] (REQUIRED — AssemblyAI 2026-05 contract;
+      previously this branch sent NO speech_model field, which now 400s with
+      "speech_models must be a non-empty list" — see providers/assemblyai.py
+      comment for full context)
+    - NO language_detection (single language locks detection off)
+    - NO singular speech_model (deprecated form)
     """
     p = AssemblyAIProvider("test-key")
 
@@ -366,6 +372,8 @@ def test_submit_single_language_does_not_leak_mixed_keys():
         p._submit("https://cdn.aai/ru.wav", TranscriptionOptions(language="ru"))
 
     assert submitted_body.get("language_code") == "ru"
-    # Critical: keys introduced by the mixed branch must not appear here.
+    # speech_models is required on EVERY request post-2026-05 contract change.
+    assert submitted_body.get("speech_models") == ["universal-2"]
+    # Mixed-branch keys must not appear; deprecated singular form must not appear.
     assert "language_detection" not in submitted_body
     assert "speech_model" not in submitted_body

@@ -178,18 +178,25 @@ class AssemblyAIProvider(TranscriptionProvider):
         body: dict = {
             "audio_url": audio_url,
             "speaker_labels": bool(options.diarize),
+            # AssemblyAI made speech_models required in 2026-05 (the previous
+            # singular `speech_model` field was deprecated — see
+            # https://www.assemblyai.com/docs/api-reference/transcripts/submit
+            # «This parameter has been replaced with the `speech_models`
+            # parameter.»). Must be a non-empty list of {"universal-3-pro",
+            # "universal-2"}. We default to universal-2 (the multilingual
+            # 99-language model — includes Kazakh, drives both single-language
+            # and "mixed" code-switching paths below). universal-3-pro is the
+            # newer/pricier alternative — defer to a Settings opt-in.
+            "speech_models": ["universal-2"],
         }
-        # Language handling:
-        #   "mixed" → multilingual ASR: enable per-file language_detection and
-        #   switch to Universal-2 ('universal'), the 99-language model that
-        #   includes Kazakh. Verified against AssemblyAI docs on 2026-05-21:
-        #   https://www.assemblyai.com/docs/pre-recorded-audio/language-detection
-        #   https://assemblyai.github.io/assemblyai-node-sdk/types/Transcript.html
+        # Language handling (Universal-2 is multilingual, so the model itself
+        # is the same across all branches — only the routing differs):
+        #   "mixed" → enable language_detection so AssemblyAI auto-detects
+        #     each utterance's language (KZ + RU + EN code-switching).
         #   Explicit code (kk/ru/en) → force that single language.
         #   None → auto-detect a single dominant language.
         if options.language == "mixed":
             body["language_detection"] = True
-            body["speech_model"] = "universal"
         elif options.language:
             body["language_code"] = options.language
         else:
