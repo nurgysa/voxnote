@@ -14,6 +14,7 @@ _CURATED_MODELS = [
     "anthropic/claude-haiku-4.5",
     "openai/gpt-4o",
     "google/gemini-2.5-pro",
+    "google/gemini-3.5-flash",
     "deepseek/deepseek-v3",
 ]
 
@@ -45,6 +46,7 @@ _MODEL_PRICING_USD_PER_M = {
     "anthropic/claude-haiku-4.5":   (1.00,  5.00),
     "openai/gpt-4o":                (2.50, 10.00),
     "google/gemini-2.5-pro":        (1.25, 10.00),
+    "google/gemini-3.5-flash":      (1.50,  9.00),  # released 2026-05-19, 1M context
     "deepseek/deepseek-v3":         (0.27,  1.10),
 }
 
