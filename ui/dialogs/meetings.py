@@ -1,4 +1,10 @@
-"""History browser + read-only transcript viewer."""
+"""Meetings browser + read-only transcript viewer.
+
+Renamed from history.py on 2026-05-28 — UI consistency with the new
+«Митинги» button + Settings folder picker. Files on disk are
+unchanged; the underlying utils.list_history_entries / delete_history_entry
+helpers keep their internal names (rename was UI-only).
+"""
 
 from __future__ import annotations
 
@@ -39,7 +45,7 @@ def _read_transcript(folder_path: str) -> str:
         return ""
 
 
-class HistoryViewerDialog(ctk.CTkToplevel):
+class MeetingViewerDialog(ctk.CTkToplevel):
     """Read-only viewer for a single history entry's transcript.
 
     Three actions: copy to clipboard, save as a new file, or load the
@@ -141,12 +147,12 @@ class HistoryViewerDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class HistoryDialog(ctk.CTkToplevel):
-    """Browse transcription history — each entry is a folder on disk."""
+class MeetingsDialog(ctk.CTkToplevel):
+    """Browse meeting history — each entry is a folder on disk."""
 
     def __init__(self, parent, on_load_to_main):
         super().__init__(parent)
-        self.title("История транскрипций")
+        self.title("Митинги")
         self.geometry("760x600")
         self.configure(fg_color=BG)
         self.transient(parent)
@@ -165,7 +171,7 @@ class HistoryDialog(ctk.CTkToplevel):
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            header, text="История транскрипций",
+            header, text="Митинги",
             font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
             text_color=TEXT_PRIMARY,
         ).grid(row=0, column=0, padx=20, pady=12, sticky="w")
@@ -237,10 +243,10 @@ class HistoryDialog(ctk.CTkToplevel):
         query = self._search_var.get().strip()
         entries = [e for e in self._all_entries if self._matches_query(e, query)]
         suffix = f" / {len(self._all_entries)}" if query else ""
-        self._lbl_count.configure(text=f"Записей: {len(entries)}{suffix}")
+        self._lbl_count.configure(text=f"Митингов: {len(entries)}{suffix}")
 
         if not entries:
-            msg = "Ничего не найдено" if query else "Нет транскрипций"
+            msg = "Ничего не найдено" if query else "Нет митингов"
             ctk.CTkLabel(
                 self._entry_list, text=msg,
                 font=ctk.CTkFont(family=FONT, size=13),
@@ -299,7 +305,7 @@ class HistoryDialog(ctk.CTkToplevel):
             ).grid(row=0, column=3, rowspan=2, padx=(0, 8), pady=4)
 
     def _view_entry(self, entry: dict):
-        HistoryViewerDialog(self, entry, self._on_load_to_main)
+        MeetingViewerDialog(self, entry, self._on_load_to_main)
 
     def _delete_entry(self, folder_path: str):
         if messagebox.askyesno("Удалить", "Удалить эту запись из истории?"):

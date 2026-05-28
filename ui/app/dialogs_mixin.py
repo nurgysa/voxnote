@@ -29,7 +29,7 @@ from tkinter import messagebox
 
 from audio_cutter import AudioCutter
 from theme import TEXT_PRIMARY, TEXT_SECONDARY
-from ui.dialogs.history import HistoryDialog
+from ui.dialogs.meetings import MeetingsDialog
 from ui.dialogs.settings import SettingsDialog
 from ui.dialogs.terms import TermsDialog
 
@@ -75,8 +75,8 @@ class DialogsMixin:
     def _open_terms_dialog(self):
         TermsDialog(self, self._config, self._refresh_settings_summaries)
 
-    def _open_history_dialog(self):
-        HistoryDialog(self, on_load_to_main=self._load_history_into_main)
+    def _open_meetings_dialog(self):
+        MeetingsDialog(self, on_load_to_main=self._load_history_into_main)
 
     def _open_extract_tasks_dialog(self):
         """Validate the OpenRouter key is set, then open the Extract dialog.

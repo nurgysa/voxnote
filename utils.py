@@ -129,14 +129,78 @@ def save_config(config: dict) -> None:
         json.dump(config, f, ensure_ascii=False, indent=2)
 
 
-# ── History — each entry is a folder on disk ─────────────────
+# ── Meetings folder — user-configurable, with 3-level fallback ─────────
 
-_HISTORY_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "history")
+_DEFAULT_MEETINGS_DIR = os.path.join(
+    os.path.expanduser("~"), "Documents", "AudioTranscriber", "meetings",
+)
+
+# Legacy paths probed on first launch — entries here trigger the
+# migration prompt. Kept as a module-level constant so App.__init__
+# can pass it to meetings_migration.detect_old_locations.
+_LEGACY_HISTORY_LOCATIONS = [
+    # Sibling of utils.py — in dev source mode this is <repo>/history/,
+    # in PyInstaller bundle it's <bundle>/_internal/history/. Same
+    # expression covers both because __file__ resolves differently.
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "history"),
+    # PyInstaller bundle "root" (parent of _internal/) — edge case for
+    # builds that drop history at bundle root instead of inside _internal.
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "history",
+    ),
+]
+
+
+def _normalize_meetings_path(raw: str) -> str:
+    """Expand %VARS% / ~, normalize separators, return absolute path."""
+    return os.path.abspath(
+        os.path.expandvars(os.path.expanduser(raw.strip()))
+    )
+
+
+def get_meetings_dir() -> str:
+    """Return absolute path to the active meetings folder, creating it if missing.
+
+    Resolution order (each level falls through on failure):
+      1. config["meetings_dir"] if non-empty AND parent exists AND writable
+      2. _DEFAULT_MEETINGS_DIR (%USERPROFILE%/Documents/AudioTranscriber/meetings/)
+      3. <bundle>/_internal/history/ — legacy last-resort fallback for
+         corporate Windows profiles where Documents itself is locked
+
+    The chosen directory is created (mkdir -p) on call. Callers can
+    rely on the returned path existing as a directory.
+    """
+    cfg = load_config()
+    candidates: list[str] = []
+
+    raw = (cfg.get("meetings_dir") or "").strip()
+    if raw:
+        candidates.append(_normalize_meetings_path(raw))
+    candidates.append(_DEFAULT_MEETINGS_DIR)
+    # Legacy first probe path is the same expression as _LEGACY_HISTORY_LOCATIONS[0]
+    candidates.append(_LEGACY_HISTORY_LOCATIONS[0])
+
+    for path in candidates:
+        try:
+            os.makedirs(path, exist_ok=True)
+            # Touch-test writability via a temp marker file
+            test_marker = os.path.join(path, ".write-test")
+            with open(test_marker, "w") as f:
+                f.write("")
+            os.remove(test_marker)
+            return path
+        except (OSError, PermissionError):
+            continue
+
+    # If everything fails, return the default and let the caller's
+    # next os.* operation surface the real error.
+    return _DEFAULT_MEETINGS_DIR
 
 
 def _ensure_history_dir() -> str:
-    os.makedirs(_HISTORY_DIR, exist_ok=True)
-    return _HISTORY_DIR
+    """Backwards-compat shim — equivalent to get_meetings_dir()."""
+    return get_meetings_dir()
 
 
 def create_history_entry(
@@ -145,17 +209,17 @@ def create_history_entry(
     language: str | None,
     model: str,
 ) -> str:
-    """Create a history folder with audio copy, transcript.txt and description.md.
+    """Create a meeting folder with audio copy, transcript.txt and description.md.
 
     Returns the path to the created folder.
     """
-    _ensure_history_dir()
+    meetings_dir = get_meetings_dir()
 
     audio_name = os.path.basename(audio_file_path)
     base_name = os.path.splitext(audio_name)[0]
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     folder_name = f"{timestamp}_{base_name}"
-    folder_path = os.path.join(_HISTORY_DIR, folder_name)
+    folder_path = os.path.join(meetings_dir, folder_name)
     os.makedirs(folder_path, exist_ok=True)
 
     # Copy audio file
@@ -185,14 +249,14 @@ def create_history_entry(
 
 
 def list_history_entries() -> list[dict]:
-    """Scan the history directory and return entries sorted by date (newest first).
+    """Scan the meetings directory and return entries sorted by date (newest first).
 
     Each entry dict: folder_path, folder_name, audio_file, date_created.
     """
-    _ensure_history_dir()
+    meetings_dir = get_meetings_dir()
     entries = []
-    for name in os.listdir(_HISTORY_DIR):
-        folder_path = os.path.join(_HISTORY_DIR, name)
+    for name in os.listdir(meetings_dir):
+        folder_path = os.path.join(meetings_dir, name)
         if not os.path.isdir(folder_path):
             continue
 

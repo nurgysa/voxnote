@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
@@ -213,6 +214,60 @@ class App(
         self._first_run = not self._cloud_api_keys.get("AssemblyAI", "").strip()
 
         build_ui(self)
+
+        # First-launch meetings migration check. If meetings_dir isn't
+        # explicitly configured AND a legacy history folder still has
+        # entries, schedule a one-shot prompt (defer 500 ms so the main
+        # window finishes drawing before the modal appears).
+        meetings_cfg = (self._config.get("meetings_dir") or "").strip()
+        if not meetings_cfg:
+            from meetings_migration import detect_old_locations
+            from utils import _LEGACY_HISTORY_LOCATIONS, get_meetings_dir
+            old_locations = detect_old_locations(
+                probe_paths=_LEGACY_HISTORY_LOCATIONS,
+            )
+            if old_locations:
+                # Use the most-populated legacy path as src
+                src_path, _src_count = old_locations[0]
+                dst_path = get_meetings_dir()
+                if os.path.abspath(src_path) != os.path.abspath(dst_path):
+                    self.after(500, lambda: self._show_migration_prompt(
+                        src_path, dst_path,
+                    ))
+
+    def _show_migration_prompt(self, src: str, dst: str) -> None:
+        """First-launch migration prompt. 3-button mode."""
+        from ui.dialogs.migration import MigrationPromptDialog
+        MigrationPromptDialog(
+            self, src=src, dst=dst, mode="first_launch",
+            on_choice=lambda c: self._on_first_launch_choice(c, src, dst),
+        )
+
+    def _on_first_launch_choice(
+        self, choice: str, src: str, dst: str,
+    ) -> None:
+        if choice == "migrate":
+            from ui.dialogs.migration import MigrationProgressDialog
+            MigrationProgressDialog(
+                self, src=src, dst=dst,
+                on_done=lambda summary: self._on_first_launch_migrated(
+                    summary, dst,
+                ),
+            )
+        elif choice == "keep_old":
+            # Point config at the old folder so the user keeps working
+            # with the same entries; no files move.
+            from utils import save_config
+            self._config["meetings_dir"] = src
+            save_config(self._config)
+        # choice == "later" → do nothing; prompt re-appears next launch
+
+    def _on_first_launch_migrated(
+        self, summary: dict, new_path: str,
+    ) -> None:
+        from utils import save_config
+        self._config["meetings_dir"] = new_path
+        save_config(self._config)
 
 
 

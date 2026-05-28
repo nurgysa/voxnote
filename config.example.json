@@ -22,5 +22,6 @@
   "gdrive_last_backup": "",
   "gdrive_backup_frequency": "off",
   "gdrive_root_folder_id": "",
-  "appearance_mode": "Тёмная"
+  "appearance_mode": "Тёмная",
+  "meetings_dir": ""
 }

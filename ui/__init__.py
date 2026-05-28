@@ -4,7 +4,7 @@ Splits the monolithic ``app.py`` into focused modules:
 
   ui.widgets         — CTk factories shared by app + dialogs
   ui.dialogs.terms   — TermsDialog (hotword editor)
-  ui.dialogs.history — HistoryDialog + HistoryViewerDialog
+  ui.dialogs.meetings — MeetingsDialog + MeetingViewerDialog
   ui.app             — App class + main()
 
 The root ``app.py`` remains a thin entry point so that faulthandler is

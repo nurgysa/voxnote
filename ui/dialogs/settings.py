@@ -16,8 +16,10 @@ to config.json — no extra save logic needed here.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import tkinter as tk
+from tkinter import filedialog
 
 import customtkinter as ctk
 
@@ -29,6 +31,7 @@ from theme import (
     BORDER,
     FONT,
     GREEN,
+    INPUT_BG,
     RED,
     SURFACE,
     TEXT_PRIMARY,
@@ -43,7 +46,7 @@ from ui.widgets import (
     primary_button,
     tonal_button,
 )
-from utils import save_config
+from utils import get_meetings_dir, save_config
 
 _logger = logging.getLogger(__name__)
 
@@ -155,6 +158,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_transcription_section(scroll_transcription)
         self._build_audio_section(scroll_transcription)
         self._build_cloud_section(scroll_transcription)
+        self._build_meetings_section(scroll_transcription)
         self._build_dictionaries_section(scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
@@ -442,8 +446,121 @@ class SettingsDialog(ctk.CTkToplevel):
             anchor="w",
         ).grid(row=4, column=0, columnspan=4, padx=4, pady=(0, 4), sticky="w")
 
+    def _build_meetings_section(self, parent) -> None:
+        """Meetings folder picker — path entry + Выбрать + Default + stats.
+
+        On path change: triggers MigrationPromptDialog if the current
+        folder has entries (mode="settings"). Otherwise silent save.
+        """
+        section = self._section_card(parent, "Митинги", row=4)
+
+        label(section, "Папка хранения").grid(
+            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
+        )
+
+        self._meetings_path_var = ctk.StringVar(value=get_meetings_dir())
+        self._meetings_entry = ctk.CTkEntry(
+            section, textvariable=self._meetings_path_var,
+            height=36, corner_radius=10,
+            border_color=BORDER, border_width=1,
+            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+            font=ctk.CTkFont(family=FONT, size=12),
+            state="readonly",
+        )
+        self._meetings_entry.grid(
+            row=0, column=1, columnspan=2, padx=4, pady=6, sticky="ew",
+        )
+
+        tonal_button(
+            section, text="\U0001f4c1 Выбрать",
+            command=self._on_pick_meetings_folder, width=130,
+        ).grid(row=0, column=3, padx=(4, 4), pady=6)
+
+        tonal_button(
+            section, text="↻ Default",
+            command=self._on_reset_meetings_folder, width=120,
+        ).grid(row=1, column=3, padx=(4, 4), pady=(0, 6))
+
+        # Stats label — refreshed on dialog open and after path change
+        self._meetings_stats_label = label(section, "", anchor="w")
+        self._meetings_stats_label.grid(
+            row=1, column=0, columnspan=3, padx=4, pady=(0, 6), sticky="w",
+        )
+        self._refresh_meetings_stats()
+
+    def _refresh_meetings_stats(self) -> None:
+        """Compute «В этой папке: N митингов • X GB» and update the label."""
+        from meetings_migration import count_meetings
+        from ui.dialogs.migration import _fmt_size, _folder_size_bytes
+        path = self._meetings_path_var.get()
+        n = count_meetings(path)
+        size = _folder_size_bytes(path)
+        self._meetings_stats_label.configure(
+            text=f"В этой папке: {n} митингов • {_fmt_size(size)}",
+        )
+
+    def _on_pick_meetings_folder(self) -> None:
+        """User clicked «Выбрать» — open native dir picker, maybe migrate."""
+        chosen = filedialog.askdirectory(
+            title="Папка для хранения митингов",
+            initialdir=self._meetings_path_var.get(),
+            parent=self,
+        )
+        if not chosen:
+            return  # user cancelled the picker
+
+        current = self._meetings_path_var.get()
+        normalized = os.path.abspath(chosen)
+        if normalized == os.path.abspath(current):
+            return  # no-op
+
+        from meetings_migration import count_meetings
+        if count_meetings(current) > 0:
+            # Ask whether to migrate
+            from ui.dialogs.migration import MigrationPromptDialog
+            MigrationPromptDialog(
+                self,
+                src=current, dst=normalized, mode="settings",
+                on_choice=lambda choice: self._on_migrate_choice(
+                    choice, current, normalized,
+                ),
+            )
+        else:
+            # Empty current folder — silent switch
+            self._save_meetings_path(normalized)
+
+    def _on_migrate_choice(
+        self, choice: str, src: str, dst: str,
+    ) -> None:
+        if choice == "migrate":
+            from ui.dialogs.migration import MigrationProgressDialog
+            MigrationProgressDialog(
+                self, src=src, dst=dst,
+                on_done=lambda summary: self._on_migration_done(summary, dst),
+            )
+        elif choice == "switch_only":
+            self._save_meetings_path(dst)
+
+    def _on_migration_done(self, summary: dict, new_path: str) -> None:
+        """Worker finished. Persist new path + refresh stats."""
+        self._save_meetings_path(new_path)
+
+    def _save_meetings_path(self, path: str) -> None:
+        self._parent._config["meetings_dir"] = path
+        save_config(self._parent._config)
+        self._meetings_path_var.set(path)
+        self._refresh_meetings_stats()
+
+    def _on_reset_meetings_folder(self) -> None:
+        """↻ Default — clear config[meetings_dir], resolver falls back."""
+        self._parent._config["meetings_dir"] = ""
+        save_config(self._parent._config)
+        new_path = get_meetings_dir()
+        self._meetings_path_var.set(new_path)
+        self._refresh_meetings_stats()
+
     def _build_dictionaries_section(self, parent) -> None:
-        section = self._section_card(parent, "Словари", row=4)
+        section = self._section_card(parent, "Словари", row=5)
 
         tonal_button(
             section, text="Словарь терминов",
@@ -760,7 +877,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 result = run_backup(
                     auth=self._parent._gdrive_auth,
                     config=self._parent._config,
-                    history_dir="history",
+                    history_dir=get_meetings_dir(),
                     work_dir=work_dir,
                     on_status=_status,
                 )
