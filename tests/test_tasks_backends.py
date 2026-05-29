@@ -214,3 +214,108 @@ def test_glide_create_ignores_assignee_and_labels():
     # due_date currently not mapped either — would need a column-name
     # mapping per board in 6.4.2.
     assert "fields" not in kwargs or "due_date" not in (kwargs.get("fields") or {})
+
+
+# ── TrelloBackend ────────────────────────────────────────────────────
+
+
+def _trello_card(id_short=7, url="https://trello.com/c/abc/7-x"):
+    return {"id": "c-1", "idShort": id_short, "shortLink": "abc", "url": url}
+
+
+def test_trello_bootstrap_folds_board_and_list_into_name():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.list_containers.return_value = [
+        {"board_name": "Маркетинг", "list_id": "l-1", "list_name": "To Do"},
+        {"board_name": "Продажи", "list_id": "l-3", "list_name": "Inbox"},
+    ]
+    b = TrelloBackend(client)
+    assert b.bootstrap() == [
+        Container(id="l-1", name="Маркетинг / To Do", key=None),
+        Container(id="l-3", name="Продажи / Inbox", key=None),
+    ]
+
+
+def test_trello_container_label_is_name():
+    from tasks.backends.trello import TrelloBackend
+    b = TrelloBackend(MagicMock())
+    assert b.container_label(Container(id="l", name="Маркетинг / To Do")) == "Маркетинг / To Do"
+
+
+def test_trello_context_passes_through_board_context():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    expected = {"members": [{"id": "m-1"}], "labels": [{"id": "lbl-1"}]}
+    client.board_context.return_value = expected
+    b = TrelloBackend(client)
+    assert b.context("l-1") == expected
+    client.board_context.assert_called_once_with("l-1")
+
+
+def test_trello_create_prepends_priority_line_to_desc():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card()
+    b = TrelloBackend(client)
+    b.create("l-1", Task(title="A", description="тело", priority=Priority.URGENT))
+    sent = client.create_card.call_args.kwargs
+    assert sent["desc"] == "**Приоритет:** Срочный\n\nтело"
+
+
+def test_trello_create_priority_line_without_body():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card()
+    b = TrelloBackend(client)
+    b.create("l-1", Task(title="A", description="", priority=Priority.HIGH))
+    assert client.create_card.call_args.kwargs["desc"] == "**Приоритет:** Высокий"
+
+
+def test_trello_create_no_priority_line_when_none():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card()
+    b = TrelloBackend(client)
+    b.create("l-1", Task(title="A", description="тело", priority=Priority.NONE))
+    assert client.create_card.call_args.kwargs["desc"] == "тело"
+
+
+def test_trello_create_passes_assignee_labels_due():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card()
+    b = TrelloBackend(client)
+    task = Task(
+        title="A", assignee_id="m-1",
+        label_ids=["lbl-1", "lbl-2"], due_date="2026-06-01",
+    )
+    b.create("l-1", task)
+    sent = client.create_card.call_args.kwargs
+    assert sent["id_members"] == ["m-1"]
+    assert sent["id_labels"] == ["lbl-1", "lbl-2"]
+    assert sent["due"] == "2026-06-01"
+    assert sent["id_list"] == "l-1"
+
+
+def test_trello_create_omits_empty_assignee_labels_due():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card()
+    b = TrelloBackend(client)
+    b.create("l-1", Task(title="A"))
+    sent = client.create_card.call_args.kwargs
+    assert sent["id_members"] is None
+    assert sent["id_labels"] is None
+    assert sent["due"] is None
+
+
+def test_trello_create_returns_short_id_and_url():
+    from tasks.backends.trello import TrelloBackend
+    client = MagicMock()
+    client.create_card.return_value = _trello_card(id_short=42, url="https://trello.com/c/zz/42-fix")
+    b = TrelloBackend(client)
+    issue = b.create("l-1", Task(title="A"))
+    assert isinstance(issue, CreatedIssue)
+    assert issue.identifier == "#42"
+    assert issue.url == "https://trello.com/c/zz/42-fix"
