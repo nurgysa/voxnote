@@ -159,14 +159,23 @@ class TrelloClient:
         dropped — Trello allows colour-only labels, but the LLM cannot
         address an unnamed label and an empty name pollutes the prompt.
 
-        Single nested call: GET /lists/{id}/board with members=all & labels=all.
-        If the API ever rejects that nesting, fall back to GET
-        /lists/{id}?fields=idBoard then GET /boards/{idBoard}?members=all&...
+        Two calls: GET /lists/{id}?fields=idBoard to resolve the board, then
+        GET /boards/{idBoard} with members + labels. The nested-resource
+        expansion (members=all / labels=all) is NOT honoured on
+        GET /lists/{id}/board — that endpoint returns only board ``fields``,
+        leaving members/labels empty — so we fetch the board directly. This
+        is the reliable path (Codex P2 on PR #79).
         """
         if not list_id:
             raise TrelloError("list_id обязателен для board_context")
+        lst = self._request("GET", f"/lists/{list_id}", params={"fields": "idBoard"})
+        board_id = lst.get("idBoard") if isinstance(lst, dict) else None
+        if not board_id:
+            raise TrelloError(
+                f"Trello: не удалось определить доску для списка {list_id}",
+            )
         board = self._request(
-            "GET", f"/lists/{list_id}/board",
+            "GET", f"/boards/{board_id}",
             params={
                 "fields": "id",
                 "members": "all",
@@ -177,7 +186,7 @@ class TrelloClient:
         )
         if not isinstance(board, dict):
             raise TrelloError(
-                f"Trello /lists/{list_id}/board вернул неожиданный формат: "
+                f"Trello /boards/{board_id} вернул неожиданный формат: "
                 f"{type(board).__name__}",
             )
         members = []

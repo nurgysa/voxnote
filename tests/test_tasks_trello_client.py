@@ -141,8 +141,10 @@ def test_list_containers_rejects_non_list_response():
 # ── board_context ───────────────────────────────────────────────────────
 
 
-def test_board_context_maps_members_and_labels():
-    board = {
+def test_board_context_resolves_board_then_maps_members_and_labels():
+    # Two calls: GET /lists/{id}?fields=idBoard, then GET /boards/{idBoard}.
+    list_resp = {"id": "l-1", "idBoard": "b-1"}
+    board_resp = {
         "id": "b-1",
         "members": [
             {"id": "m-1", "fullName": "Айдар Нургиса", "username": "aidar"},
@@ -154,7 +156,10 @@ def test_board_context_maps_members_and_labels():
         ],
     }
     c = TrelloClient("k", "t")
-    with patch.object(c._session, "request", return_value=_resp(200, json_body=board)) as mock_req:
+    with patch.object(
+        c._session, "request",
+        side_effect=[_resp(200, json_body=list_resp), _resp(200, json_body=board_resp)],
+    ) as mock_req:
         ctx = c.board_context("l-1")
     # Member with empty fullName falls back to username.
     assert ctx["members"] == [
@@ -163,11 +168,15 @@ def test_board_context_maps_members_and_labels():
     ]
     # Empty-name label is dropped (LLM can't address it).
     assert ctx["labels"] == [{"id": "lbl-1", "name": "Баг"}]
-    # Resolves via /lists/{id}/board with nested members + labels.
-    assert mock_req.call_args.args[1].endswith("/lists/l-1/board")
-    sent = mock_req.call_args.kwargs["params"]
-    assert sent["members"] == "all"
-    assert sent["labels"] == "all"
+    # First call resolves the board id from the list; the nested members/labels
+    # expansion is NOT honoured on GET /lists/{id}/board (Codex P2 on PR #79),
+    # so the second call fetches the board directly with members + labels.
+    first, second = mock_req.call_args_list
+    assert first.args[1].endswith("/lists/l-1")
+    assert first.kwargs["params"]["fields"] == "idBoard"
+    assert second.args[1].endswith("/boards/b-1")
+    assert second.kwargs["params"]["members"] == "all"
+    assert second.kwargs["params"]["labels"] == "all"
 
 
 def test_board_context_rejects_empty_list_id():
@@ -176,9 +185,21 @@ def test_board_context_rejects_empty_list_id():
         c.board_context("")
 
 
-def test_board_context_tolerates_missing_members_labels():
+def test_board_context_raises_when_list_has_no_board():
+    # The list-resolve call returns no idBoard -> can't fetch the board.
     c = TrelloClient("k", "t")
-    with patch.object(c._session, "request", return_value=_resp(200, json_body={"id": "b-1"})):
+    with patch.object(c._session, "request", return_value=_resp(200, json_body={"id": "l-1"})):
+        with pytest.raises(TrelloError, match="доск"):
+            c.board_context("l-1")
+
+
+def test_board_context_tolerates_missing_members_labels():
+    list_resp = {"id": "l-1", "idBoard": "b-1"}
+    c = TrelloClient("k", "t")
+    with patch.object(
+        c._session, "request",
+        side_effect=[_resp(200, json_body=list_resp), _resp(200, json_body={"id": "b-1"})],
+    ):
         ctx = c.board_context("l-1")
     assert ctx == {"members": [], "labels": []}
 
