@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from tasks.backends.base import Container, CreatedIssue
 from tasks.backends.glide import GlideBackend
 from tasks.backends.linear import LinearBackend
@@ -319,3 +321,32 @@ def test_trello_create_returns_short_id_and_url():
     assert isinstance(issue, CreatedIssue)
     assert issue.identifier == "#42"
     assert issue.url == "https://trello.com/c/zz/42-fix"
+
+
+# ── backend_from_name factory ────────────────────────────────────────
+
+
+def test_factory_builds_trello_with_both_credentials():
+    from unittest.mock import patch
+
+    from tasks.backends import backend_from_name
+    from tasks.backends.trello import TrelloBackend
+    config = {"trello_api_key": "key-abc", "trello_token": "tok-xyz"}
+    with patch("tasks.trello_client.TrelloClient.__init__", return_value=None) as init:
+        backend = backend_from_name("trello", config)
+    assert isinstance(backend, TrelloBackend)
+    # Both credentials passed positionally (api_key, token).
+    assert init.call_args.args == ("key-abc", "tok-xyz")
+
+
+def test_factory_trello_missing_credentials_raises_trello_error():
+    from tasks.backends import backend_from_name
+    from tasks.trello_client import TrelloError
+    with pytest.raises(TrelloError):
+        backend_from_name("trello", {})   # empty key + token
+
+
+def test_factory_unknown_backend_raises_value_error():
+    from tasks.backends import backend_from_name
+    with pytest.raises(ValueError, match="Unknown backend"):
+        backend_from_name("jira", {})
