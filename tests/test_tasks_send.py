@@ -227,3 +227,29 @@ def test_send_iter_calls_backend_with_container_id_and_task():
     backend.create.assert_called_once()
     args, _kwargs = backend.create.call_args
     assert args == ("container-uuid", task)
+
+
+def test_send_marks_failed_on_trello_error_not_unexpected(caplog):
+    """A TrelloError must be caught by the narrow handler (logged WARNING),
+    not the belt-and-braces Exception handler (logged as 'unexpected error')."""
+    from tasks.schema import Task, TaskStatus
+    from tasks.sender import send_tasks_iter
+    from tasks.trello_client import TrelloError
+
+    backend = MagicMock()
+    backend.create.side_effect = TrelloError("Trello вернул 401: invalid token")
+    task = Task(title="A")
+    statuses = []
+    with caplog.at_level("WARNING", logger="tasks.sender"):
+        list(send_tasks_iter(
+            [task],
+            container_id="l-1",
+            backend=backend,
+            on_status_change=lambda t, s: statuses.append(s),
+            cancel_check=lambda: False,
+        ))
+    assert task.status is TaskStatus.FAILED
+    assert task.send_error == "401"   # _short_error_code extracts the code
+    # Narrow handler path → "send failed", NOT "unexpected error".
+    assert any("send failed" in r.message for r in caplog.records)
+    assert not any("unexpected error" in r.message for r in caplog.records)
