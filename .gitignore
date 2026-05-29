@@ -28,5 +28,6 @@ venv/
 build/
 dist/
 *.zip
+*.log
 vendor/ffmpeg/*.exe
 .venv-build/
