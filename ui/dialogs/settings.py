@@ -165,6 +165,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self._build_openrouter_section(scroll_integrations)
         self._build_linear_section(scroll_integrations)
         self._build_glide_section(scroll_integrations)
+        self._build_trello_section(scroll_integrations)
 
         # Tab 3 «Резервная копия» — independent housekeeping
         self._build_gdrive_section(scroll_backup)
@@ -727,6 +728,70 @@ class SettingsDialog(ctk.CTkToplevel):
             row=0,
         )
         self._glide_status = refs["status"]
+
+    def _build_trello_section(self, parent) -> None:
+        """Trello API key + token + connection status (spec 2026-05-29).
+
+        Trello needs two secrets (key + token). The shared api_key_row
+        helper renders one masked field, so we compose two calls:
+        - key row: enable-checkbox + masked key field (no Validate)
+        - token row: masked token field + Validate + status badge
+
+        api_key_row only persists on Validate success, and only the token
+        row has a Validate button — so the token row's _persist saves BOTH
+        credentials, and its _on_validate reads BOTH vars.
+        """
+        section = self._section_card(parent, "Trello", row=3)
+
+        key_frame = ctk.CTkFrame(section, fg_color="transparent")
+        key_frame.grid(row=0, column=0, sticky="ew")
+        key_frame.grid_columnconfigure(1, weight=1)
+
+        token_frame = ctk.CTkFrame(section, fg_color="transparent")
+        token_frame.grid(row=1, column=0, sticky="ew")
+        token_frame.grid_columnconfigure(1, weight=1)
+
+        def _persist(_token: str, _info: dict) -> None:
+            self._parent._config["trello_api_key"] = self._parent._trello_key_var.get().strip()
+            self._parent._config["trello_token"] = self._parent._trello_token_var.get().strip()
+            save_config(self._parent._config)
+
+        def _on_validate(token: str) -> dict:
+            from tasks.trello_client import TrelloClient
+            api_key = self._parent._trello_key_var.get().strip()
+            client = TrelloClient(api_key, token)
+            try:
+                return client.validate_key()
+            finally:
+                client.close()
+
+        def _format_success(info: dict) -> str:
+            return f"✓ Подключено: {info.get('name', '(unknown)')}"
+
+        # Key row — owns the enable-checkbox; no Validate button.
+        api_key_row(
+            key_frame,
+            label_text="API ключ",
+            key_var=self._parent._trello_key_var,
+            placeholder="(ключ Trello — trello.com/app-key)",
+            enabled_var=self._parent._trello_enabled_var,
+            enabled_label="Использовать Trello",
+            on_enabled_changed=self._parent._on_trello_enabled_changed,
+            row=0,
+        )
+
+        # Token row — owns Validate + status; persists both credentials.
+        refs = api_key_row(
+            token_frame,
+            label_text="Токен",
+            key_var=self._parent._trello_token_var,
+            placeholder="(токен Trello)",
+            on_validate=_on_validate,
+            on_key_persisted=_persist,
+            format_success=_format_success,
+            row=0,
+        )
+        self._trello_status = refs["status"]
 
     # ── Google Drive section (Phase 7.0) ──────────────────────────────
 

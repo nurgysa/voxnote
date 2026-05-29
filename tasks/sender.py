@@ -35,6 +35,7 @@ from collections.abc import Callable, Iterator
 from tasks.glide_client import GlideError
 from tasks.linear_client import LinearError
 from tasks.schema import Task, TaskStatus
+from tasks.trello_client import TrelloError
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def send_tasks_iter(
 
         try:
             issue = backend.create(container_id, task)
-        except (LinearError, GlideError) as e:
+        except (LinearError, GlideError, TrelloError) as e:
             task.status = TaskStatus.FAILED
             task.send_error = _short_error_code(str(e)) or "error"
             logger.warning(

@@ -4,8 +4,8 @@ Source-text check — we cannot import ui.dialogs.settings (sounddevice
 PortAudio issue on Linux CI). See feedback_ui_app_import_breaks_linux_ci.
 
 This assertion is BUMPED across Tasks 2-5 of the plan as each section is
-migrated. Final target after Task 5: 4 calls (Cloud STT + OpenRouter +
-Linear + Glide).
+migrated. Final target after Task 11: 6 calls (Cloud STT + OpenRouter +
+Linear + Glide + Trello key + Trello token).
 """
 from __future__ import annotations
 
@@ -23,12 +23,12 @@ def test_settings_imports_api_key_row():
     )
 
 
-def test_settings_calls_api_key_row_at_least_four_times():
-    """Cloud STT + OpenRouter + Linear + Glide = 4 call sites. Counted
-    via 'api_key_row(' rather than 'api_key_row,' to skip import lines."""
+def test_settings_calls_api_key_row_at_least_six_times():
+    """Cloud STT + OpenRouter + Linear + Glide + Trello (key + token) = 6
+    api_key_row(...) call sites."""
     source = SETTINGS_PATH.read_text(encoding="utf-8")
     n_calls = source.count("api_key_row(")
-    assert n_calls >= 4, (
-        f"Expected ≥ 4 api_key_row(...) calls (Cloud STT + OpenRouter + "
-        f"Linear + Glide), got {n_calls}"
+    assert n_calls >= 6, (
+        f"Expected ≥ 6 api_key_row(...) calls (incl. Trello key + token), "
+        f"got {n_calls}"
     )

@@ -223,6 +223,16 @@ def build_ui(app):
         value=app._config.get("glide_api_key", ""),
     )
 
+    # Trello API key + token (two-credential auth). Opt-in by default
+    # (spec D5) — unlike Linear/Glide which default enabled. The card-
+    # destination list picker lives in ExtractTasksDialog.
+    app._trello_key_var = ctk.StringVar(
+        value=app._config.get("trello_api_key", ""),
+    )
+    app._trello_token_var = ctk.StringVar(
+        value=app._config.get("trello_token", ""),
+    )
+
     # Backend enabled flags (Phase 6.4). Per-backend preference whether
     # to expose it in the ExtractTasksDialog dropdown (Phase 6.4.1).
     # Default True for both — preserves prior behaviour for users who
@@ -233,6 +243,9 @@ def build_ui(app):
     )
     app._glide_enabled_var = ctk.BooleanVar(
         value=bool(app._config.get("glide_enabled", True)),
+    )
+    app._trello_enabled_var = ctk.BooleanVar(
+        value=bool(app._config.get("trello_enabled", False)),
     )
 
     # Google Drive (Phase 7.0). GDriveAuth instance + 3 Vars for the

@@ -42,17 +42,33 @@ from ui.widgets import label, primary_button, tonal_button
 from utils import save_config
 
 from .constants import (
-    _BOARDS_CACHE_KEY,
+    _CACHE_KEY_BY_BACKEND,
+    _CONTAINER_ACCUSATIVE_BY_BACKEND,
     _CONTAINER_CACHE_TTL,
     _CONTAINER_LABEL_BY_BACKEND,
     _COST_PER_1M_INPUT_TOKENS_USD,
     _CURATED_MODELS,
+    _DISPLAY_TO_NAME,
+    _EMPTY_CONTAINER_LABEL_BY_BACKEND,
     _MODEL_PRICING_USD_PER_M,
+    _NAME_TO_DISPLAY,
     _RECENT_MODELS_KEY,
     _RECENT_MODELS_LIMIT,
+    _REQUIRED_KEYS_BY_BACKEND,
     _TEAMS_CACHE_KEY,
 )
 from .task_row import _TaskRow
+
+
+def _backend_is_configured(name: str, config: dict) -> bool:
+    """True if every credential the backend needs is present + non-empty.
+
+    Trello needs two (key + token); Linear/Glide need one. Replaces the old
+    `"linear_api_key" if linear else "glide_api_key"` binary that silently
+    picked the Glide key for any non-Linear backend.
+    """
+    keys = _REQUIRED_KEYS_BY_BACKEND.get(name, ())
+    return bool(keys) and all((config.get(k) or "").strip() for k in keys)
 
 
 class ExtractTasksDialog(ctk.CTkToplevel):
@@ -179,6 +195,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             enabled.append("linear")
         if bool(self._config.get("glide_enabled", True)):
             enabled.append("glide")
+        if bool(self._config.get("trello_enabled", False)):
+            enabled.append("trello")
         return enabled or ["linear"]
 
     # ── UI construction ──────────────────────────────────────────
@@ -216,10 +234,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # Phase 6.4.1: backend selection. Values come from Settings flags;
         # changing it triggers re-fetch of containers.
         label(header, "Backend").grid(row=0, column=2, padx=(0, 6), sticky="w")
-        backend_display = [
-            "Linear" if n == "linear" else "Glide"
-            for n in self._enabled_backends
-        ]
+        backend_display = [_NAME_TO_DISPLAY[n] for n in self._enabled_backends]
         self._backend_var = ctk.StringVar(
             value=backend_display[0] if backend_display else "Linear",
         )
@@ -392,19 +407,18 @@ class ExtractTasksDialog(ctk.CTkToplevel):
     def _current_backend_name(self) -> str:
         """Map dropdown display value → internal backend name.
 
-        Returns "linear" or "glide". Defaults to first enabled if the
-        UI hasn't been built yet (called from _build_ui pre-init)."""
+        Returns "linear" / "glide" / "trello". Defaults to first enabled if
+        the UI hasn't been built yet (called from _build_ui pre-init)."""
         var = getattr(self, "_backend_var", None)
         display = var.get() if var is not None else None
-        if display == "Glide":
-            return "glide"
-        if display == "Linear":
-            return "linear"
+        name = _DISPLAY_TO_NAME.get(display)
+        if name:
+            return name
         # Pre-build / unknown — first enabled.
         return self._enabled_backends[0] if self._enabled_backends else "linear"
 
     def _backend_cache_key(self) -> str:
-        return _BOARDS_CACHE_KEY if self._current_backend_name() == "glide" else _TEAMS_CACHE_KEY
+        return _CACHE_KEY_BY_BACKEND.get(self._current_backend_name(), _TEAMS_CACHE_KEY)
 
     def _on_backend_changed(self, _value: str = "") -> None:
         """User picked a different backend in the dropdown.
@@ -451,10 +465,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from tasks.backends import backend_from_name
 
         backend_name = self._current_backend_name()
-        api_key_field = "linear_api_key" if backend_name == "linear" else "glide_api_key"
-        api_key = (self._config.get(api_key_field) or "").strip()
-        if not api_key:
-            self._team_var.set(f"(нет ключа {backend_name.title()})")
+        if not _backend_is_configured(backend_name, self._config):
+            self._team_var.set(
+                f"(нет ключа {_NAME_TO_DISPLAY.get(backend_name, backend_name)})",
+            )
             return
 
         def worker():
@@ -502,10 +516,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
     def _populate_container_dropdown(self) -> None:
         if not self._containers:
-            empty_label = (
-                "(нет досок)"
-                if self._current_backend_name() == "glide"
-                else "(нет команд)"
+            empty_label = _EMPTY_CONTAINER_LABEL_BY_BACKEND.get(
+                self._current_backend_name(), "(нет команд)",
             )
             self._team_var.set(empty_label)
             self._team_menu.configure(values=[empty_label])
@@ -524,7 +536,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         container = self._selected_container()
         if not container:
             backend_name = self._current_backend_name()
-            label_word = "доску" if backend_name == "glide" else "команду"
+            label_word = _CONTAINER_ACCUSATIVE_BY_BACKEND.get(backend_name, "команду")
             messagebox.showwarning(
                 "Нет контейнера",
                 f"Выберите {label_word} или нажмите [↻] для загрузки списка.",
@@ -540,14 +552,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         backend_name = self._current_backend_name()
         # Status text mentions which backend we're talking to so the user
         # knows whether a slow first-call is going to Linear or Glide.
-        if backend_name == "linear":
-            self._status_label.configure(
-                text="Запрос к Linear (team_context)...", text_color=TEXT_SECONDARY,
-            )
-        else:
-            self._status_label.configure(
-                text="Запрос к Glide...", text_color=TEXT_SECONDARY,
-            )
+        self._status_label.configure(
+            text=f"Запрос к {_NAME_TO_DISPLAY.get(backend_name, backend_name)}...",
+            text_color=TEXT_SECONDARY,
+        )
         # Clear the editor; will be re-populated by _on_extract_success.
         self._tasks = []
         self._selected_index = None
@@ -577,6 +585,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from tasks.linear_client import LinearError
         from tasks.openrouter_client import OpenRouterClient, OpenRouterError
         from tasks.persistence import save_tasks_raw
+        from tasks.trello_client import TrelloError
 
         backend = openrouter = None
         try:
@@ -684,7 +693,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 self.after(
                     0, self._on_extract_error, str(e), e.raw_response,
                 )
-        except (OpenRouterError, LinearError, GlideError) as e:
+        except (OpenRouterError, LinearError, GlideError, TrelloError) as e:
             if not self._cancel_event.is_set():
                 self.after(0, self._on_extract_error, str(e), None)
         except Exception as e:
@@ -1014,7 +1023,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         container = self._selected_container()
         if not container:
             backend_name = self._current_backend_name()
-            label_word = "доску" if backend_name == "glide" else "команду"
+            label_word = _CONTAINER_ACCUSATIVE_BY_BACKEND.get(backend_name, "команду")
             messagebox.showwarning(
                 "Нет контейнера",
                 f"Выберите {label_word} в шапке диалога перед добавлением задач.",
@@ -1518,12 +1527,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # Phase 6.4.1: backend comes from meta (set at extract time). For
         # legacy tasks.json (pre-6.4) no `backend` key → assume Linear.
         backend_name = (self._meta.get("backend") if self._meta else None) or "linear"
-        api_key_field = "linear_api_key" if backend_name == "linear" else "glide_api_key"
-        api_key = (self._config.get(api_key_field) or "").strip()
-        if not api_key:
+        if not _backend_is_configured(backend_name, self._config):
+            display = _NAME_TO_DISPLAY.get(backend_name, backend_name)
             messagebox.showwarning(
-                f"Нет ключа {backend_name.title()}",
-                f"Добавьте {backend_name.title()} API ключ в Settings и повторите.",
+                f"Нет ключа {display}",
+                f"Добавьте ключ {display} в Settings и повторите.",
             )
             return
 

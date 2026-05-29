@@ -82,7 +82,7 @@ def humanize(
     # their errors with a recognizable name).
     backend = _detect_backend(msg)
     backend_name = {"linear": "Linear", "glide": "Glide",
-                    "openrouter": "OpenRouter"}.get(backend, "сервер")
+                    "trello": "Trello", "openrouter": "OpenRouter"}.get(backend, "сервер")
 
     msg_lower = msg.lower()
 
@@ -191,6 +191,8 @@ def _detect_backend(msg: str) -> str | None:
         return "linear"
     if "glide" in lower:
         return "glide"
+    if "trello" in lower:
+        return "trello"
     if "openrouter" in lower or "open router" in lower:
         return "openrouter"
     return None

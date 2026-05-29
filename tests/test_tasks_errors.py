@@ -165,10 +165,17 @@ def test_humanize_uses_correct_backend_name_in_text():
         ("Linear вернул 401", "Linear"),
         ("OpenRouter вернул 401", "OpenRouter"),
         ("Glide вернул 401", "Glide"),
+        ("Trello вернул 401", "Trello"),
     ]
     for msg, expected_name in cases:
         out = humanize(Exception(msg))
         assert expected_name in out, f"expected {expected_name} in: {out!r}"
+
+
+def test_humanize_trello_timeout_names_trello():
+    out = humanize(Exception("Таймаут Trello (>30s)"))
+    assert "Trello" in out
+    assert "вовремя" in out.lower() or "врем" in out.lower()
 
 
 def test_humanize_unknown_backend_uses_generic_сервер():
