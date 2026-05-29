@@ -114,3 +114,38 @@ class TrelloClient:
             raise TrelloError(f"Trello /members/me вернул неожиданный формат: {type(me).__name__}")
         name = me.get("fullName") or me.get("username") or "(unknown)"
         return {"name": name}
+
+    def list_containers(self) -> list[dict]:
+        """GET /members/me/boards with nested open lists.
+
+        One round-trip. Returns a flat list of
+        {board_name, list_id, list_name} — one row per list. Boards with no
+        open lists contribute nothing (a card needs a list to land in).
+        """
+        boards = self._request(
+            "GET", "/members/me/boards",
+            params={
+                "fields": "name",
+                "filter": "open",
+                "lists": "open",
+                "list_fields": "name",
+            },
+        )
+        if not isinstance(boards, list):
+            raise TrelloError(
+                f"Trello /members/me/boards вернул неожиданный формат: "
+                f"{type(boards).__name__}",
+            )
+        rows: list[dict] = []
+        for b in boards:
+            board_name = b.get("name", "?")
+            for lst in b.get("lists") or []:
+                lid = lst.get("id")
+                if not lid:
+                    continue
+                rows.append({
+                    "board_name": board_name,
+                    "list_id": lid,
+                    "list_name": lst.get("name", "?"),
+                })
+        return rows

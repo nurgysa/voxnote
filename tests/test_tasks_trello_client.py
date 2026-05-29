@@ -91,3 +91,48 @@ def test_request_raises_on_500():
     with patch.object(c._session, "request", return_value=_resp(500, text="server error")):
         with pytest.raises(TrelloError, match="Trello вернул 500"):
             c.validate_key()
+
+
+# ── list_containers ────────────────────────────────────────────────────
+
+
+def test_list_containers_flattens_boards_and_lists():
+    boards = [
+        {"id": "b-1", "name": "Маркетинг", "lists": [
+            {"id": "l-1", "name": "To Do"},
+            {"id": "l-2", "name": "Doing"},
+        ]},
+        {"id": "b-2", "name": "Продажи", "lists": [
+            {"id": "l-3", "name": "Inbox"},
+        ]},
+    ]
+    c = TrelloClient("k", "t")
+    with patch.object(c._session, "request", return_value=_resp(200, json_body=boards)) as mock_req:
+        rows = c.list_containers()
+    assert rows == [
+        {"board_name": "Маркетинг", "list_id": "l-1", "list_name": "To Do"},
+        {"board_name": "Маркетинг", "list_id": "l-2", "list_name": "Doing"},
+        {"board_name": "Продажи", "list_id": "l-3", "list_name": "Inbox"},
+    ]
+    # Nested-lists query params present.
+    sent = mock_req.call_args.kwargs["params"]
+    assert sent["lists"] == "open"
+    assert sent["filter"] == "open"
+
+
+def test_list_containers_skips_boards_without_lists():
+    boards = [
+        {"id": "b-1", "name": "Empty", "lists": []},
+        {"id": "b-2", "name": "Has", "lists": [{"id": "l-9", "name": "Backlog"}]},
+    ]
+    c = TrelloClient("k", "t")
+    with patch.object(c._session, "request", return_value=_resp(200, json_body=boards)):
+        rows = c.list_containers()
+    assert rows == [{"board_name": "Has", "list_id": "l-9", "list_name": "Backlog"}]
+
+
+def test_list_containers_rejects_non_list_response():
+    c = TrelloClient("k", "t")
+    with patch.object(c._session, "request", return_value=_resp(200, json_body={"oops": 1})):
+        with pytest.raises(TrelloError, match="неожиданный формат"):
+            c.list_containers()
