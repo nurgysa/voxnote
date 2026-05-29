@@ -181,3 +181,54 @@ def test_board_context_tolerates_missing_members_labels():
     with patch.object(c._session, "request", return_value=_resp(200, json_body={"id": "b-1"})):
         ctx = c.board_context("l-1")
     assert ctx == {"members": [], "labels": []}
+
+
+# ── create_card ─────────────────────────────────────────────────────────
+
+
+def test_create_card_minimal_payload():
+    response = {"id": "c-1", "idShort": 7, "url": "https://trello.com/c/abc/7-x"}
+    c = TrelloClient("k", "t")
+    mock_resp = _resp(200, json_body=response)
+    with patch.object(c._session, "request", return_value=mock_resp) as mock_req:
+        result = c.create_card(id_list="l-1", name="Починить баг")
+    assert result["idShort"] == 7
+    sent = mock_req.call_args.kwargs["params"]
+    assert sent["idList"] == "l-1"
+    assert sent["name"] == "Починить баг"
+    # Optional fields absent when not provided.
+    assert "idMembers" not in sent
+    assert "idLabels" not in sent
+    assert "due" not in sent
+    assert "desc" not in sent
+
+
+def test_create_card_full_payload_joins_arrays():
+    response = {"id": "c-2", "idShort": 8, "url": "https://trello.com/c/def/8-y"}
+    c = TrelloClient("k", "t")
+    mock_resp = _resp(200, json_body=response)
+    with patch.object(c._session, "request", return_value=mock_resp) as mock_req:
+        c.create_card(
+            id_list="l-1", name="T", desc="body",
+            id_members=["m-1", "m-2"], id_labels=["lbl-1"], due="2026-06-01",
+        )
+    sent = mock_req.call_args.kwargs["params"]
+    assert sent["desc"] == "body"
+    assert sent["idMembers"] == "m-1,m-2"
+    assert sent["idLabels"] == "lbl-1"
+    assert sent["due"] == "2026-06-01"
+    # POST verb.
+    assert mock_req.call_args.args[0] == "POST"
+    assert mock_req.call_args.args[1].endswith("/cards")
+
+
+def test_create_card_rejects_empty_name():
+    c = TrelloClient("k", "t")
+    with pytest.raises(TrelloError, match="name обязателен"):
+        c.create_card(id_list="l-1", name="")
+
+
+def test_create_card_rejects_empty_list():
+    c = TrelloClient("k", "t")
+    with pytest.raises(TrelloError, match="id_list обязателен"):
+        c.create_card(id_list="", name="T")

@@ -194,3 +194,36 @@ class TrelloClient:
             if lid and name:
                 labels.append({"id": lid, "name": name})
         return {"members": members, "labels": labels}
+
+    def create_card(
+        self,
+        *,
+        id_list: str,
+        name: str,
+        desc: str | None = None,
+        id_members: list[str] | None = None,
+        id_labels: list[str] | None = None,
+        due: str | None = None,
+    ) -> dict:
+        """POST /cards — create one card in a list. Returns the response dict.
+
+        Trello accepts card params as query params (even on POST). Arrays
+        (idMembers, idLabels) are comma-joined. None/empty optionals are
+        omitted. No idempotency-key — Trello has no such header (retry may
+        duplicate; documented in the spec).
+        """
+        if not id_list:
+            raise TrelloError("id_list обязателен для create_card")
+        if not name or not name.strip():
+            raise TrelloError("name обязателен для create_card")
+
+        params: dict = {"idList": id_list, "name": name}
+        if desc:
+            params["desc"] = desc
+        if id_members:
+            params["idMembers"] = ",".join(id_members)
+        if id_labels:
+            params["idLabels"] = ",".join(id_labels)
+        if due:
+            params["due"] = due
+        return self._request("POST", "/cards", params=params)
