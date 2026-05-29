@@ -149,3 +149,48 @@ class TrelloClient:
                     "list_name": lst.get("name", "?"),
                 })
         return rows
+
+    def board_context(self, list_id: str) -> dict:
+        """Resolve list→board and return grounding data for the LLM.
+
+        Returns {"members": [...], "labels": [...]} in the shape
+        tasks.extractor.build_prompt expects: members carry id + name +
+        displayName; labels carry id + name. Labels with an empty name are
+        dropped — Trello allows colour-only labels, but the LLM cannot
+        address an unnamed label and an empty name pollutes the prompt.
+
+        Single nested call: GET /lists/{id}/board with members=all & labels=all.
+        If the API ever rejects that nesting, fall back to GET
+        /lists/{id}?fields=idBoard then GET /boards/{idBoard}?members=all&...
+        """
+        if not list_id:
+            raise TrelloError("list_id обязателен для board_context")
+        board = self._request(
+            "GET", f"/lists/{list_id}/board",
+            params={
+                "fields": "id",
+                "members": "all",
+                "member_fields": "fullName,username",
+                "labels": "all",
+                "label_fields": "name,color",
+            },
+        )
+        if not isinstance(board, dict):
+            raise TrelloError(
+                f"Trello /lists/{list_id}/board вернул неожиданный формат: "
+                f"{type(board).__name__}",
+            )
+        members = []
+        for m in board.get("members") or []:
+            mid = m.get("id")
+            if not mid:
+                continue
+            name = m.get("fullName") or m.get("username") or "?"
+            members.append({"id": mid, "name": name, "displayName": name})
+        labels = []
+        for lbl in board.get("labels") or []:
+            lid = lbl.get("id")
+            name = (lbl.get("name") or "").strip()
+            if lid and name:
+                labels.append({"id": lid, "name": name})
+        return {"members": members, "labels": labels}

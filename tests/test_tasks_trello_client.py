@@ -136,3 +136,48 @@ def test_list_containers_rejects_non_list_response():
     with patch.object(c._session, "request", return_value=_resp(200, json_body={"oops": 1})):
         with pytest.raises(TrelloError, match="неожиданный формат"):
             c.list_containers()
+
+
+# ── board_context ───────────────────────────────────────────────────────
+
+
+def test_board_context_maps_members_and_labels():
+    board = {
+        "id": "b-1",
+        "members": [
+            {"id": "m-1", "fullName": "Айдар Нургиса", "username": "aidar"},
+            {"id": "m-2", "fullName": "", "username": "guest"},
+        ],
+        "labels": [
+            {"id": "lbl-1", "name": "Баг", "color": "red"},
+            {"id": "lbl-2", "name": "", "color": "green"},
+        ],
+    }
+    c = TrelloClient("k", "t")
+    with patch.object(c._session, "request", return_value=_resp(200, json_body=board)) as mock_req:
+        ctx = c.board_context("l-1")
+    # Member with empty fullName falls back to username.
+    assert ctx["members"] == [
+        {"id": "m-1", "name": "Айдар Нургиса", "displayName": "Айдар Нургиса"},
+        {"id": "m-2", "name": "guest", "displayName": "guest"},
+    ]
+    # Empty-name label is dropped (LLM can't address it).
+    assert ctx["labels"] == [{"id": "lbl-1", "name": "Баг"}]
+    # Resolves via /lists/{id}/board with nested members + labels.
+    assert mock_req.call_args.args[1].endswith("/lists/l-1/board")
+    sent = mock_req.call_args.kwargs["params"]
+    assert sent["members"] == "all"
+    assert sent["labels"] == "all"
+
+
+def test_board_context_rejects_empty_list_id():
+    c = TrelloClient("k", "t")
+    with pytest.raises(TrelloError, match="list_id обязателен"):
+        c.board_context("")
+
+
+def test_board_context_tolerates_missing_members_labels():
+    c = TrelloClient("k", "t")
+    with patch.object(c._session, "request", return_value=_resp(200, json_body={"id": "b-1"})):
+        ctx = c.board_context("l-1")
+    assert ctx == {"members": [], "labels": []}
