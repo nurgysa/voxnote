@@ -83,6 +83,11 @@ class SettingsMixin:
         self._config["glide_enabled"] = bool(self._glide_enabled_var.get())
         save_config(self._config)
 
+    def _on_trello_enabled_changed(self) -> None:
+        """Persist the Trello-backend enabled flag (opt-in, spec D5)."""
+        self._config["trello_enabled"] = bool(self._trello_enabled_var.get())
+        save_config(self._config)
+
     # ── Google Drive (Phase 7.0) ────────────────────────────────────
 
     def _compute_gdrive_status_text(self) -> str:
