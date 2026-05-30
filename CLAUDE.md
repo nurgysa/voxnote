@@ -106,6 +106,7 @@ ruff config (line-length=100, target=py310, rules E/W/F/I/B/UP).
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
 | Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,speechmatics}.py` — Groq + OpenAI Whisper deleted in the 2026-05-28 rip-out (no native diarization, depended on the now-gone hybrid-with-local-pyannote path) |
 | Task extraction (LLM → Linear/Glide) | `tasks/` (`extractor`, `sender`, `schema`, `persistence`, `linear_client`, `glide_client`, `openrouter_client`, `errors`) + `tasks/backends/` (Protocol-based dispatch — `base.py`, `linear.py`, `glide.py`) |
+| People/projects directory (Phase A) | `directory/` (`schema`, `store` — atomic JSON at `~/.audio-transcriber/directory.json`, `context` — prompt-context renderer). Grounds protocol + task prompts with real names/roles/project descriptions. Per-run speaker timestamps persisted via `utils.save_segments` → `<meeting>/segments.json`. |
 | Audio editor | `audio_cutter.py` (silence-removal button removed in the 2026-05-28 rip-out; manual trim + preview + export retained) |
 | Logging setup | `logging_setup.py` |
 | Persistent settings | `config.json` (template: `config.example.json`); helper: `utils.save_config` |

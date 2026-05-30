@@ -1,9 +1,9 @@
 """LLM-driven 5-block MoM protocol generator (Task 5 / Subtask 5b).
 
 Public API:
-- generate(transcript, speakers, meeting_date, lang, model, openrouter_client)
-    -> ProtocolResult
-- build_prompt(transcript, speakers, meeting_date, lang) -> str
+- generate(transcript, speakers, meeting_date, lang, model, openrouter_client,
+    context=None) -> ProtocolResult
+- build_prompt(transcript, speakers, meeting_date, lang, context=None) -> str
 - parse_llm_response(content) -> Placeholders
 - ProtocolGenerationError: all failures (LLM error, parse error, missing
   blocks) surface as this single exception type — UI handles one branch.

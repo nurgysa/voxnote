@@ -5,11 +5,12 @@ as parameters so tests can inject mocks. The dialog is responsible for
 constructing real clients and threading.
 
 Public API:
-    extract(transcript, team_id, model, lang, linear_client, openrouter_client)
+    extract(transcript, team_id, model, lang, linear_client, openrouter_client,
+        context=None)
         → {"tasks": list[Task], "corrections": int, "usage": dict,
            "model": str, "raw_response": str}
 
-    build_prompt(transcript, members, labels, lang) → list[dict]   # exposed for tests
+    build_prompt(transcript, members, labels, lang, context=None) → list[dict]   # exposed for tests
     parse_and_validate(raw_text, members, labels) → (list[Task], int)
     ExtractionError                                # raised on unrecoverable LLM-output issues
 """
