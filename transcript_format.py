@@ -146,6 +146,20 @@ def format_srt(segments: list[dict]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def apply_speaker_names(text: str, name_by_label: dict[str, str]) -> str:
+    """Replace bracketed friendly speaker labels with real names.
+
+    ``name_by_label`` maps a friendly label ("Спикер 1") to a person's ФИО.
+    Only bound labels are replaced; unbound labels stay "Спикер N". The
+    bracketed token "[Спикер 1]" is replaced as a unit (both brackets
+    included) so "Спикер 1" never matches inside "Спикер 11". Identity
+    when the map is empty.
+    """
+    for label_text, name in name_by_label.items():
+        text = text.replace(f"[{label_text}]", f"[{name}]")
+    return text
+
+
 def format_vtt(segments: list[dict]) -> str:
     """WebVTT subtitle format. Same conventions as SRT but with WEBVTT header."""
     if not segments:

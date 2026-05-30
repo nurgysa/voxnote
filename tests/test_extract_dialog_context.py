@@ -42,3 +42,31 @@ def test_protocol_speakers_uses_real_names():
 def test_run_extraction_persists_speakers_json():
     src = SRC.read_text(encoding="utf-8")
     assert "save_speakers(" in src
+
+
+def test_dialog_builds_speaker_rows():
+    src = SRC.read_text(encoding="utf-8")
+    assert "Кто говорит" in src
+    assert "_build_speaker_rows" in src
+    assert "_speaker_row_vars" in src
+    assert "load_segments" in src
+    assert "_build_speaker_map" in src
+
+
+def test_dialog_speaker_autosync_to_participants():
+    src = SRC.read_text(encoding="utf-8")
+    assert "_on_speaker_bound" in src
+    assert "_person_by_name" in src
+
+
+def test_run_extraction_rewrites_transcript_with_names():
+    src = SRC.read_text(encoding="utf-8")
+    assert "apply_speaker_names(" in src
+    # rewritten transcript flows into BOTH extract() and generate()
+    assert src.count("transcript=transcript_for_llm") >= 2
+
+
+def test_run_extraction_persists_speaker_map():
+    src = SRC.read_text(encoding="utf-8")
+    assert "speaker_map=speaker_map" in src
+    assert "_selected_speaker_maps()" in src

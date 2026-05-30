@@ -29,3 +29,15 @@ def test_load_speakers_missing_is_empty_dict(tmp_path):
 def test_load_speakers_malformed_is_empty_dict(tmp_path):
     (tmp_path / "speakers.json").write_text("{not json", encoding="utf-8")
     assert load_speakers(str(tmp_path)) == {}
+
+
+def test_save_speakers_writes_speaker_map(tmp_path):
+    save_speakers(str(tmp_path), "p", ["a"], speaker_map={"SPEAKER_00": "a"})
+    data = json.loads((tmp_path / "speakers.json").read_text(encoding="utf-8"))
+    assert data["speakers"] == {"SPEAKER_00": "a"}
+
+
+def test_save_speakers_default_speaker_map_is_empty(tmp_path):
+    save_speakers(str(tmp_path), "p", ["a"])
+    data = json.loads((tmp_path / "speakers.json").read_text(encoding="utf-8"))
+    assert data["speakers"] == {}

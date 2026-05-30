@@ -6,6 +6,7 @@ from transcript_format import (
     _fmt_time_human,
     _fmt_time_srt,
     _fmt_time_vtt,
+    apply_speaker_names,
     format_diarized,
     format_srt,
     format_timed,
@@ -133,3 +134,25 @@ def test_format_vtt_includes_header_and_dot_timestamps():
     out = format_vtt(segs)
     assert out.startswith("WEBVTT\n")
     assert "00:00:00.000 --> 00:00:01.500" in out
+
+
+# ── apply_speaker_names ────────────────────────────────────────────
+
+
+def test_apply_speaker_names_replaces_bound_labels():
+    text = "[00:05] [Спикер 1]: привет\n\n[00:12] [Спикер 2]: пока"
+    out = apply_speaker_names(text, {"Спикер 1": "Айбек Нурланов"})
+    assert "[Айбек Нурланов]: привет" in out
+    assert "[Спикер 2]: пока" in out  # unbound label untouched
+
+
+def test_apply_speaker_names_empty_map_is_identity():
+    text = "[00:05] [Спикер 1]: привет"
+    assert apply_speaker_names(text, {}) == text
+
+
+def test_apply_speaker_names_no_collision_1_vs_11():
+    text = "[Спикер 1]: a\n[Спикер 11]: b"
+    out = apply_speaker_names(text, {"Спикер 1": "Сара"})
+    assert "[Сара]: a" in out
+    assert "[Спикер 11]: b" in out  # 11 must NOT be rewritten by the "1" rule

@@ -61,6 +61,11 @@ from .constants import (
 )
 from .task_row import _TaskRow
 
+# CTkComboBox sentinel for the «Кто говорит» speaker rows — the dropdown's
+# "no person" option AND the guard value in _person_by_name. One definition
+# keeps those two uses from drifting apart on a future wording change.
+_NO_SELECTION = "— не выбрано —"
+
 
 def _backend_is_configured(name: str, config: dict) -> bool:
     """True if every credential the backend needs is present + non-empty.
@@ -102,6 +107,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._dir_load_error: str | None = None
         self._context_project_var = ctk.StringVar(value="— нет —")
         self._context_person_vars: dict[str, ctk.BooleanVar] = {}
+        self._speaker_row_vars: dict[str, ctk.StringVar] = {}
+        self._speaker_friendly: dict[str, str] = {}
 
         # Worker-thread plumbing: cancel_event flips on close;
         # active_client is the in-flight client we close to interrupt sockets.
@@ -335,7 +342,17 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._context_participants_frame.grid(
             row=1, column=1, padx=0, pady=(6, 0), sticky="ew",
         )
+
+        label(ctx_frame, "Кто говорит").grid(
+            row=2, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+        )
+        self._speaker_rows_frame = ctk.CTkFrame(ctx_frame, fg_color="transparent")
+        self._speaker_rows_frame.grid(
+            row=2, column=1, padx=0, pady=(6, 0), sticky="ew",
+        )
+
         self._rebuild_context_participants(set())
+        self._build_speaker_rows()
         self._restore_context_selection()
         if self._dir_load_error:
             # Defer to the event loop so the modal stacks on the fully-built,
@@ -493,6 +510,93 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                     out.append(person)
         return out
 
+    def _build_speaker_rows(self) -> None:
+        """Render one «Спикер N → person» dropdown per diarized speaker label.
+
+        Reads <meeting>/segments.json and maps raw labels to the same
+        friendly «Спикер N» the transcript shows (via _build_speaker_map).
+        No segments / no diarization / empty directory → a muted hint and
+        no rows (pure manual mapping is impossible; the dialog still works).
+        """
+        # _build_speaker_map is transcript_format-internal but stable: it is the
+        # single source of the «Спикер N» labels the transcript shows and is
+        # already covered by test_transcript_format. Reuse keeps the panel's
+        # labels identical to the rendered transcript.
+        from transcript_format import _build_speaker_map
+        from utils import load_segments
+
+        for w in self._speaker_rows_frame.winfo_children():
+            w.destroy()
+        self._speaker_row_vars = {}
+        self._speaker_friendly = {}
+
+        label_map = _build_speaker_map(load_segments(self._history_folder))
+        people = self._dir_store.people()
+        if not label_map or not people:
+            hint = (
+                "(нет данных о спикерах)"
+                if not label_map
+                else "(справочник пуст — добавьте людей в «Справочники»)"
+            )
+            label(self._speaker_rows_frame, hint).grid(
+                row=0, column=0, padx=4, pady=2, sticky="w",
+            )
+            return
+
+        names = [_NO_SELECTION] + [p.full_name for p in people]
+        for i, (raw, friendly) in enumerate(label_map.items()):
+            self._speaker_friendly[raw] = friendly
+            var = ctk.StringVar(value=_NO_SELECTION)
+            self._speaker_row_vars[raw] = var
+            label(self._speaker_rows_frame, friendly).grid(
+                row=i, column=0, padx=(4, 8), pady=2, sticky="w",
+            )
+            ctk.CTkComboBox(
+                self._speaker_rows_frame, variable=var, values=names,
+                width=220, height=28, state="readonly",
+                font=ctk.CTkFont(family=FONT, size=12),
+                border_color=BORDER, button_color=BORDER,
+                fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+                command=lambda _v, r=raw: self._on_speaker_bound(r),
+            ).grid(row=i, column=1, padx=0, pady=2, sticky="w")
+
+    def _person_by_name(self, full_name: str):
+        """First directory person whose full_name matches, else None.
+
+        «— не выбрано —» / unknown → None. Duplicate names resolve to the
+        first match (same caveat as _selected_context_project).
+        """
+        if not full_name or full_name == _NO_SELECTION:
+            return None
+        for p in self._dir_store.people():
+            if p.full_name == full_name:
+                return p
+        return None
+
+    def _on_speaker_bound(self, raw_label: str) -> None:
+        """Auto-tick the chosen person as a participant (D-2 auto-sync)."""
+        person = self._person_by_name(self._speaker_row_vars[raw_label].get())
+        if person is not None and person.id in self._context_person_vars:
+            self._context_person_vars[person.id].set(True)
+
+    def _selected_speaker_maps(self) -> tuple[dict, dict]:
+        """Resolve speaker rows → (speaker_map, name_by_label).
+
+        speaker_map:  raw label  → person_id   (persisted to speakers.json)
+        name_by_label: «Спикер N» → ФИО         (rewrites the LLM transcript)
+
+        MUST be called on the main thread — Tk vars are not thread-safe; the
+        result is passed into the _run_extraction worker.
+        """
+        speaker_map: dict[str, str] = {}
+        name_by_label: dict[str, str] = {}
+        for raw, var in self._speaker_row_vars.items():
+            person = self._person_by_name(var.get())
+            if person is not None:
+                speaker_map[raw] = person.id
+                name_by_label[self._speaker_friendly[raw]] = person.full_name
+        return speaker_map, name_by_label
+
     def _restore_context_selection(self) -> None:
         """Re-apply a previously saved project + participants from speakers.json."""
         from utils import load_speakers
@@ -505,6 +609,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         checked = set(data.get("participants") or [])
         if checked:
             self._rebuild_context_participants(checked)
+        # PR-2: restore per-speaker bindings (raw label → person_id). Setting
+        # the StringVar does not fire the combobox command, so no auto-sync
+        # re-runs here — participants were already restored above.
+        for raw, person_id in (data.get("speakers") or {}).items():
+            person = self._dir_store.get_person(person_id)
+            if person is not None and raw in self._speaker_row_vars:
+                self._speaker_row_vars[raw].set(person.full_name)
 
     def _update_cost_hint(self) -> None:
         """Initial status: cost-of-extract heuristic if a transcript is
@@ -692,11 +803,15 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._clear_form_vars()
         self._saved_label.configure(text="")
 
+        # Capture on the main thread — Tk vars are not thread-safe (see
+        # _selected_speaker_maps); the worker only receives plain dicts/lists.
         project = self._selected_context_project()
         people = self._selected_context_people()
+        speaker_map, name_by_label = self._selected_speaker_maps()
         threading.Thread(
             target=self._run_extraction,
-            args=(container, model, backend_name, project, people),
+            args=(container, model, backend_name, project, people,
+                  speaker_map, name_by_label),
             daemon=True,
         ).start()
 
@@ -711,7 +826,14 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
     def _run_extraction(
         self, container, model: str, backend_name: str, project, people: list,
+        speaker_map: dict, name_by_label: dict,
     ) -> None:
+        """Worker thread: extract tasks (+ optional protocol generation).
+
+        All Tk-derived args (project / people / speaker_map / name_by_label)
+        are captured on the main thread by the caller before .start() — do
+        not read Tk vars here.
+        """
         from directory.context import render_meeting_context
         from tasks.backends import backend_from_name
         from tasks.extractor import ExtractionError, extract
@@ -720,8 +842,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from tasks.openrouter_client import OpenRouterClient, OpenRouterError
         from tasks.persistence import save_tasks_raw
         from tasks.trello_client import TrelloError
+        from transcript_format import apply_speaker_names
         from utils import save_speakers
         meeting_context = render_meeting_context(people, project) or None
+        # PR-2: substitute bound ФИО into the transcript labels before the LLM
+        # sees it. Empty name_by_label → identity (no diarization / no binding).
+        transcript_for_llm = apply_speaker_names(self._transcript, name_by_label)
 
         backend = openrouter = None
         try:
@@ -746,7 +872,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 })
 
             result = extract(
-                transcript=self._transcript,
+                transcript=transcript_for_llm,
                 model=model,
                 lang=self._transcript_lang,
                 openrouter_client=openrouter,
@@ -776,12 +902,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             # re-open restores it (and PR-2 can extend speakers.json with the
             # per-speaker map). Only write when something was selected; a write
             # failure must not block the committed task extraction.
-            if project is not None or people:
+            if project is not None or people or speaker_map:
                 try:
                     save_speakers(
                         self._history_folder,
                         project.id if project else None,
                         [p.id for p in people],
+                        speaker_map=speaker_map,
                     )
                 except OSError as exc:
                     import logging as _logging
@@ -818,7 +945,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 })
                 try:
                     proto_result = protocol_generator.generate(
-                        transcript=self._transcript,
+                        transcript=transcript_for_llm,
                         speakers=[p.full_name for p in people],
                         meeting_date="",  # not tracked at dialog level in v1.0
                         lang=self._transcript_lang,

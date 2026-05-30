@@ -278,18 +278,21 @@ def save_segments(folder: str, segments: list[dict] | None) -> None:
 
 
 def save_speakers(
-    folder: str, project_id: str | None, participant_ids: list[str]
+    folder: str,
+    project_id: str | None,
+    participant_ids: list[str],
+    speaker_map: dict[str, str] | None = None,
 ) -> None:
     """Atomically write the meeting's context selection to <folder>/speakers.json.
 
-    Shape is forward-compatible with PR-2's per-speaker attribution: the empty
-    "speakers" map is the slot that {SPEAKER_00: person_id, ...} fills later.
-    PR-1 only ever writes project_id + participants.
+    ``speaker_map`` is the per-speaker attribution: raw provider label
+    (e.g. "SPEAKER_00") → person_id. Defaults to None → writes an empty
+    map, preserving backward compatibility with existing callers.
     """
     payload = {
         "project_id": project_id,
         "participants": list(participant_ids),
-        "speakers": {},
+        "speakers": dict(speaker_map) if speaker_map else {},
     }
     target = os.path.join(folder, "speakers.json")
     tmp = os.path.join(folder, ".speakers.json.tmp")
@@ -311,6 +314,23 @@ def load_speakers(folder: str) -> dict:
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+def load_segments(folder: str) -> list[dict]:
+    """Read <folder>/segments.json. Returns [] if absent, malformed, or not a list.
+
+    Mirror of load_speakers — the speaker-attribution panel must degrade
+    silently when a meeting predates segments.json or the file is corrupt.
+    The list guard matters because callers iterate the result (a stray
+    object/null from a hand-edit would otherwise crash on seg.get). Never raises.
+    """
+    target = os.path.join(folder, "segments.json")
+    try:
+        with open(target, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    return data if isinstance(data, list) else []
 
 
 def list_history_entries() -> list[dict]:
