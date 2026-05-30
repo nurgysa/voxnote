@@ -94,6 +94,7 @@ def build_prompt(
     speakers: list[str],
     meeting_date: str,
     lang: str | None,
+    context: str | None = None,
 ) -> str:
     """Build the user-message body for the OpenRouter call.
 
@@ -103,12 +104,14 @@ def build_prompt(
     """
     speakers_str = ", ".join(speakers) if speakers else "(не указаны заранее)"
     lang_label = _LANG_LABELS.get(lang or "", "не определён")
+    context_block = f"{context}\n\n" if context else ""
 
     return (
         f"Дата встречи: {meeting_date or '(не указана)'}\n"
         f"Заявленные участники: {speakers_str}\n"
         f"Язык транскрипта: {lang_label}\n"
         f"\n"
+        f"{context_block}"
         f"=== ТРАНСКРИПТ ===\n"
         f"{transcript}\n"
         f"=== КОНЕЦ ТРАНСКРИПТА ===\n"
@@ -176,6 +179,7 @@ def generate(
     lang: str | None,
     model: str,
     openrouter_client: OpenRouterClient,
+    context: str | None = None,
 ) -> ProtocolResult:
     """Full pipeline: build prompt → LLM call → parse → render template.
 
@@ -190,6 +194,9 @@ def generate(
         model: OpenRouter model slug (e.g. "anthropic/claude-sonnet-4.5").
         openrouter_client: live OpenRouterClient instance — caller owns
             lifecycle (typically constructed once per dialog session).
+        context: optional pre-rendered «КОНТЕКСТ ВСТРЕЧИ» block (participant
+            profiles + project description) injected into the user message.
+            None reproduces the pre-directory prompt exactly.
 
     Returns:
         ProtocolResult with rendered markdown + raw response + parsed
@@ -199,7 +206,7 @@ def generate(
         ProtocolGenerationError on any failure (LLM error, empty response,
         missing required blocks).
     """
-    user_message = build_prompt(transcript, speakers, meeting_date, lang)
+    user_message = build_prompt(transcript, speakers, meeting_date, lang, context=context)
     messages = [
         {"role": "system", "content": _SYSTEM_PROMPT},
         {"role": "user", "content": user_message},

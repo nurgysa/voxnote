@@ -166,3 +166,19 @@ def test_generate_wraps_openrouter_error_as_protocol_error():
     msg = str(exc_info.value)
     assert "429" in msg or "rate" in msg.lower() or "openrouter" in msg.lower()
     assert isinstance(exc_info.value.__cause__, OpenRouterError)
+
+
+def test_build_prompt_injects_context_before_transcript():
+    out = build_prompt(
+        "T", ["Айбек"], "2026-05-30", "ru",
+        context="=== КОНТЕКСТ ВСТРЕЧИ ===\nПроект: X\n=== КОНЕЦ КОНТЕКСТА ===",
+    )
+    assert "Проект: X" in out
+    assert out.index("Проект: X") < out.index("=== ТРАНСКРИПТ ===")
+
+
+def test_build_prompt_context_none_matches_legacy():
+    with_default = build_prompt("T", ["Айбек"], "2026-05-30", "ru")
+    with_none = build_prompt("T", ["Айбек"], "2026-05-30", "ru", context=None)
+    assert with_default == with_none
+    assert "КОНТЕКСТ ВСТРЕЧИ" not in with_none
