@@ -313,6 +313,21 @@ def load_speakers(folder: str) -> dict:
         return {}
 
 
+def load_segments(folder: str) -> list[dict]:
+    """Read <folder>/segments.json. Returns [] if absent or malformed.
+
+    Mirror of load_speakers — the speaker-attribution panel must degrade
+    silently when a meeting predates segments.json or the file is corrupt.
+    Never raises.
+    """
+    target = os.path.join(folder, "segments.json")
+    try:
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+
+
 def list_history_entries() -> list[dict]:
     """Scan the meetings directory and return entries sorted by date (newest first).
 

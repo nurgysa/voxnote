@@ -1,6 +1,6 @@
 import json
 
-from utils import save_segments
+from utils import load_segments, save_segments
 
 
 def test_save_segments_writes_json(tmp_path):
@@ -19,3 +19,18 @@ def test_save_segments_empty_list_writes_empty(tmp_path):
     save_segments(str(tmp_path), [])
     data = json.loads((tmp_path / "segments.json").read_text(encoding="utf-8"))
     assert data == []
+
+
+def test_load_segments_roundtrip(tmp_path):
+    segs = [{"start": 0.0, "end": 1.0, "text": "x", "speaker": "SPEAKER_00"}]
+    save_segments(str(tmp_path), segs)
+    assert load_segments(str(tmp_path)) == segs
+
+
+def test_load_segments_missing_is_empty_list(tmp_path):
+    assert load_segments(str(tmp_path)) == []
+
+
+def test_load_segments_malformed_is_empty_list(tmp_path):
+    (tmp_path / "segments.json").write_text("{not json", encoding="utf-8")
+    assert load_segments(str(tmp_path)) == []
