@@ -92,20 +92,14 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._transcript_lang = transcript_lang
         self._config = config
 
-        # Phase A UI part 2: directory for meeting-context grounding. Loaded
-        # eagerly so the «Контекст встречи» section can populate; a corrupt
-        # file degrades to an empty directory (warn once, never crash the
-        # dialog).
-        from directory.store import DirectoryError, DirectoryStore
+        # Phase A UI part 2: directory for meeting-context grounding. The store
+        # is constructed here but loaded in _build_ui (after the window geometry
+        # is set), and any corrupt-file warning is deferred via after() — so the
+        # modal never stacks on a half-built, unrealized window. A load failure
+        # degrades to an empty directory; it never crashes the dialog.
+        from directory.store import DirectoryStore
         self._dir_store = DirectoryStore()
-        try:
-            self._dir_store.load()
-        except DirectoryError as exc:
-            messagebox.showwarning(
-                "Справочник",
-                f"Не удалось прочитать справочник — контекст недоступен.\n\n{exc}",
-                parent=self,
-            )
+        self._dir_load_error: str | None = None
         self._context_project_var = ctk.StringVar(value="— нет —")
         self._context_person_vars: dict[str, ctk.BooleanVar] = {}
 
@@ -313,6 +307,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         ctx_frame.grid_columnconfigure(1, weight=1)
 
         label(ctx_frame, "Проект").grid(row=0, column=0, padx=(0, 6), sticky="w")
+        # Load now — window geometry is already set; the warning below is
+        # deferred via after() so it never stacks on a half-built window.
+        from directory.store import DirectoryError
+        try:
+            self._dir_store.load()
+        except DirectoryError as exc:
+            self._dir_load_error = str(exc)
         self._dir_projects = self._dir_store.projects()
         project_labels = ["— нет —"] + [p.name for p in self._dir_projects]
         self._context_project_menu = ctk.CTkComboBox(
@@ -336,6 +337,15 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         )
         self._rebuild_context_participants(set())
         self._restore_context_selection()
+        if self._dir_load_error:
+            # Defer to the event loop so the modal stacks on the fully-built,
+            # realized window rather than mid-construction.
+            self.after(0, lambda: messagebox.showwarning(
+                "Справочник",
+                "Не удалось прочитать справочник — контекст недоступен."
+                f"\n\n{self._dir_load_error}",
+                parent=self,
+            ))
 
         # --- Status / cost hint row ---
         self._status_label = label(self, "", anchor="w")
