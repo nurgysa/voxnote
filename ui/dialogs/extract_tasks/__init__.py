@@ -470,7 +470,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._rebuild_context_participants(defaults)
 
     def _selected_context_project(self):
-        """Return the Project chosen in the dropdown, or None for «— нет —»."""
+        """Return the Project chosen in the dropdown, or None for «— нет —».
+
+        Matches by name (the dropdown shows names). Assumes project names are
+        unique; on a duplicate name the first match wins, so the wrong id could
+        flow into save_speakers. Acceptable for now — the «Справочники» CRUD is
+        where uniqueness would be enforced.
+        """
         chosen = self._context_project_var.get()
         for p in self._dir_projects:
             if p.name == chosen:
