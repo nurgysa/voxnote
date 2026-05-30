@@ -251,3 +251,28 @@ def test_create_issue_raises_when_success_false():
     with patch.object(c._session, "post", return_value=fake):
         with pytest.raises(LinearError, match="отказ"):
             c.create_issue(team_id="t-1", title="X")
+
+
+# ── add_comment ────────────────────────────────────────────────────────
+
+
+def test_add_comment_success():
+    fake = MagicMock()
+    fake.status_code = 200
+    fake.json.return_value = {"data": {"commentCreate": {"success": True}}}
+    c = LinearClient("lin_api_test")
+    with patch.object(c._session, "post", return_value=fake) as mock_post:
+        c.add_comment("issue-uuid-1", "снова обсуждалось")
+    mock_post.assert_called_once()
+    sent = mock_post.call_args.kwargs["json"]["variables"]
+    assert sent == {"issueId": "issue-uuid-1", "body": "снова обсуждалось"}
+
+
+def test_add_comment_raises_when_success_false():
+    fake = MagicMock()
+    fake.status_code = 200
+    fake.json.return_value = {"data": {"commentCreate": {"success": False}}}
+    c = LinearClient("lin_api_test")
+    with patch.object(c._session, "post", return_value=fake):
+        with pytest.raises(LinearError, match="комментар"):
+            c.add_comment("issue-uuid-1", "x")

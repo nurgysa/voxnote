@@ -55,6 +55,12 @@ mutation CreateIssue(
 }
 """
 
+_CREATE_COMMENT_MUTATION = """
+mutation CommentCreate($issueId: String!, $body: String!) {
+  commentCreate(input: {issueId: $issueId, body: $body}) { success }
+}
+"""
+
 
 class LinearError(Exception):
     """All Linear HTTP/GraphQL failures bubble up as this."""
@@ -213,3 +219,17 @@ class LinearClient:
         if not result.get("success"):
             raise LinearError(f"Linear отказался создать тикет: {result}")
         return result["issue"]
+
+    def add_comment(self, issue_id: str, body: str) -> None:
+        """Post a comment to an existing issue (task-dedup).
+
+        ``issue_id`` is the node UUID (``issue["id"]``), NOT the ENG-123
+        identifier — commentCreate rejects the human identifier. Raises
+        LinearError on success=false or any HTTP/network failure.
+        """
+        data = self._graphql(
+            _CREATE_COMMENT_MUTATION, {"issueId": issue_id, "body": body},
+        )
+        result = data.get("commentCreate") or {}
+        if not result.get("success"):
+            raise LinearError(f"Linear отказался добавить комментарий: {result}")
