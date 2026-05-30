@@ -34,3 +34,10 @@ def test_load_segments_missing_is_empty_list(tmp_path):
 def test_load_segments_malformed_is_empty_list(tmp_path):
     (tmp_path / "segments.json").write_text("{not json", encoding="utf-8")
     assert load_segments(str(tmp_path)) == []
+
+
+def test_load_segments_non_list_json_is_empty_list(tmp_path):
+    # Valid JSON but not an array (e.g. a hand-edit or future format drift) —
+    # callers iterate the result, so it must still degrade to [].
+    (tmp_path / "segments.json").write_text('{"key": "val"}', encoding="utf-8")
+    assert load_segments(str(tmp_path)) == []

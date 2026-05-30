@@ -287,7 +287,7 @@ def save_speakers(
 
     ``speaker_map`` is the per-speaker attribution: raw provider label
     (e.g. "SPEAKER_00") → person_id. Defaults to None → writes an empty
-    map, preserving the PR-1 caller shape exactly.
+    map, preserving backward compatibility with existing callers.
     """
     payload = {
         "project_id": project_id,
@@ -317,18 +317,20 @@ def load_speakers(folder: str) -> dict:
 
 
 def load_segments(folder: str) -> list[dict]:
-    """Read <folder>/segments.json. Returns [] if absent or malformed.
+    """Read <folder>/segments.json. Returns [] if absent, malformed, or not a list.
 
     Mirror of load_speakers — the speaker-attribution panel must degrade
     silently when a meeting predates segments.json or the file is corrupt.
-    Never raises.
+    The list guard matters because callers iterate the result (a stray
+    object/null from a hand-edit would otherwise crash on seg.get). Never raises.
     """
     target = os.path.join(folder, "segments.json")
     try:
         with open(target, encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return []
+    return data if isinstance(data, list) else []
 
 
 def list_history_entries() -> list[dict]:
