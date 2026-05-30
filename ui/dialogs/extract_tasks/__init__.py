@@ -61,6 +61,11 @@ from .constants import (
 )
 from .task_row import _TaskRow
 
+# CTkComboBox sentinel for the «Кто говорит» speaker rows — the dropdown's
+# "no person" option AND the guard value in _person_by_name. One definition
+# keeps those two uses from drifting apart on a future wording change.
+_NO_SELECTION = "— не выбрано —"
+
 
 def _backend_is_configured(name: str, config: dict) -> bool:
     """True if every credential the backend needs is present + non-empty.
@@ -513,6 +518,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         No segments / no diarization / empty directory → a muted hint and
         no rows (pure manual mapping is impossible; the dialog still works).
         """
+        # _build_speaker_map is transcript_format-internal but stable: it is the
+        # single source of the «Спикер N» labels the transcript shows and is
+        # already covered by test_transcript_format. Reuse keeps the panel's
+        # labels identical to the rendered transcript.
         from transcript_format import _build_speaker_map
         from utils import load_segments
 
@@ -534,10 +543,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             )
             return
 
-        names = ["— не выбрано —"] + [p.full_name for p in people]
+        names = [_NO_SELECTION] + [p.full_name for p in people]
         for i, (raw, friendly) in enumerate(label_map.items()):
             self._speaker_friendly[raw] = friendly
-            var = ctk.StringVar(value="— не выбрано —")
+            var = ctk.StringVar(value=_NO_SELECTION)
             self._speaker_row_vars[raw] = var
             label(self._speaker_rows_frame, friendly).grid(
                 row=i, column=0, padx=(4, 8), pady=2, sticky="w",
@@ -557,7 +566,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         «— не выбрано —» / unknown → None. Duplicate names resolve to the
         first match (same caveat as _selected_context_project).
         """
-        if not full_name or full_name == "— не выбрано —":
+        if not full_name or full_name == _NO_SELECTION:
             return None
         for p in self._dir_store.people():
             if p.full_name == full_name:
