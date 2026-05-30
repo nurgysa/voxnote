@@ -40,9 +40,20 @@ class CreatedIssue:
 
     `url` opens the task in the backend's web UI when the user clicks
     the SENT row.
+
+    `ref` is the *comment-addressable* backend id — what add_comment()
+    needs to target this object later (task-dedup feature):
+    - Linear: the GraphQL node UUID (issue.id), NOT the ENG-1234 identifier
+      — commentCreate's issueId rejects the human identifier.
+    - Trello: the full card id (or shortLink) — the #idShort badge value is
+      not a valid {id} path param for the comment endpoint.
+    - Glide: the task UUID, but unused (Glide has no comment API; the
+      backend declares supports_comments = False).
+    Defaults to "" for backends/tests that don't populate it.
     """
     identifier: str
     url: str
+    ref: str = ""
 
 
 class TaskBackend(Protocol):
@@ -50,6 +61,13 @@ class TaskBackend(Protocol):
 
     name: str             # stable id for config / persistence ("linear", "glide")
     display_name: str     # human-facing dropdown label ("Linear", "Glide")
+
+    # Capability flag for the task-dedup feature. True if the backend can
+    # POST a comment to an existing object via add_comment(). Backends whose
+    # API has no comment concept (Glide) set this False; the dedup gate then
+    # skips commenting and creates the task as usual. Mirrors the
+    # ``supports_mixed`` capability pattern on providers/base.py.
+    supports_comments: bool = False
 
     def bootstrap(self) -> list[Container]:
         """Validate the API key + return all containers visible to it.
@@ -77,10 +95,20 @@ class TaskBackend(Protocol):
         ...
 
     def create(self, container_id: str, task: Task) -> CreatedIssue:
-        """Send a single task to the backend. Returns identifier + URL.
+        """Send a single task to the backend. Returns identifier + URL + ref.
 
         Raises whatever the underlying client raises (LinearError /
         GlideError) — sender catches those and marks the task FAILED.
+        """
+        ...
+
+    def add_comment(self, ref: str, body: str) -> None:
+        """Post a comment to an existing backend object (task-dedup feature).
+
+        `ref` is the value carried by CreatedIssue.ref / Task.backend_ref.
+        Only called for backends with supports_comments = True; backends
+        that opt out may raise NotImplementedError. Raises the backend's
+        own error class (LinearError / TrelloError) on HTTP/network failure.
         """
         ...
 

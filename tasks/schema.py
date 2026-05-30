@@ -63,6 +63,11 @@ class Task:
     status: TaskStatus = TaskStatus.PENDING
     linear_issue_id: str | None = None
     linear_issue_url: str | None = None
+    # Comment-addressable backend id (task-dedup): Linear node UUID /
+    # Trello full card id. Distinct from linear_issue_id, which holds the
+    # human identifier (ENG-1234) for the UI badge. Persisted so a future
+    # meeting's dedup pass can comment on this object instead of duplicating.
+    backend_ref: str | None = None
     send_error: str | None = None
 
     def to_dict(self) -> dict:
@@ -81,6 +86,7 @@ class Task:
             "status": self.status.value,
             "linear_issue_id": self.linear_issue_id,
             "linear_issue_url": self.linear_issue_url,
+            "backend_ref": self.backend_ref,
             "send_error": self.send_error,
         }
 
@@ -105,6 +111,7 @@ class Task:
             status=TaskStatus(d.get("status", "pending")),
             linear_issue_id=d.get("linear_issue_id"),
             linear_issue_url=d.get("linear_issue_url"),
+            backend_ref=d.get("backend_ref"),
             send_error=d.get("send_error"),
         )
 

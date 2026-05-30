@@ -161,3 +161,17 @@ def test_task_from_dict_tolerates_missing_optional_keys():
     assert t.local_id == "uid"
     assert t.status is TaskStatus.PENDING
     assert t.linear_issue_id is None
+
+
+def test_task_backend_ref_round_trips():
+    from tasks.schema import Task
+    t = Task(local_id="x1", title="t", backend_ref="ISSUE-UUID-123")
+    assert t.to_dict()["backend_ref"] == "ISSUE-UUID-123"
+    assert Task.from_dict(t.to_dict()).backend_ref == "ISSUE-UUID-123"
+
+
+def test_task_backend_ref_defaults_none_and_tolerates_old_dict():
+    from tasks.schema import Task
+    assert Task(local_id="x2", title="t").backend_ref is None
+    revived = Task.from_dict({"local_id": "x3", "title": "t"})
+    assert revived.backend_ref is None
