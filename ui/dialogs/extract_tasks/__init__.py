@@ -805,9 +805,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
         project = self._selected_context_project()
         people = self._selected_context_people()
+        speaker_map, name_by_label = self._selected_speaker_maps()
         threading.Thread(
             target=self._run_extraction,
-            args=(container, model, backend_name, project, people),
+            args=(container, model, backend_name, project, people,
+                  speaker_map, name_by_label),
             daemon=True,
         ).start()
 
@@ -822,6 +824,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
     def _run_extraction(
         self, container, model: str, backend_name: str, project, people: list,
+        speaker_map: dict, name_by_label: dict,
     ) -> None:
         from directory.context import render_meeting_context
         from tasks.backends import backend_from_name
@@ -831,8 +834,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from tasks.openrouter_client import OpenRouterClient, OpenRouterError
         from tasks.persistence import save_tasks_raw
         from tasks.trello_client import TrelloError
+        from transcript_format import apply_speaker_names
         from utils import save_speakers
         meeting_context = render_meeting_context(people, project) or None
+        # PR-2: substitute bound ФИО into the transcript labels before the LLM
+        # sees it. Empty name_by_label → identity (no diarization / no binding).
+        transcript_for_llm = apply_speaker_names(self._transcript, name_by_label)
 
         backend = openrouter = None
         try:
@@ -857,7 +864,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 })
 
             result = extract(
-                transcript=self._transcript,
+                transcript=transcript_for_llm,
                 model=model,
                 lang=self._transcript_lang,
                 openrouter_client=openrouter,
@@ -887,12 +894,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             # re-open restores it (and PR-2 can extend speakers.json with the
             # per-speaker map). Only write when something was selected; a write
             # failure must not block the committed task extraction.
-            if project is not None or people:
+            if project is not None or people or speaker_map:
                 try:
                     save_speakers(
                         self._history_folder,
                         project.id if project else None,
                         [p.id for p in people],
+                        speaker_map=speaker_map,
                     )
                 except OSError as exc:
                     import logging as _logging
@@ -929,7 +937,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 })
                 try:
                     proto_result = protocol_generator.generate(
-                        transcript=self._transcript,
+                        transcript=transcript_for_llm,
                         speakers=[p.full_name for p in people],
                         meeting_date="",  # not tracked at dialog level in v1.0
                         lang=self._transcript_lang,
