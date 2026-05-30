@@ -29,6 +29,8 @@ import customtkinter as ctk
 
 from theme import (
     BG,
+    BLUE,
+    BLUE_DIM,
     BORDER,
     FONT,
     GREEN,
@@ -89,6 +91,17 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._history_folder = history_folder
         self._transcript_lang = transcript_lang
         self._config = config
+
+        # Phase A UI part 2: directory for meeting-context grounding. The store
+        # is constructed here but loaded in _build_ui (after the window geometry
+        # is set), and any corrupt-file warning is deferred via after() — so the
+        # modal never stacks on a half-built, unrealized window. A load failure
+        # degrades to an empty directory; it never crashes the dialog.
+        from directory.store import DirectoryStore
+        self._dir_store = DirectoryStore()
+        self._dir_load_error: str | None = None
+        self._context_project_var = ctk.StringVar(value="— нет —")
+        self._context_person_vars: dict[str, ctk.BooleanVar] = {}
 
         # Worker-thread plumbing: cancel_event flips on close;
         # active_client is the in-flight client we close to interrupt sockets.
@@ -286,6 +299,54 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             checkbox_height=18, checkbox_width=18,
         ).grid(row=1, column=0, columnspan=8, padx=0, pady=(8, 0), sticky="w")
 
+        # Phase A UI part 2: «Контекст встречи» — project + participants feed
+        # render_meeting_context() → context= for both protocol and tasks.
+        # Nested in `header` (row=2) so no self-level row renumbering is needed.
+        ctx_frame = ctk.CTkFrame(header, fg_color="transparent")
+        ctx_frame.grid(row=2, column=0, columnspan=8, padx=0, pady=(8, 0), sticky="ew")
+        ctx_frame.grid_columnconfigure(1, weight=1)
+
+        label(ctx_frame, "Проект").grid(row=0, column=0, padx=(0, 6), sticky="w")
+        # Load now — window geometry is already set; the warning below is
+        # deferred via after() so it never stacks on a half-built window.
+        from directory.store import DirectoryError
+        try:
+            self._dir_store.load()
+        except DirectoryError as exc:
+            self._dir_load_error = str(exc)
+        self._dir_projects = self._dir_store.projects()
+        project_labels = ["— нет —"] + [p.name for p in self._dir_projects]
+        self._context_project_menu = ctk.CTkComboBox(
+            ctx_frame, variable=self._context_project_var, values=project_labels,
+            width=240, height=30, state="readonly",
+            font=ctk.CTkFont(family=FONT, size=12),
+            border_color=BORDER, button_color=BORDER,
+            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+            command=self._on_context_project_changed,
+        )
+        self._context_project_menu.grid(row=0, column=1, padx=(0, 12), sticky="ew")
+
+        label(ctx_frame, "Участники").grid(
+            row=1, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+        )
+        self._context_participants_frame = ctk.CTkScrollableFrame(
+            ctx_frame, fg_color=INPUT_BG, height=90, corner_radius=8,
+        )
+        self._context_participants_frame.grid(
+            row=1, column=1, padx=0, pady=(6, 0), sticky="ew",
+        )
+        self._rebuild_context_participants(set())
+        self._restore_context_selection()
+        if self._dir_load_error:
+            # Defer to the event loop so the modal stacks on the fully-built,
+            # realized window rather than mid-construction.
+            self.after(0, lambda: messagebox.showwarning(
+                "Справочник",
+                "Не удалось прочитать справочник — контекст недоступен."
+                f"\n\n{self._dir_load_error}",
+                parent=self,
+            ))
+
         # --- Status / cost hint row ---
         self._status_label = label(self, "", anchor="w")
         self._status_label.grid(row=1, column=0, padx=18, pady=(2, 4), sticky="ew")
@@ -376,6 +437,74 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         tonal_button(
             footer, text="Закрыть", command=self._on_close, width=110,
         ).grid(row=0, column=3, sticky="e")
+
+    def _rebuild_context_participants(self, checked_ids: set[str]) -> None:
+        """Render a checkbox per directory person, ticking checked_ids."""
+        for w in self._context_participants_frame.winfo_children():
+            w.destroy()
+        self._context_person_vars = {}
+        people = self._dir_store.people()
+        if not people:
+            label(
+                self._context_participants_frame,
+                "(справочник пуст — добавьте людей в «Справочники»)",
+            ).grid(row=0, column=0, padx=4, pady=2, sticky="w")
+            return
+        for i, p in enumerate(people):
+            var = ctk.BooleanVar(value=p.id in checked_ids)
+            self._context_person_vars[p.id] = var
+            text = p.full_name + (f" — {p.role}" if p.role else "")
+            ctk.CTkCheckBox(
+                self._context_participants_frame, text=text, variable=var,
+                fg_color=BLUE, hover_color=BLUE_DIM, text_color=TEXT_PRIMARY,
+                font=ctk.CTkFont(family=FONT, size=12),
+                checkbox_height=16, checkbox_width=16,
+            ).grid(row=i, column=0, padx=4, pady=1, sticky="w")
+
+    def _on_context_project_changed(self, _choice=None) -> None:
+        """Project change → pre-check that project's members."""
+        project = self._selected_context_project()
+        pid = project.id if project else None
+        from directory.context import default_participants
+        defaults = {p.id for p in default_participants(self._dir_store.people(), pid)}
+        self._rebuild_context_participants(defaults)
+
+    def _selected_context_project(self):
+        """Return the Project chosen in the dropdown, or None for «— нет —».
+
+        Matches by name (the dropdown shows names). Assumes project names are
+        unique; on a duplicate name the first match wins, so the wrong id could
+        flow into save_speakers. Acceptable for now — the «Справочники» CRUD is
+        where uniqueness would be enforced.
+        """
+        chosen = self._context_project_var.get()
+        for p in self._dir_projects:
+            if p.name == chosen:
+                return p
+        return None
+
+    def _selected_context_people(self) -> list:
+        """Resolve the ticked participant ids to Person objects (skip stale)."""
+        out = []
+        for pid, var in self._context_person_vars.items():
+            if var.get():
+                person = self._dir_store.get_person(pid)
+                if person is not None:
+                    out.append(person)
+        return out
+
+    def _restore_context_selection(self) -> None:
+        """Re-apply a previously saved project + participants from speakers.json."""
+        from utils import load_speakers
+        data = load_speakers(self._history_folder)
+        if not data:
+            return
+        project = self._dir_store.get_project(data.get("project_id") or "")
+        if project is not None:
+            self._context_project_var.set(project.name)
+        checked = set(data.get("participants") or [])
+        if checked:
+            self._rebuild_context_participants(checked)
 
     def _update_cost_hint(self) -> None:
         """Initial status: cost-of-extract heuristic if a transcript is
@@ -563,9 +692,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._clear_form_vars()
         self._saved_label.configure(text="")
 
+        project = self._selected_context_project()
+        people = self._selected_context_people()
         threading.Thread(
             target=self._run_extraction,
-            args=(container, model, backend_name),
+            args=(container, model, backend_name, project, people),
             daemon=True,
         ).start()
 
@@ -578,7 +709,10 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 return c
         return None
 
-    def _run_extraction(self, container, model: str, backend_name: str) -> None:
+    def _run_extraction(
+        self, container, model: str, backend_name: str, project, people: list,
+    ) -> None:
+        from directory.context import render_meeting_context
         from tasks.backends import backend_from_name
         from tasks.extractor import ExtractionError, extract
         from tasks.glide_client import GlideError
@@ -586,6 +720,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from tasks.openrouter_client import OpenRouterClient, OpenRouterError
         from tasks.persistence import save_tasks_raw
         from tasks.trello_client import TrelloError
+        from utils import save_speakers
+        meeting_context = render_meeting_context(people, project) or None
 
         backend = openrouter = None
         try:
@@ -616,6 +752,7 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 openrouter_client=openrouter,
                 members=members,
                 labels=labels,
+                context=meeting_context,
             )
 
             if self._cancel_event.is_set():
@@ -634,6 +771,23 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 "transcript_lang": self._transcript_lang or "auto",
             }
             save_tasks_raw(self._history_folder, result["tasks"], meta)
+
+            # Phase A UI part 2: remember the meeting's context selection so a
+            # re-open restores it (and PR-2 can extend speakers.json with the
+            # per-speaker map). Only write when something was selected; a write
+            # failure must not block the committed task extraction.
+            if project is not None or people:
+                try:
+                    save_speakers(
+                        self._history_folder,
+                        project.id if project else None,
+                        [p.id for p in people],
+                    )
+                except OSError as exc:
+                    import logging as _logging
+                    _logging.getLogger(__name__).warning(
+                        "speakers.json write failed: %s", exc,
+                    )
 
             # Task 6 (MVP v5): opt-in protocol generation, reusing the same
             # OpenRouter client and user-chosen model. Runs AFTER save_tasks_raw
@@ -665,11 +819,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 try:
                     proto_result = protocol_generator.generate(
                         transcript=self._transcript,
-                        speakers=[],  # cloud-only build has no voice library
+                        speakers=[p.full_name for p in people],
                         meeting_date="",  # not tracked at dialog level in v1.0
                         lang=self._transcript_lang,
                         model=model,
                         openrouter_client=openrouter,
+                        context=meeting_context,
                     )
                     proto_path = Path(self._history_folder) / "protocol.md"
                     proto_path.write_text(

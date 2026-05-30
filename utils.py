@@ -277,6 +277,42 @@ def save_segments(folder: str, segments: list[dict] | None) -> None:
     os.replace(tmp, target)
 
 
+def save_speakers(
+    folder: str, project_id: str | None, participant_ids: list[str]
+) -> None:
+    """Atomically write the meeting's context selection to <folder>/speakers.json.
+
+    Shape is forward-compatible with PR-2's per-speaker attribution: the empty
+    "speakers" map is the slot that {SPEAKER_00: person_id, ...} fills later.
+    PR-1 only ever writes project_id + participants.
+    """
+    payload = {
+        "project_id": project_id,
+        "participants": list(participant_ids),
+        "speakers": {},
+    }
+    target = os.path.join(folder, "speakers.json")
+    tmp = os.path.join(folder, ".speakers.json.tmp")
+    encoded = json.dumps(payload, ensure_ascii=False, indent=2)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(encoded)
+    os.replace(tmp, target)
+
+
+def load_speakers(folder: str) -> dict:
+    """Read <folder>/speakers.json. Returns {} if absent or malformed.
+
+    Never raises — the dialog restore path must degrade silently (a corrupt or
+    missing file just means "no remembered selection").
+    """
+    target = os.path.join(folder, "speakers.json")
+    try:
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
 def list_history_entries() -> list[dict]:
     """Scan the meetings directory and return entries sorted by date (newest first).
 
