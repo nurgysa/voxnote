@@ -7,6 +7,8 @@ Mirrors ui/dialogs/terms.py for the list/row/button style.
 """
 from __future__ import annotations
 
+from tkinter import messagebox
+
 import customtkinter as ctk
 
 from directory.schema import Person, Project
@@ -41,10 +43,15 @@ class DirectoryDialog(ctk.CTkToplevel):
         self._store = DirectoryStore()
         try:
             self._store.load()
-        except DirectoryError:
-            # Corrupt file: start empty rather than crash. The next successful
-            # save overwrites the bad file atomically.
-            pass
+        except DirectoryError as exc:
+            # Corrupt file: warn before starting empty. The next successful save
+            # atomically overwrites the bad file, so surface the loss now rather
+            # than letting it vanish silently.
+            messagebox.showwarning(
+                "Справочники",
+                f"Файл справочников повреждён — начинаем с пустого списка.\n\n{exc}",
+                parent=self,
+            )
 
         self._editing_person_id: str | None = None
         self._editing_project_id: str | None = None
@@ -208,7 +215,14 @@ class DirectoryDialog(ctk.CTkToplevel):
             person.project_ids = project_ids
         else:
             person = Person(full_name=name, role=role, project_ids=project_ids)
-        self._store.upsert_person(person)
+        try:
+            self._store.upsert_person(person)
+        except DirectoryError as exc:
+            messagebox.showerror(
+                "Справочники", f"Не удалось сохранить человека:\n\n{exc}",
+                parent=self,
+            )
+            return
         self._render_people()
         self._clear_person_form()
 
@@ -216,7 +230,14 @@ class DirectoryDialog(ctk.CTkToplevel):
         pid = person_id or self._editing_person_id
         if not pid:
             return
-        self._store.delete_person(pid)
+        try:
+            self._store.delete_person(pid)
+        except DirectoryError as exc:
+            messagebox.showerror(
+                "Справочники", f"Не удалось удалить человека:\n\n{exc}",
+                parent=self,
+            )
+            return
         self._render_people()
         self._clear_person_form()
 
@@ -323,7 +344,14 @@ class DirectoryDialog(ctk.CTkToplevel):
             pr.description = description
         else:
             pr = Project(name=name, description=description)
-        self._store.upsert_project(pr)
+        try:
+            self._store.upsert_project(pr)
+        except DirectoryError as exc:
+            messagebox.showerror(
+                "Справочники", f"Не удалось сохранить проект:\n\n{exc}",
+                parent=self,
+            )
+            return
         self._render_projects()
         self._clear_project_form()
 
@@ -331,7 +359,14 @@ class DirectoryDialog(ctk.CTkToplevel):
         pid = project_id or self._editing_project_id
         if not pid:
             return
-        self._store.delete_project(pid)
+        try:
+            self._store.delete_project(pid)
+        except DirectoryError as exc:
+            messagebox.showerror(
+                "Справочники", f"Не удалось удалить проект:\n\n{exc}",
+                parent=self,
+            )
+            return
         self._render_projects()
         self._clear_project_form()
         # delete_project ref-cascades the id out of every person; rebuild the
