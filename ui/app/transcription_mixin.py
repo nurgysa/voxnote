@@ -35,7 +35,7 @@ from tkinter import messagebox
 from logging_setup import crash_log_path, get_logger
 from theme import BLUE, BLUE_DIM, GREEN, RED, TEXT_SECONDARY
 from transcriber import Transcriber, TranscriptionCancelled
-from utils import create_history_entry, save_config
+from utils import create_history_entry, save_config, save_segments
 
 from .constants import LANGUAGES, SPEAKER_COUNTS
 
@@ -260,6 +260,12 @@ class TranscriptionMixin:
                 language=LANGUAGES.get(self._lang_var.get()),
                 model=self._cloud_provider_var.get() or "cloud",
             )
+
+            # Persist raw segments so post-transcription speaker attribution
+            # (directory feature) can slice per-speaker audio later. The audio
+            # is copied into the folder, but the speaker timestamps are not.
+            if self._last_history_folder and self._transcriber is not None:
+                save_segments(self._last_history_folder, self._transcriber.last_segments)
 
         # Enable extract button only when we actually have a target folder.
         # Mirrors the conditional enable in _load_history_into_main.

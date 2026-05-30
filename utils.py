@@ -259,6 +259,24 @@ def create_history_entry(
     return folder_path
 
 
+def save_segments(folder: str, segments: list[dict] | None) -> None:
+    """Atomically write raw transcription segments to <folder>/segments.json.
+
+    The audio is copied into the meeting folder by create_history_entry, but the
+    per-speaker timestamps would otherwise be lost — they are what later
+    speaker-attribution slices on. No-op when segments is None (e.g. a provider
+    that returned nothing to cache).
+    """
+    if segments is None:
+        return
+    target = os.path.join(folder, "segments.json")
+    tmp = os.path.join(folder, ".segments.json.tmp")
+    encoded = json.dumps(segments, ensure_ascii=False, indent=2)
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(encoded)
+    os.replace(tmp, target)
+
+
 def list_history_entries() -> list[dict]:
     """Scan the meetings directory and return entries sorted by date (newest first).
 
