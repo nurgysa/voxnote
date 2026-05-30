@@ -32,3 +32,16 @@ def render_meeting_context(people: list[Person], project: Project | None) -> str
     if not body:
         return ""
     return f"=== КОНТЕКСТ ВСТРЕЧИ ===\n{body}\n=== КОНЕЦ КОНТЕКСТА ==="
+
+
+def default_participants(
+    people: list[Person], project_id: str | None
+) -> list[Person]:
+    """People whose project_ids include project_id (preserving input order).
+
+    Returns [] when project_id is None or matches no one — the dialog uses this
+    to pre-check participant boxes when a project is chosen.
+    """
+    if not project_id:
+        return []
+    return [p for p in people if project_id in p.project_ids]

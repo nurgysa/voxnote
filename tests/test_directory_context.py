@@ -1,4 +1,4 @@
-from directory.context import render_meeting_context
+from directory.context import default_participants, render_meeting_context
 from directory.schema import Person, Project
 
 
@@ -36,3 +36,21 @@ def test_empty_role_omits_dash():
 def test_nothing_to_render_returns_empty_string():
     assert render_meeting_context([], None) == ""
     assert render_meeting_context([Person(full_name="   ")], None) == ""
+
+
+def test_default_participants_filters_by_project():
+    a = Person(full_name="A", project_ids=["p1"])
+    b = Person(full_name="B", project_ids=["p2"])
+    c = Person(full_name="C", project_ids=["p1", "p2"])
+    out = default_participants([a, b, c], "p1")
+    assert [p.full_name for p in out] == ["A", "C"]
+
+
+def test_default_participants_none_project_is_empty():
+    a = Person(full_name="A", project_ids=["p1"])
+    assert default_participants([a], None) == []
+
+
+def test_default_participants_unknown_project_is_empty():
+    a = Person(full_name="A", project_ids=["p1"])
+    assert default_participants([a], "nope") == []
