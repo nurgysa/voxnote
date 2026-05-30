@@ -94,30 +94,38 @@ class DirectoryDialog(ctk.CTkToplevel):
         self._person_name_var = ctk.StringVar()
         self._person_role_var = ctk.StringVar()
 
+        ctk.CTkLabel(
+            form, text="ФИО", anchor="w",
+            font=ctk.CTkFont(family=FONT, size=12), text_color=TEXT_SECONDARY,
+        ).grid(row=0, column=0, padx=10, pady=(10, 0), sticky="w")
         ctk.CTkEntry(
             form, textvariable=self._person_name_var, height=34,
             placeholder_text="ФИО", fg_color=INPUT_BG, border_color=BORDER,
             border_width=1, text_color=TEXT_PRIMARY,
             font=ctk.CTkFont(family=FONT, size=13),
-        ).grid(row=0, column=0, padx=10, pady=(10, 4), sticky="ew")
+        ).grid(row=1, column=0, padx=10, pady=(2, 4), sticky="ew")
 
+        ctk.CTkLabel(
+            form, text="Должностные обязанности", anchor="w",
+            font=ctk.CTkFont(family=FONT, size=12), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=0, padx=10, pady=(6, 0), sticky="w")
         ctk.CTkEntry(
             form, textvariable=self._person_role_var, height=34,
             placeholder_text="Должностные обязанности", fg_color=INPUT_BG,
             border_color=BORDER, border_width=1, text_color=TEXT_PRIMARY,
             font=ctk.CTkFont(family=FONT, size=13),
-        ).grid(row=1, column=0, padx=10, pady=4, sticky="ew")
+        ).grid(row=3, column=0, padx=10, pady=(2, 4), sticky="ew")
 
         ctk.CTkLabel(
             form, text="Проекты:", anchor="w",
             font=ctk.CTkFont(family=FONT, size=12), text_color=TEXT_SECONDARY,
-        ).grid(row=2, column=0, padx=10, pady=(6, 0), sticky="w")
+        ).grid(row=4, column=0, padx=10, pady=(6, 0), sticky="w")
 
         self._person_projects_frame = ctk.CTkFrame(form, fg_color="transparent")
-        self._person_projects_frame.grid(row=3, column=0, padx=10, pady=4, sticky="ew")
+        self._person_projects_frame.grid(row=5, column=0, padx=10, pady=4, sticky="ew")
 
         btns = ctk.CTkFrame(form, fg_color="transparent")
-        btns.grid(row=4, column=0, padx=10, pady=(4, 10), sticky="w")
+        btns.grid(row=6, column=0, padx=10, pady=(4, 10), sticky="w")
 
         ctk.CTkButton(
             btns, text="Новый", width=90, height=32, corner_radius=16,
@@ -257,21 +265,29 @@ class DirectoryDialog(ctk.CTkToplevel):
         form.grid_columnconfigure(0, weight=1)
 
         self._project_name_var = ctk.StringVar()
+        ctk.CTkLabel(
+            form, text="Название проекта", anchor="w",
+            font=ctk.CTkFont(family=FONT, size=12), text_color=TEXT_SECONDARY,
+        ).grid(row=0, column=0, padx=10, pady=(10, 0), sticky="w")
         ctk.CTkEntry(
             form, textvariable=self._project_name_var, height=34,
             placeholder_text="Название проекта", fg_color=INPUT_BG,
             border_color=BORDER, border_width=1, text_color=TEXT_PRIMARY,
             font=ctk.CTkFont(family=FONT, size=13),
-        ).grid(row=0, column=0, padx=10, pady=(10, 4), sticky="ew")
+        ).grid(row=1, column=0, padx=10, pady=(2, 4), sticky="ew")
 
+        ctk.CTkLabel(
+            form, text="Описание", anchor="w",
+            font=ctk.CTkFont(family=FONT, size=12), text_color=TEXT_SECONDARY,
+        ).grid(row=2, column=0, padx=10, pady=(6, 0), sticky="w")
         self._project_desc_box = ctk.CTkTextbox(
             form, height=80, fg_color=INPUT_BG, border_color=BORDER, border_width=1,
             text_color=TEXT_PRIMARY, font=ctk.CTkFont(family=FONT, size=13),
         )
-        self._project_desc_box.grid(row=1, column=0, padx=10, pady=4, sticky="ew")
+        self._project_desc_box.grid(row=3, column=0, padx=10, pady=(2, 4), sticky="ew")
 
         btns = ctk.CTkFrame(form, fg_color="transparent")
-        btns.grid(row=2, column=0, padx=10, pady=(4, 10), sticky="w")
+        btns.grid(row=4, column=0, padx=10, pady=(4, 10), sticky="w")
         ctk.CTkButton(
             btns, text="Новый", width=90, height=32, corner_radius=16,
             fg_color="transparent", hover_color=BORDER, text_color=TEXT_SECONDARY,
