@@ -412,3 +412,15 @@ def test_extract_one_task_retries_without_json_mode_on_400():
     assert openrouter.complete.call_count == 2
     assert openrouter.complete.call_args_list[0].kwargs.get("json_mode") is True
     assert openrouter.complete.call_args_list[1].kwargs.get("json_mode") is False
+
+
+def test_extractor_build_prompt_injects_context():
+    msgs = build_prompt("transcript", [], [], "ru", context="CTXBLOCK")
+    user = msgs[1]["content"]
+    assert "CTXBLOCK" in user
+    assert user.index("CTXBLOCK") < user.index("Meeting transcript")
+
+
+def test_extractor_build_prompt_context_none_unchanged():
+    msgs = build_prompt("transcript", [], [], "ru")
+    assert msgs[1]["content"].startswith("Meeting transcript")
