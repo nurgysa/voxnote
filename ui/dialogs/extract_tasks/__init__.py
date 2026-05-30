@@ -803,6 +803,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._clear_form_vars()
         self._saved_label.configure(text="")
 
+        # Capture on the main thread — Tk vars are not thread-safe (see
+        # _selected_speaker_maps); the worker only receives plain dicts/lists.
         project = self._selected_context_project()
         people = self._selected_context_people()
         speaker_map, name_by_label = self._selected_speaker_maps()
@@ -826,6 +828,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self, container, model: str, backend_name: str, project, people: list,
         speaker_map: dict, name_by_label: dict,
     ) -> None:
+        """Worker thread: extract tasks (+ optional protocol generation).
+
+        All Tk-derived args (project / people / speaker_map / name_by_label)
+        are captured on the main thread by the caller before .start() — do
+        not read Tk vars here.
+        """
         from directory.context import render_meeting_context
         from tasks.backends import backend_from_name
         from tasks.extractor import ExtractionError, extract
