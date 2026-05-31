@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -10,9 +11,11 @@ from tasks.dedup import (
     FUZZY_LOW,
     SentTask,
     build_sent_registry,
+    disambiguate_via_llm,
     find_candidates,
     normalize_title,
 )
+from tasks.openrouter_client import OpenRouterError
 from tasks.persistence import PersistenceError
 from tasks.schema import Task, TaskStatus
 
@@ -171,3 +174,69 @@ def test_find_candidates_empty_new_title_returns_nothing():
     registry = [_reg_entry("anything", "r")]
     assert find_candidates(Task(title="!!!"), registry,
                            backend="linear", container_id="team-A") == []
+
+
+# ── disambiguate_via_llm ─────────────────────────────────────────────
+
+
+def _cands():
+    return [
+        _reg_entry("Подготовить отчёт по продажам", "r-1"),
+        _reg_entry("Обновить документацию API", "r-2"),
+    ]
+
+
+def test_disambiguate_returns_matched_candidate_by_id():
+    llm = MagicMock()
+    llm.complete.return_value = {"content": '{"match_id": "r-1"}'}
+    out = disambiguate_via_llm(
+        Task(title="Сделать отчёт продаж"), _cands(), llm, "anthropic/x")
+    assert out is not None and out.ref == "r-1"
+    # json_mode requested on first attempt
+    assert llm.complete.call_args.kwargs.get("json_mode") is True
+
+
+def test_disambiguate_returns_none_on_explicit_no_match():
+    llm = MagicMock()
+    llm.complete.return_value = {"content": '{"match_id": null}'}
+    assert disambiguate_via_llm(
+        Task(title="Нечто иное"), _cands(), llm, "m") is None
+
+
+def test_disambiguate_unknown_id_returns_none():
+    llm = MagicMock()
+    llm.complete.return_value = {"content": '{"match_id": "r-999"}'}  # not in cands
+    assert disambiguate_via_llm(
+        Task(title="x"), _cands(), llm, "m") is None
+
+
+def test_disambiguate_malformed_json_fails_safe_to_none():
+    llm = MagicMock()
+    llm.complete.return_value = {"content": "sorry, no JSON here"}
+    assert disambiguate_via_llm(
+        Task(title="x"), _cands(), llm, "m") is None
+
+
+def test_disambiguate_retries_without_json_mode_on_400():
+    llm = MagicMock()
+    llm.complete.side_effect = [
+        OpenRouterError("OpenRouter вернул 400: response_format unsupported"),
+        {"content": '{"match_id": "r-2"}'},
+    ]
+    out = disambiguate_via_llm(Task(title="docs"), _cands(), llm, "m")
+    assert out is not None and out.ref == "r-2"
+    assert llm.complete.call_count == 2
+    assert llm.complete.call_args_list[1].kwargs.get("json_mode") is False
+
+
+def test_disambiguate_propagates_non_400_errors():
+    llm = MagicMock()
+    llm.complete.side_effect = OpenRouterError("OpenRouter 429 rate-limit")
+    with pytest.raises(OpenRouterError, match="429"):
+        disambiguate_via_llm(Task(title="x"), _cands(), llm, "m")
+
+
+def test_disambiguate_empty_candidates_short_circuits_without_llm():
+    llm = MagicMock()
+    assert disambiguate_via_llm(Task(title="x"), [], llm, "m") is None
+    llm.complete.assert_not_called()

@@ -28,13 +28,21 @@ Public API:
 """
 from __future__ import annotations
 
+import json
+import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 
+# Reuse the extractor's codefence stripper so dedup parses LLM JSON exactly
+# like extraction does (intentional cross-module reuse of a shared helper).
+from tasks.extractor import _strip_codefence
+from tasks.openrouter_client import OpenRouterError
 from tasks.persistence import PersistenceError
 from tasks.schema import Task, TaskStatus
+
+logger = logging.getLogger(__name__)
 
 # Fuzzy-match score band (difflib.SequenceMatcher.ratio() on normalized
 # titles). >=HIGH: confident duplicate, no LLM. LOW..HIGH: borderline ->
@@ -159,3 +167,68 @@ def find_candidates(
             scored.append((sent, score))
     scored.sort(key=lambda pair: pair[1], reverse=True)
     return scored
+
+
+def disambiguate_via_llm(
+    new_task: Task,
+    candidates: list[SentTask],
+    openrouter_client,
+    model: str,
+) -> SentTask | None:
+    """Ask the LLM which candidate (if any) is the same task as ``new_task``.
+
+    Called only for the borderline fuzzy band, where string similarity is
+    ambiguous. Reuses the extractor's OpenRouter call shape: json_mode
+    first, retry once without it on a 400, ``_strip_codefence`` + json
+    parse. Returns the matched ``SentTask`` (by ``ref``), or ``None`` when
+    the LLM says "no match", names an unknown id, or returns unparseable
+    output. A malformed reply fails SAFE to ``None`` (-> create a new task)
+    rather than risk commenting on the wrong card. Network/HTTP errors
+    other than the 400-json_mode case propagate as ``OpenRouterError``.
+    """
+    if not candidates:
+        return None
+    by_ref = {c.ref: c for c in candidates}
+    cand_lines = "\n".join(f'- id={c.ref} | "{c.title}"' for c in candidates)
+    system = (
+        "Ты дедупликатор задач. Дано НОВОЕ название задачи и список РАНЕЕ "
+        "созданных задач с их id. Верни строго JSON "
+        '{"match_id": "<id одной совпадающей задачи>"} или '
+        '{"match_id": null}, если ни одна не совпадает по смыслу. Совпадение '
+        "= та же по сути работа, даже если формулировки разные. Без markdown, "
+        "без пояснений."
+    )
+    user = (
+        f'НОВАЯ задача: "{new_task.title}"\n\n'
+        f"РАНЕЕ созданные:\n{cand_lines}\n\n"
+        "Верни только JSON-объект."
+    )
+    messages = [
+        {"role": "system", "content": system},
+        {"role": "user", "content": user},
+    ]
+    try:
+        response = openrouter_client.complete(
+            model=model, messages=messages, json_mode=True,
+        )
+    except OpenRouterError as e:
+        if "вернул 400:" in str(e):
+            logger.info("dedup model %s rejected json_mode, retrying without", model)
+            response = openrouter_client.complete(
+                model=model, messages=messages, json_mode=False,
+            )
+        else:
+            raise
+
+    raw = response["content"]
+    try:
+        data = json.loads(_strip_codefence(raw))
+    except (json.JSONDecodeError, TypeError):
+        logger.warning(
+            "dedup LLM returned non-JSON, treating as no-match: %r", (raw or "")[:200],
+        )
+        return None
+    match_id = data.get("match_id") if isinstance(data, dict) else None
+    if not match_id:
+        return None
+    return by_ref.get(match_id)
