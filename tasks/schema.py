@@ -13,6 +13,10 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum, IntEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from tasks.dedup import SentTask
 
 
 class Priority(IntEnum):
@@ -37,6 +41,7 @@ class TaskStatus(Enum):
     SENT    = "sent"      # successfully created in Linear
     FAILED  = "failed"    # last attempt failed (see send_error)
     SKIPPED = "skipped"   # user unchecked the task
+    COMMENTED = "commented"  # dedup: commented on an existing card instead of creating
 
 
 @dataclass
@@ -69,6 +74,10 @@ class Task:
     # meeting's dedup pass can comment on this object instead of duplicating.
     backend_ref: str | None = None
     send_error: str | None = None
+    # Transient dedup state (PR-3) — set in-memory after extraction, NEVER
+    # persisted (excluded from to_dict/from_dict). Recomputed each extract.
+    dup_match: SentTask | None = None    # matched past task, or None
+    dup_action: str = "comment"          # "comment" | "create"
 
     def to_dict(self) -> dict:
         """Serialize to JSON-friendly dict. Enums become their .value (str)."""

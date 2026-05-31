@@ -175,3 +175,27 @@ def test_task_backend_ref_defaults_none_and_tolerates_old_dict():
     assert Task(local_id="x2", title="t").backend_ref is None
     revived = Task.from_dict({"local_id": "x3", "title": "t"})
     assert revived.backend_ref is None
+
+
+def test_commented_status_round_trips():
+    from tasks.schema import Task, TaskStatus
+    t = Task(local_id="c1", title="t", status=TaskStatus.COMMENTED)
+    assert t.to_dict()["status"] == "commented"
+    assert Task.from_dict(t.to_dict()).status is TaskStatus.COMMENTED
+
+
+def test_dup_match_and_action_are_transient_not_persisted():
+    from tasks.schema import Task
+    t = Task(local_id="d1", title="t")
+    assert t.dup_match is None
+    assert t.dup_action == "comment"
+    t.dup_match = object()        # stand-in for a SentTask
+    t.dup_action = "create"
+    d = t.to_dict()
+    assert "dup_match" not in d   # never serialized
+    assert "dup_action" not in d
+    # from_dict ignores any stray keys and applies defaults
+    revived = Task.from_dict({"local_id": "d2", "title": "t",
+                              "dup_action": "create"})
+    assert revived.dup_match is None
+    assert revived.dup_action == "comment"
