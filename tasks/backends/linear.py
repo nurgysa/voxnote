@@ -5,7 +5,7 @@ Linear's GraphQL types (int priority, native UUIDs).
 """
 from __future__ import annotations
 
-from tasks.backends.base import Container, CreatedIssue
+from tasks.backends.base import Container, CreatedIssue, ExistingItem
 from tasks.linear_client import LinearClient
 from tasks.schema import Priority, Task
 
@@ -69,6 +69,21 @@ class LinearBackend:
 
     def add_comment(self, ref: str, body: str) -> None:
         self._client.add_comment(ref, body)
+
+    def list_existing(self, container_id: str) -> list[ExistingItem]:
+        return [
+            ExistingItem(
+                title=i.get("title") or "",
+                ref=i.get("id") or "",
+                identifier=i.get("identifier") or "",
+                url=i.get("url") or "",
+                description=i.get("description") or "",
+            )
+            for i in self._client.list_issues(container_id)
+        ]
+
+    def comment_exists(self, ref: str, marker: str) -> bool:
+        return any(marker in body for body in self._client.list_comments(ref))
 
     def close(self) -> None:
         self._client.close()
