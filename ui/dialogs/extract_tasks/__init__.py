@@ -1022,26 +1022,26 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         import logging as _logging
 
         from tasks.dedup import (
-            build_sent_registry,
+            build_board_registry,
             resolve_thresholds,
             select_match,
         )
+        from tasks.linear_client import LinearError
         from tasks.openrouter_client import OpenRouterError
-        from tasks.persistence import PersistenceError, load_tasks
-        from utils import list_history_entries
+        from tasks.trello_client import TrelloError
 
         high, low = resolve_thresholds(self._config)
         try:
-            registry = build_sent_registry(
-                list_history_entries(), load_tasks,
-                exclude_folder=self._history_folder,
-            )
-        except (OSError, PersistenceError, ValueError, KeyError) as e:
-            # OSError / PersistenceError: history I/O failures. ValueError /
-            # KeyError: a legacy/corrupt tasks.json that trips Task.from_dict —
-            # one bad past file must not sink an otherwise-successful extract.
-            _logging.getLogger(__name__).warning("dedup registry build failed: %s", e)
+            registry = build_board_registry(backend, container_id)
+        except (OSError, LinearError, TrelloError, ValueError, KeyError) as e:
+            # Best-effort: a board-listing failure must never block showing
+            # the freshly-extracted tasks (badges simply won't appear).
+            _logging.getLogger(__name__).warning("dedup board registry failed: %s", e)
             return
+        _logging.getLogger(__name__).info(
+            "dedup registry: backend=%s container=%s size=%d",
+            backend_name, container_id, len(registry),
+        )
         for task in tasks:
             if self._cancel_event.is_set():
                 return
