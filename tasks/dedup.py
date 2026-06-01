@@ -21,9 +21,12 @@ Pipeline (PR-3 caller shape):
 Public API:
     SentTask                 — value type for a previously-sent task
     normalize_title(str)     — shared title normalization (exposed for tests)
+    dedup_signature(str)     — stable 12-hex signature of a normalized title
+    dedup_marker(str)        — hidden HTML-comment marker embedding the signature
     FUZZY_HIGH / FUZZY_LOW   — score thresholds (config-overridable in PR-3)
     resolve_thresholds(cfg)  — config thresholds with safe fallback
     build_sent_registry(...) — scan meeting history -> list[SentTask]
+    build_board_registry(...)— build dedup registry from the live backend board
     find_candidates(...)     — fuzzy match within backend+container scope
     disambiguate_via_llm(...)— LLM resolves the borderline band
 """
@@ -190,6 +193,34 @@ def build_sent_registry(
                 meeting_name=meeting_name,
                 meeting_date=meeting_date,
             ))
+    return registry
+
+
+def build_board_registry(backend, container_id: str) -> list[SentTask]:
+    """Build the dedup registry from the LIVE backend board.
+
+    Calls ``backend.list_existing(container_id)`` and maps each open item to
+    a ``SentTask`` scoped to this backend + container so the existing
+    ``find_candidates`` scope filter passes. Items missing a title or a
+    comment-addressable ``ref`` are skipped (cannot be matched/commented).
+    Backend errors propagate — the dialog driver swallows them best-effort.
+    """
+    name = getattr(backend, "name", "") or ""
+    registry: list[SentTask] = []
+    for item in backend.list_existing(container_id):
+        if not item.title or not item.ref:
+            continue
+        registry.append(SentTask(
+            title=item.title,
+            backend=name,
+            container_id=container_id,
+            ref=item.ref,
+            identifier=item.identifier,
+            url=item.url,
+            meeting_name="",
+            meeting_date="",
+            description=item.description,
+        ))
     return registry
 
 
