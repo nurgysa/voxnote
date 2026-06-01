@@ -277,7 +277,11 @@ def disambiguate_via_llm(
     if not candidates:
         return None
     by_ref = {c.ref: c for c in candidates}
-    cand_lines = "\n".join(f'- id={c.ref} | "{c.title}"' for c in candidates)
+    cand_lines = "\n".join(
+        f'- id={c.ref} | "{c.title}"'
+        + (f" | {c.description[:200]}" if c.description else "")
+        for c in candidates
+    )
     system = (
         "Ты дедупликатор задач. Дано НОВОЕ название задачи и список РАНЕЕ "
         "созданных задач с их id. Верни строго JSON "
@@ -287,8 +291,9 @@ def disambiguate_via_llm(
         "без пояснений."
     )
     user = (
-        f'НОВАЯ задача: "{new_task.title}"\n\n'
-        f"РАНЕЕ созданные:\n{cand_lines}\n\n"
+        f'НОВАЯ задача: "{new_task.title}"'
+        + (f"\nОписание: {new_task.description[:200]}" if new_task.description else "")
+        + f"\n\nРАНЕЕ созданные:\n{cand_lines}\n\n"
         "Верни только JSON-объект."
     )
     messages = [
