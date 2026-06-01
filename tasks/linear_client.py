@@ -11,7 +11,11 @@ client code from other projects.
 """
 from __future__ import annotations
 
+import logging
+
 import requests
+
+logger = logging.getLogger(__name__)
 
 _GRAPHQL_URL = "https://api.linear.app/graphql"
 _DEFAULT_TIMEOUT_S = 30.0
@@ -58,6 +62,23 @@ mutation CreateIssue(
 _CREATE_COMMENT_MUTATION = """
 mutation CommentCreate($issueId: String!, $body: String!) {
   commentCreate(input: {issueId: $issueId, body: $body}) { success }
+}
+"""
+
+_MAX_ISSUES = 2000
+
+_TEAM_ISSUES_QUERY = """
+query TeamIssues($teamId: String!, $after: String) {
+  team(id: $teamId) {
+    issues(
+      first: 250, after: $after,
+      filter: { state: { type: { nin: ["completed", "canceled"] } } },
+      orderBy: updatedAt
+    ) {
+      nodes { id identifier title url description }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
 }
 """
 
@@ -182,6 +203,36 @@ class LinearClient:
         members = (team.get("members") or {}).get("nodes", [])
         labels  = (team.get("labels")  or {}).get("nodes", [])
         return {"members": members, "labels": labels}
+
+    def list_issues(self, team_id: str) -> list[dict]:
+        """All ACTIVE issues in a team (not completed/canceled), for dedup.
+
+        Cursor-paginates 250/page until exhausted or the _MAX_ISSUES safety
+        cap (logs a WARNING and returns the partial set if hit — that's the
+        signal to adopt server-side search). Each issue: {id, identifier,
+        title, url, description}. Raises LinearError on HTTP/network failure.
+        """
+        issues: list[dict] = []
+        cursor: str | None = None
+        while True:
+            data = self._graphql(
+                _TEAM_ISSUES_QUERY, {"teamId": team_id, "after": cursor},
+            )
+            conn = (data.get("team") or {}).get("issues") or {}
+            issues.extend(conn.get("nodes") or [])
+            page = conn.get("pageInfo") or {}
+            if not page.get("hasNextPage"):
+                break
+            if len(issues) >= _MAX_ISSUES:
+                logger.warning(
+                    "Linear team %s has >%d active issues; dedup registry "
+                    "capped (consider server-side search retrieval)",
+                    team_id, _MAX_ISSUES,
+                )
+                break
+            cursor = page.get("endCursor")
+        logger.info("linear list_issues team=%s fetched=%d", team_id, len(issues))
+        return issues
 
     def create_issue(
         self,
