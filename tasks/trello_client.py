@@ -19,6 +19,8 @@ Public API:
         board_context(lid)    → resolve list→board, returns {members, labels}
         create_card(...)      → POST /cards
         add_comment(cid, txt) → POST /cards/{id}/actions/comments
+        list_open_cards(lid)  → open cards in a list (dedup registry)
+        list_card_comments(cid) → comment texts on a card (dedup idempotency)
         close()               → release HTTP session
 """
 from __future__ import annotations
@@ -284,3 +286,18 @@ class TrelloClient:
         self._request(
             "POST", f"/cards/{card_id}/actions/comments", params={"text": text},
         )
+
+    def list_card_comments(self, card_id: str) -> list[str]:
+        """Comment texts on a card (dedup idempotency check).
+
+        GET /cards/{id}/actions?filter=commentCard → each action's
+        data.text. Raises TrelloError on HTTP/network failure.
+        """
+        if not card_id:
+            raise TrelloError("card_id обязателен для list_card_comments")
+        actions = self._request(
+            "GET", f"/cards/{card_id}/actions", params={"filter": "commentCard"},
+        )
+        if not isinstance(actions, list):
+            return []
+        return [(a.get("data") or {}).get("text") or "" for a in actions]
