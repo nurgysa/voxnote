@@ -33,6 +33,7 @@ import re
 from collections.abc import Callable, Iterator
 from datetime import date
 
+from tasks.dedup import dedup_marker
 from tasks.glide_client import GlideError
 from tasks.linear_client import LinearError
 from tasks.schema import Task, TaskStatus
@@ -89,9 +90,17 @@ def send_tasks_iter(
 
         try:
             if use_comment:
-                backend.add_comment(
-                    task.dup_match.ref, _dup_comment_body(task, meeting_label),
-                )
+                _marker = dedup_marker(task.title)
+                if backend.comment_exists(task.dup_match.ref, _marker):
+                    logger.info(
+                        "dedup idempotent: marker already on %s, skipping comment",
+                        task.dup_match.ref,
+                    )
+                else:
+                    backend.add_comment(
+                        task.dup_match.ref,
+                        _dup_comment_body(task, meeting_label, _marker),
+                    )
             else:
                 issue = backend.create(container_id, task)
         except (LinearError, GlideError, TrelloError) as e:
@@ -172,7 +181,7 @@ def _short_error_code(msg: str) -> str:
     return ""
 
 
-def _dup_comment_body(task: Task, meeting_label: str) -> str:
+def _dup_comment_body(task: Task, meeting_label: str, marker: str = "") -> str:
     """RU comment posted to the existing card when a task recurs (dedup)."""
     where = f' "{meeting_label}"' if meeting_label else ""
     body = (
@@ -181,4 +190,6 @@ def _dup_comment_body(task: Task, meeting_label: str) -> str:
     )
     if task.description:
         body += f"\n\n{task.description}"
+    if marker:
+        body += f"\n\n{marker}"
     return body

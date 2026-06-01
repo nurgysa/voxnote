@@ -290,6 +290,9 @@ class _CommentBackend:
         self.created = []
         self.comments = []
 
+    def comment_exists(self, ref, marker):
+        return False  # no pre-existing marker — always allows posting
+
     def create(self, container_id, task):
         self.created.append(task)
         return CreatedIssue(identifier="NEW-1", url="http://x/NEW-1", ref="new-ref")
@@ -355,6 +358,9 @@ def test_send_falls_back_to_create_when_backend_lacks_comments():
 class _BoomCommentBackend:
     """add_comment raises — the row must end FAILED, not COMMENTED."""
     supports_comments = True
+
+    def comment_exists(self, ref, marker):
+        return False  # no pre-existing marker — allows posting (which then raises)
 
     def create(self, container_id, task):
         raise AssertionError("must not create when commenting")
