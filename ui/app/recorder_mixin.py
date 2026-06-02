@@ -13,6 +13,7 @@ import os
 from tkinter import messagebox
 
 from theme import GREEN, RED, TEXT_PRIMARY, TEXT_SECONDARY
+from utils import get_recordings_dir
 
 
 class RecorderMixin:
@@ -27,7 +28,7 @@ class RecorderMixin:
 
     def _start_recording(self):
         try:
-            self._recorder.start()
+            self._recorder.start(output_dir=get_recordings_dir())
         except Exception as e:
             messagebox.showerror("Ошибка записи", str(e))
             return
