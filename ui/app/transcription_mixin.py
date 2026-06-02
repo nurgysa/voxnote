@@ -29,13 +29,19 @@ worker's ``except`` arm routes to ``_on_cancelled`` via ``after``.
 """
 from __future__ import annotations
 
+import os
 import threading
 from tkinter import messagebox
 
 from logging_setup import crash_log_path, get_logger
 from theme import BLUE, BLUE_DIM, GREEN, RED, TEXT_SECONDARY
 from transcriber import Transcriber, TranscriptionCancelled
-from utils import create_history_entry, save_config, save_segments
+from utils import (
+    create_history_entry,
+    save_config,
+    save_segments,
+    should_delete_after_transcription,
+)
 
 from .constants import LANGUAGES, SPEAKER_COUNTS
 
@@ -266,6 +272,17 @@ class TranscriptionMixin:
             # is copied into the folder, but the speaker timestamps are not.
             if self._last_history_folder and self._transcriber is not None:
                 save_segments(self._last_history_folder, self._transcriber.last_segments)
+
+            # Opt-in: drop the source recording now that the transcript is
+            # saved and the audio is copied into the history folder. Guarded by
+            # path-containment so only files inside the recordings dir are
+            # touched. Best-effort — a delete failure must not break success.
+            if should_delete_after_transcription(self._config, self._audio_path):
+                try:
+                    os.unlink(self._audio_path)
+                    logger.info("deleted recording after transcription: %s", self._audio_path)
+                except OSError as e:
+                    logger.warning("could not delete recording %s: %s", self._audio_path, e)
 
         # Enable extract button only when we actually have a target folder.
         # Mirrors the conditional enable in _load_history_into_main.
