@@ -36,19 +36,20 @@ if (-not (Test-Path $exePath)) {
     throw "Build failed — $exePath not found. Check PyInstaller output above for missing modules."
 }
 
-Write-Host "[5/6] Seeding starter config.json into _internal/..." -ForegroundColor Cyan
-# utils.load_config() reads config.json from beside utils.py, which lives at
-# _internal/utils.py in the PyInstaller 6.x onedir layout. Copy
-# config.example.json there as config.json so first launch has a populated
-# config (default cloud_provider, empty API keys for the first-run banner
-# in Task 7 to detect).
+Write-Host "[5/6] Bundling config.example.json template into _internal/..." -ForegroundColor Cyan
+# The live config now lives OUTSIDE the bundle at ~/.audio-transcriber/config.json
+# (utils._default_config_path when frozen), so a build update never wipes the
+# user's keys/settings. We bundle config.example.json as a read-only TEMPLATE;
+# on first run utils._seed_default_config copies it to ~ (empty keys -> the
+# first-run banner fires). sys._MEIPASS resolves to _internal in the
+# PyInstaller 6.x onedir layout, so the template is found there at runtime.
 $internalDir = "$bundleDir/_internal"
 if (-not (Test-Path $internalDir)) {
     # Older PyInstaller layouts put modules at bundle root — detect + adapt.
     $internalDir = $bundleDir
-    Write-Host "  Note: _internal/ not found; seeding config.json at bundle root instead." -ForegroundColor Yellow
+    Write-Host "  Note: _internal/ not found; placing template at bundle root instead." -ForegroundColor Yellow
 }
-Copy-Item "config.example.json" "$internalDir/config.json" -Force
+Copy-Item "config.example.json" "$internalDir/config.example.json" -Force
 
 Write-Host "[6/6] Verifying bundle size..." -ForegroundColor Cyan
 $bundleSize = [math]::Round((Get-ChildItem -Recurse $bundleDir | Measure-Object -Sum Length).Sum / 1MB, 0)
