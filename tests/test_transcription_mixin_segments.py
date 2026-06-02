@@ -9,6 +9,11 @@ def test_run_loop_persists_segments_after_history_entry():
 
 def test_run_loop_imports_save_segments():
     src = Path("ui/app/transcription_mixin.py").read_text(encoding="utf-8")
-    import_lines = [ln for ln in src.splitlines() if ln.startswith("from utils import")]
-    assert import_lines, "expected a 'from utils import' line"
-    assert any("save_segments" in ln for ln in import_lines)
+    # Tolerant of both single-line and parenthesized multiline `from utils import`.
+    start = src.index("from utils import")
+    if src[start:].startswith("from utils import ("):
+        end = src.index(")", start)
+    else:
+        end = src.index("\n", start)
+    import_block = src[start:end]
+    assert "save_segments" in import_block
