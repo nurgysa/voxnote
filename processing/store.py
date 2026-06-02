@@ -12,8 +12,10 @@ import os
 from pathlib import Path
 
 from processing.model import QueueItem, StageStatus
+from utils import load_speakers
 
 FILENAME = "queue.json"
+_SKIP_DIRS = {"recordings"}
 
 
 def _default_queue_path() -> Path:
@@ -70,3 +72,65 @@ def is_meeting_folder(folder: str) -> bool:
         if os.path.isfile(os.path.join(folder, marker)):
             return True
     return False
+
+
+def _row_from_folder(folder: str) -> QueueItem:
+    stages = stage_status_from_folder(folder)
+    speakers = load_speakers(folder)
+    name = os.path.basename(os.path.normpath(folder))
+    return QueueItem(
+        id=folder,
+        audio_path="",
+        title=name,
+        created_at="",
+        meeting_folder=folder,
+        auto=False,
+        project_id=(speakers.get("project_id") or None),
+        transcript=stages["transcript"],
+        protocol=stages["protocol"],
+        tasks=stages["tasks"],
+    )
+
+
+def build_view(meetings_dir: str, active: list[QueueItem]) -> list[QueueItem]:
+    """Derive display rows from disk (two-level: root meetings + meetings inside
+    project folders), then overlay active items (authoritative for their folder).
+    `recordings/` and non-meeting/non-project entries are skipped. Project is read
+    from each meeting's speakers.json, never inferred from the folder name."""
+    rows: list[QueueItem] = []
+    try:
+        entries = sorted(os.listdir(meetings_dir))
+    except OSError:
+        entries = []
+    for entry in entries:
+        full = os.path.join(meetings_dir, entry)
+        if not os.path.isdir(full) or entry in _SKIP_DIRS:
+            continue
+        if is_meeting_folder(full):
+            rows.append(_row_from_folder(full))
+            continue
+        try:
+            subs = sorted(os.listdir(full))
+        except OSError:
+            subs = []
+        for sub in subs:
+            subfull = os.path.join(full, sub)
+            if os.path.isdir(subfull) and sub not in _SKIP_DIRS and is_meeting_folder(subfull):
+                rows.append(_row_from_folder(subfull))
+
+    index = {
+        os.path.normcase(os.path.abspath(r.meeting_folder)): i
+        for i, r in enumerate(rows)
+        if r.meeting_folder
+    }
+    for item in active:
+        key = (
+            os.path.normcase(os.path.abspath(item.meeting_folder))
+            if item.meeting_folder
+            else None
+        )
+        if key is not None and key in index:
+            rows[index[key]] = item
+        else:
+            rows.append(item)
+    return rows

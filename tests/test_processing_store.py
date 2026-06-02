@@ -1,5 +1,13 @@
+import json
+
 from processing.model import QueueItem, StageStatus
-from processing.store import is_meeting_folder, load_active, save_active, stage_status_from_folder
+from processing.store import (
+    build_view,
+    is_meeting_folder,
+    load_active,
+    save_active,
+    stage_status_from_folder,
+)
 
 
 def test_save_then_load_round_trips(tmp_path):
@@ -67,3 +75,55 @@ def test_is_meeting_folder(tmp_path):
     _touch(meeting, "transcript.md")
     assert is_meeting_folder(str(meeting)) is True
     assert is_meeting_folder(str(empty)) is False
+
+
+def _meeting(folder, *, transcript=True, project_id=None):
+    folder.mkdir(parents=True, exist_ok=True)
+    if transcript:
+        (folder / "transcript.md").write_text("hi", encoding="utf-8")
+    if project_id is not None:
+        (folder / "speakers.json").write_text(
+            json.dumps({"project_id": project_id, "participants": [], "speakers": {}}),
+            encoding="utf-8",
+        )
+
+
+def test_build_view_finds_root_and_project_meetings(tmp_path):
+    _meeting(tmp_path / "2026-06-01_root_meeting")
+    _meeting(tmp_path / "Kitng" / "2026-06-02_kitng", project_id="p1")
+    (tmp_path / "recordings").mkdir()
+    (tmp_path / "recordings" / "rec.wav").write_text("x", encoding="utf-8")
+
+    rows = build_view(str(tmp_path), active=[])
+    titles = {r.title for r in rows}
+    assert titles == {"2026-06-01_root_meeting", "2026-06-02_kitng"}
+    by_title = {r.title: r for r in rows}
+    assert by_title["2026-06-01_root_meeting"].project_id is None
+    assert by_title["2026-06-02_kitng"].project_id == "p1"
+    assert all(r.auto is False for r in rows)
+
+
+def test_build_view_skips_recordings_dir(tmp_path):
+    (tmp_path / "recordings").mkdir()
+    (tmp_path / "recordings" / "rec.wav").write_text("x", encoding="utf-8")
+    assert build_view(str(tmp_path), active=[]) == []
+
+
+def test_build_view_active_item_overrides_disk_row(tmp_path):
+    folder = tmp_path / "2026-06-02_live"
+    _meeting(folder)
+    active = [QueueItem(id="live", audio_path="/a.wav", title="2026-06-02_live",
+                        created_at="t", meeting_folder=str(folder), auto=True,
+                        protocol=StageStatus.RUNNING)]
+    rows = build_view(str(tmp_path), active=active)
+    assert len(rows) == 1
+    assert rows[0].auto is True
+    assert rows[0].protocol is StageStatus.RUNNING
+
+
+def test_build_view_active_without_folder_is_appended(tmp_path):
+    active = [QueueItem(id="new", audio_path="/a.wav", title="pending one",
+                        created_at="t", auto=True)]
+    rows = build_view(str(tmp_path), active=active)
+    assert len(rows) == 1
+    assert rows[0].id == "new"
