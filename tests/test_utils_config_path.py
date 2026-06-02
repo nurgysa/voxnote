@@ -25,3 +25,11 @@ def test_default_config_path_frozen(monkeypatch, tmp_path):
     assert utils._default_config_path() == os.path.join(
         str(tmp_path), ".audio-transcriber", "config.json",
     )
+
+
+def test_save_config_creates_missing_parent_dir(monkeypatch, tmp_path):
+    target = tmp_path / "made" / "up" / "config.json"   # parent dirs absent
+    monkeypatch.setattr(utils, "_CONFIG_PATH", str(target))
+    utils.save_config({"cloud_provider": "AssemblyAI"})
+    assert target.is_file()
+    assert json.loads(target.read_text(encoding="utf-8")) == {"cloud_provider": "AssemblyAI"}
