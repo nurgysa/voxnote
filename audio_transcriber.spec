@@ -21,10 +21,34 @@ Bundles:
 """
 from pathlib import Path
 
+from PyInstaller.utils.hooks import collect_all, copy_metadata
+
 block_cipher = None
 PROJECT_ROOT = Path(SPECPATH)
 VENDOR_FFMPEG = PROJECT_ROOT / "vendor" / "ffmpeg"
 APP_ICON = PROJECT_ROOT / "vendor" / "icons" / "audio_transcriber.ico"
+
+# markitdown document grounding (tasks/doc_context.py — attach reference docs →
+# Markdown → LLM context). Three things PyInstaller's static analysis can't see
+# on its own:
+#   1. markitdown resolves converters via importlib.metadata ENTRY POINTS →
+#      copy_metadata("markitdown") or discovery returns nothing in the .exe.
+#   2. Its core dep `magika` (file-type sniffing) rides on `onnxruntime` and
+#      ships a compiled ONNX MODEL — native .dll/.pyd + data files that only
+#      collect_all() pulls. (onnxruntime is local CPU ONNX — allowed under the
+#      amended invariant #2; never the GPU build.)
+#   3. `pandas` (xlsx extra) + the pdf/docx/pptx parsers below.
+_md_datas, _md_binaries, _md_hidden = [], [], []
+for _pkg in ("markitdown", "magika", "onnxruntime", "pandas"):
+    _d, _b, _h = collect_all(_pkg)
+    _md_datas += _d
+    _md_binaries += _b
+    _md_hidden += _h
+_md_datas += copy_metadata("markitdown")
+_md_hidden += [
+    "pdfminer", "pdfplumber", "PIL", "lxml", "pptx", "openpyxl",
+    "mammoth", "markdownify", "bs4", "charset_normalizer", "defusedxml",
+]
 
 
 a = Analysis(
@@ -39,7 +63,7 @@ a = Analysis(
         # target to resolve to.
         (str(VENDOR_FFMPEG / "ffmpeg.exe"), "vendor/ffmpeg"),
         (str(VENDOR_FFMPEG / "ffprobe.exe"), "vendor/ffmpeg"),
-    ],
+    ] + _md_binaries,
     datas=[
         # Starter config — first-run UX. build_exe.ps1 also copies this
         # as config.json into _internal/ after PyInstaller runs, so
@@ -51,7 +75,7 @@ a = Analysis(
         # picks it up for the title bar. The .exe Explorer/Taskbar icon is
         # set separately via EXE(icon=...) below.
         (str(APP_ICON), "vendor/icons"),
-    ],
+    ] + _md_datas,
     hiddenimports=[
         # Network / HTTP layer
         "requests",
@@ -71,7 +95,7 @@ a = Analysis(
         "googleapiclient.discovery_cache",
         "googleapiclient.discovery_cache.file_cache",
         "google_auth_oauthlib.flow",
-    ],
+    ] + _md_hidden,
     hookspath=[],
     runtime_hooks=[str(PROJECT_ROOT / "runtime_hook_imports.py")],
     excludes=[

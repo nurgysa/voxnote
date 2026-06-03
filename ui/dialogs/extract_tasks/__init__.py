@@ -107,6 +107,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         self._dir_load_error: str | None = None
         self._context_project_var = ctk.StringVar(value="— нет —")
         self._context_person_vars: dict[str, ctk.BooleanVar] = {}
+        # markitdown document grounding: paths of reference docs the user
+        # attaches; converted to Markdown in _run_extraction and folded into
+        # the same context= slot as the directory grounding. Captured on the
+        # main thread before the worker starts (dialog state isn't thread-safe).
+        self._context_doc_paths: list[str] = []
         self._speaker_row_vars: dict[str, ctk.StringVar] = {}
         self._speaker_friendly: dict[str, str] = {}
 
@@ -351,6 +356,23 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             row=2, column=1, padx=0, pady=(6, 0), sticky="ew",
         )
 
+        # markitdown document grounding (row=3): attach reference docs (agenda,
+        # brief, prior protocol) — converted to Markdown in _run_extraction and
+        # merged into the same context= slot as the directory grounding above.
+        label(ctx_frame, "Документы").grid(
+            row=3, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+        )
+        docs_row = ctk.CTkFrame(ctx_frame, fg_color="transparent")
+        docs_row.grid(row=3, column=1, padx=0, pady=(6, 0), sticky="ew")
+        tonal_button(
+            docs_row, "Приложить документы", self._on_attach_documents, width=180,
+        ).grid(row=0, column=0, padx=(0, 8))
+        self._docs_count_label = label(docs_row, "")
+        self._docs_count_label.grid(row=0, column=1, sticky="w")
+        tonal_button(
+            docs_row, "Очистить", self._clear_attached_documents, width=90,
+        ).grid(row=0, column=2, padx=(8, 0))
+
         self._rebuild_context_participants(set())
         self._build_speaker_rows()
         self._restore_context_selection()
@@ -485,6 +507,31 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         from directory.context import default_participants
         defaults = {p.id for p in default_participants(self._dir_store.people(), pid)}
         self._rebuild_context_participants(defaults)
+
+    def _on_attach_documents(self) -> None:
+        """Pick reference documents to ground the LLM (markitdown → context).
+
+        Multi-select; a new pick replaces the prior selection. Conversion runs
+        later in the worker thread (_run_extraction) — here we only store paths,
+        so the (potentially slow) markitdown parse never blocks the UI thread.
+        """
+        from tkinter import filedialog
+        paths = filedialog.askopenfilenames(
+            title="Приложить документы для контекста",
+            filetypes=[
+                ("Документы", "*.pdf *.docx *.pptx *.xlsx *.txt *.md *.html *.csv"),
+                ("Все файлы", "*.*"),
+            ],
+            parent=self,
+        )
+        if paths:  # empty tuple on cancel — keep the existing selection
+            self._context_doc_paths = list(paths)
+            self._docs_count_label.configure(text=f"{len(paths)} док.")
+
+    def _clear_attached_documents(self) -> None:
+        """Drop the attached reference documents."""
+        self._context_doc_paths = []
+        self._docs_count_label.configure(text="")
 
     def _selected_context_project(self):
         """Return the Project chosen in the dropdown, or None for «— нет —».
@@ -808,10 +855,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         project = self._selected_context_project()
         people = self._selected_context_people()
         speaker_map, name_by_label = self._selected_speaker_maps()
+        doc_paths = list(self._context_doc_paths)
         threading.Thread(
             target=self._run_extraction,
             args=(container, model, backend_name, project, people,
-                  speaker_map, name_by_label),
+                  speaker_map, name_by_label, doc_paths),
             daemon=True,
         ).start()
 
@@ -826,13 +874,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
     def _run_extraction(
         self, container, model: str, backend_name: str, project, people: list,
-        speaker_map: dict, name_by_label: dict,
+        speaker_map: dict, name_by_label: dict, doc_paths: list,
     ) -> None:
         """Worker thread: extract tasks (+ optional protocol generation).
 
-        All Tk-derived args (project / people / speaker_map / name_by_label)
-        are captured on the main thread by the caller before .start() — do
-        not read Tk vars here.
+        All Tk-derived args (project / people / speaker_map / name_by_label /
+        doc_paths) are captured on the main thread by the caller before
+        .start() — do not read Tk vars or dialog state here.
         """
         from directory.context import render_meeting_context
         from tasks.backends import backend_from_name
@@ -851,6 +899,20 @@ class ExtractTasksDialog(ctk.CTkToplevel):
 
         backend = openrouter = None
         try:
+            # markitdown grounding: convert attached docs (slow I/O) and MERGE
+            # into the directory context. Kept INSIDE the try so a converter or
+            # import failure surfaces as a normal extract error instead of
+            # crashing the worker thread mid-run.
+            if doc_paths and not self._cancel_event.is_set():
+                self.after(0, self._status_label.configure, {
+                    "text": "Чтение приложенных документов...",
+                    "text_color": TEXT_SECONDARY,
+                })
+                from tasks.doc_context import combine_context, convert_documents
+                meeting_context = combine_context(
+                    meeting_context, convert_documents(doc_paths),
+                )
+
             backend    = backend_from_name(backend_name, self._config)
             openrouter = OpenRouterClient(self._config["openrouter_api_key"])
             self._active_clients.extend([backend, openrouter])
