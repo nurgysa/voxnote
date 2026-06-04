@@ -100,6 +100,32 @@ def _scan_for_secrets(bundle: Path, secrets: list[str]) -> list[str]:
     return hits
 
 
+def _check_required_assets(bundle: Path) -> list[str]:
+    """Return violation messages for required bundle assets that are missing.
+
+    Guards two silent shipping regressions:
+      * the markitdown doc-grounding stack absent because the build venv is
+        stale — the advertised feature is then dead in the .exe (it shipped
+        that way once);
+      * the bundled ffmpeg GPLv3 license text absent — the vendored ffmpeg is
+        a gyan.dev GPLv3 build, so redistribution requires the license.
+    """
+    violations = []
+    internal = bundle / "_internal"
+    base = internal if internal.is_dir() else bundle  # older layouts: root
+    if not any(base.glob("markitdown*")):
+        violations.append(
+            "markitdown missing from bundle (no _internal/markitdown*) — build "
+            "venv is likely stale; pip install -r requirements.txt then rebuild"
+        )
+    if not (base / "vendor" / "ffmpeg" / "LICENSE.txt").exists():
+        violations.append(
+            "ffmpeg GPLv3 license missing (_internal/vendor/ffmpeg/LICENSE.txt) "
+            "— required to redistribute the gyan.dev GPLv3 ffmpeg build"
+        )
+    return violations
+
+
 def _pack(bundle: Path, out_zip: Path, top_name: str) -> int:
     """Zip the bundle with forward-slash arcnames under ``top_name/``. Returns file count."""
     if out_zip.exists():
@@ -186,11 +212,21 @@ def main() -> int:
         return 1
     print(f"  OK: 0 secrets found (checked {len(secrets)} key values)")
 
-    # 3. Pack with POSIX separators.
+    # 3. Required assets: doc-grounding stack + ffmpeg license must be present.
+    print("Checking required bundle assets...")
+    asset_violations = _check_required_assets(bundle)
+    if asset_violations:
+        for v in asset_violations:
+            print(f"  X {v}", file=sys.stderr)
+        print("ABORT: bundle is missing required assets.", file=sys.stderr)
+        return 1
+    print("  OK: markitdown + ffmpeg license present")
+
+    # 4. Pack with POSIX separators.
     print("Packing...")
     written = _pack(bundle, out_zip, top_name)
 
-    # 4. Verify the archive is extractable everywhere.
+    # 5. Verify the archive is extractable everywhere.
     names, problems = _verify(out_zip, top_name)
     if problems:
         for p in problems:

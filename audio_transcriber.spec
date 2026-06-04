@@ -75,6 +75,12 @@ a = Analysis(
         # picks it up for the title bar. The .exe Explorer/Taskbar icon is
         # set separately via EXE(icon=...) below.
         (str(APP_ICON), "vendor/icons"),
+        # FFmpeg GPLv3 license + written source offer. The vendored ffmpeg is
+        # a gyan.dev GPL build, so redistribution requires shipping its license
+        # next to the binaries (package_release.py enforces its presence).
+        (str(VENDOR_FFMPEG / "LICENSE.txt"), "vendor/ffmpeg"),
+        # Aggregate third-party license summary at the bundle root.
+        (str(PROJECT_ROOT / "THIRD_PARTY_LICENSES.md"), "."),
     ] + _md_datas,
     hiddenimports=[
         # Network / HTTP layer

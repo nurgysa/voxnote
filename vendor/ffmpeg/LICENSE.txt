@@ -1,0 +1,41 @@
+FFmpeg — license & corresponding-source notice
+===============================================
+
+This application bundles unmodified FFmpeg binaries (ffmpeg.exe and
+ffprobe.exe) for audio decoding/encoding/trimming. These binaries are NOT
+part of the Audio Transcriber source code; the application invokes them as
+a separate process (subprocess), never linking FFmpeg into its own code.
+
+Build bundled here
+------------------
+  ffmpeg version 8.1.1-essentials_build-www.gyan.dev
+  configuration includes: --enable-gpl --enable-version3 (among others)
+
+License
+-------
+  Because this FFmpeg build is configured with --enable-gpl --enable-version3,
+  it is distributed under the GNU General Public License, version 3 (GPL v3)
+  or (at your option) any later version.
+
+  The full, authoritative GPL v3 license text is available at:
+      https://www.gnu.org/licenses/gpl-3.0.txt
+
+Corresponding source (written offer)
+------------------------------------
+  The complete corresponding source code for this FFmpeg build is available
+  from:
+    * https://www.gyan.dev/ffmpeg/builds/   (the exact Windows build vendored here)
+    * https://git.ffmpeg.org/ffmpeg.git     (upstream FFmpeg source repository)
+    * https://github.com/FFmpeg/FFmpeg      (source mirror)
+
+Relationship to Audio Transcriber
+----------------------------------
+  Audio Transcriber itself is licensed under the MIT License (see the
+  project's top-level LICENSE file). FFmpeg is a separate work distributed
+  under its own GPL v3 terms. Bundling FFmpeg as an independent executable
+  and calling it via subprocess does not place the Audio Transcriber source
+  under the GPL (mere aggregation / use at arm's length).
+
+  Note: the gyan.dev distribution ships its own LICENSE/README files with
+  the full text. If you re-vendor FFmpeg, prefer copying gyan.dev's original
+  license files here verbatim alongside the binaries.
