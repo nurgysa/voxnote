@@ -4,6 +4,10 @@ import shutil
 import sys
 from datetime import datetime
 
+from logging_setup import get_logger
+
+logger = get_logger(__name__)
+
 SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a"}
 
 def _default_config_path() -> str:
@@ -150,20 +154,54 @@ def load_config() -> dict:
     # default "utf-8" codec then raises json.JSONDecodeError "Unexpected UTF-8
     # BOM" → silent app-start crash. Verified live on 2026-05-28 when a merge
     # helper script wrote config.json with BOM and the bundle failed to launch.
+    #
+    # Corruption recovery: a present-but-INVALID config.json (truncated, a
+    # crash mid-save, hand-edited) must NOT crash app start. Quarantine the bad
+    # file to config.json.corrupt-<ts> and return {} so the app launches and
+    # the first-run banner lets the user re-enter keys (the bad file is kept
+    # for manual recovery, not silently discarded).
     if not os.path.isfile(_CONFIG_PATH):
         _seed_default_config(_CONFIG_PATH)  # frozen first-run: populate from template
     if os.path.isfile(_CONFIG_PATH):
-        with open(_CONFIG_PATH, encoding="utf-8-sig") as f:
-            return json.load(f)
+        try:
+            with open(_CONFIG_PATH, encoding="utf-8-sig") as f:
+                return json.load(f)
+        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+            _quarantine_corrupt_config(e)
     return {}
+
+
+def _quarantine_corrupt_config(exc: Exception) -> None:
+    """Move a corrupt config.json aside so the next load starts fresh.
+
+    The timestamped backup preserves the bad file for manual recovery instead
+    of silently overwriting the user's keys.
+    """
+    backup = f"{_CONFIG_PATH}.corrupt-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    try:
+        os.replace(_CONFIG_PATH, backup)
+        logger.warning(
+            "config.json is not valid JSON (%s); quarantined to %s — starting "
+            "with an empty config", exc, backup,
+        )
+    except OSError as move_err:
+        logger.warning(
+            "config.json is corrupt (%s) and could not be quarantined (%s)",
+            exc, move_err,
+        )
 
 
 def save_config(config: dict) -> None:
     parent = os.path.dirname(_CONFIG_PATH)
     if parent:
         os.makedirs(parent, exist_ok=True)
-    with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
+    # Atomic write: a crash/power-loss mid-write must not leave a half-written
+    # config.json (the exact corruption load_config now has to recover from).
+    # Write to a sibling tmp, then os.replace (atomic on Windows + POSIX).
+    tmp = _CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, _CONFIG_PATH)
 
 
 # ── Meetings folder — user-configurable, with 3-level fallback ─────────
@@ -334,9 +372,19 @@ def save_segments(folder: str, segments: list[dict] | None) -> None:
     target = os.path.join(folder, "segments.json")
     tmp = os.path.join(folder, ".segments.json.tmp")
     encoded = json.dumps(segments, ensure_ascii=False, indent=2)
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(encoded)
-    os.replace(tmp, target)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(encoded)
+        os.replace(tmp, target)
+    except OSError as e:
+        # Best-effort cache: segments feed later speaker-attribution, but a
+        # write failure (disk full, permission) must NOT crash the post-
+        # transcription completion handler. Log, clean the tmp, move on.
+        logger.warning("could not save %s (%s)", target, e)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def save_speakers(
@@ -359,9 +407,17 @@ def save_speakers(
     target = os.path.join(folder, "speakers.json")
     tmp = os.path.join(folder, ".speakers.json.tmp")
     encoded = json.dumps(payload, ensure_ascii=False, indent=2)
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(encoded)
-    os.replace(tmp, target)
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(encoded)
+        os.replace(tmp, target)
+    except OSError as e:
+        # Best-effort context cache — see save_segments. Don't crash the caller.
+        logger.warning("could not save %s (%s)", target, e)
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def load_speakers(folder: str) -> dict:
