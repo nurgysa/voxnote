@@ -1,11 +1,11 @@
 """Abstract base class for cloud transcription providers.
 
-A provider takes an audio file and returns a list of segments in the same
-shape the local Whisper+pyannote pipeline produces — so downstream
-formatters (`format_timed`, `format_diarized`, `format_srt`, `format_vtt`)
-work unchanged regardless of where transcription happened.
+A provider takes an audio file and returns a list of segments in a
+provider-agnostic shape — so downstream formatters (`format_timed`,
+`format_diarized`, `format_srt`, `format_vtt`) work unchanged regardless
+of which provider transcribed.
 
-Adding a new provider (Deepgram, OpenAI Whisper, Replicate, …) means:
+Adding a new provider (Deepgram, Speechmatics, …) means:
 
 1. Subclass ``TranscriptionProvider``.
 2. Implement ``transcribe()``.
@@ -93,19 +93,6 @@ class TranscriptionProvider(ABC):
     #: Class attribute (not a method) to mirror ``supports_diarization``;
     #: static introspectable capability.
     supports_mixed: bool = False
-
-    #: Maximum upload size in bytes that the provider's HTTP gateway
-    #: will accept. ``None`` means no provider-side hard cap (the cloud
-    #: chunker still respects sane HTTP timeouts and any compression
-    #: heuristics). Used by :mod:`transcriber.cloud_chunker` to decide
-    #: whether to split a file into chunks vs upload it as-is. Set on
-    #: subclasses for providers with documented caps:
-    #:   GroqProvider           = 25 MB (Free tier)
-    #:   OpenAIWhisperProvider  = 25 MB (whisper-1 gateway)
-    #: Providers without a documented small cap (Deepgram, AssemblyAI,
-    #: Gladia, Speechmatics — all advertise multi-GB upload limits)
-    #: leave this as None.
-    max_upload_bytes: int | None = None
 
     @abstractmethod
     def transcribe(

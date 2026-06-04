@@ -62,18 +62,6 @@ class Transcriber:
         audio_path: str,
         language: str | None = None,
         diarize: bool = False,
-        # ── Deprecated local-only kwargs ──────────────────────────────
-        # Kept in the signature so existing UI call sites continue to type-
-        # check until Task 3 of the v5 plan removes them on both sides
-        # (ui/app/transcription_mixin.py:323-341 still passes them as of
-        # this commit). All four are silently ignored — the cloud-only
-        # path has no place to use them. Drop these parameters once Task 3
-        # lands and confirms no caller still passes them.
-        diarize_device: str = "auto",  # local pyannote knob — ignored
-        hf_token: str | None = None,    # pyannote model token — ignored
-        voice_lib_path: str | None = None,  # speaker enrollment — ignored
-        normalize_audio: bool = True,   # local ffmpeg pre-normalize — ignored
-        # ──────────────────────────────────────────────────────────────
         hotwords: str | None = None,
         num_speakers: int | None = None,
         min_speakers: int | None = None,
@@ -174,10 +162,10 @@ class Transcriber:
 
         The provider returns segments in the same shape the (deleted) local
         path produced, so the same TXT/SRT/VTT formatters downstream work
-        without modification. ``voice_lib_path`` is gone — matching enrolled
-        voices to clusters needed pyannote embeddings (deleted), so the
-        cloud-only build surfaces raw provider speaker labels (Speaker A/B/...)
-        renamed only by ``_build_speaker_map`` in the UI.
+        without modification. There is no voice-library matching — that
+        needed pyannote embeddings (deleted), so the cloud-only build
+        surfaces raw provider speaker labels (Speaker A/B/...) renamed only
+        by ``_build_speaker_map`` in the UI.
         """
         # Local imports keep providers/ off the import path of CLI tools
         # like ``audio_cutter`` that don't need it. Also avoids paying the
@@ -244,14 +232,13 @@ class Transcriber:
         on_progress,
         cancel_event,
     ):
-        """Run the cloud STT call (single upload or chunked) and return
-        the raw :class:`providers.base.TranscriptionResult`.
+        """Run the cloud STT call and return the raw
+        :class:`providers.base.TranscriptionResult`.
 
         Lifecycle: optional pre-denoise to a temp WAV (when
-        ``denoise_audio=True``), then dispatch to the chunker if the file
-        would exceed the provider's upload cap, else upload as-is via
-        ``provider.transcribe``. Denoised tempfile is cleaned in a finally
-        block on every exit path.
+        ``denoise_audio=True``), then upload via ``provider.transcribe``.
+        The denoised tempfile is cleaned in a finally block on every exit
+        path.
         """
         # Optional pre-denoise: when the user opted in via Settings, run
         # the source through RNNoise (via ensure_wav's denoise flag) BEFORE
@@ -271,22 +258,6 @@ class Transcriber:
             )
 
         try:
-            # Chunker dispatch: when the file would exceed the provider's
-            # documented upload cap, split it at silence boundaries and
-            # transcribe each chunk. needs_chunking() returns False when
-            # the provider declares no cap (Deepgram, AssemblyAI, etc.) so
-            # those paths skip the chunker entirely and upload as-is.
-            from transcriber.cloud_chunker import needs_chunking, transcribe_chunked
-
-            if needs_chunking(upload_path, provider):
-                return transcribe_chunked(
-                    audio_path=upload_path,
-                    provider=provider,
-                    options=opts,
-                    on_status=on_status,
-                    on_progress=on_progress,
-                    cancel_event=cancel_event,
-                )
             return provider.transcribe(
                 upload_path,
                 opts,

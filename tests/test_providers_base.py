@@ -31,43 +31,6 @@ def test_supports_mixed_default_false():
     assert p.supports_mixed is False
 
 
-def test_max_upload_bytes_default_none():
-    """ABC default for max_upload_bytes is None — meaning "no provider-side
-    hard cap, cloud_chunker should NOT split based on this provider's
-    upload limit". The chunker consults the attribute to decide whether
-    to split a file before upload.
-
-    Historically Groq and OpenAI Whisper overrode this to 25 MB; both
-    providers were deleted in the 2026-05-28 cloud-only rip-out because
-    they lacked native diarization. The surviving 4 providers all
-    advertise multi-GB uploads — see ``test_other_providers_have_no_cap``.
-    """
-    p = _StubProvider()
-    assert p.max_upload_bytes is None
-
-
-def test_other_providers_have_no_cap():
-    """Deepgram/Gladia/AssemblyAI/Speechmatics all advertise multi-GB
-    upload limits in their docs — None means the chunker won't split
-    based on provider cap (it may still split for other reasons in
-    a future PR, but that's not driven by these provider classes)."""
-    from providers.assemblyai import AssemblyAIProvider
-    from providers.deepgram import DeepgramProvider
-    from providers.gladia import GladiaProvider
-    from providers.speechmatics import SpeechmaticsProvider
-    for cls in (
-        AssemblyAIProvider,
-        DeepgramProvider,
-        GladiaProvider,
-        SpeechmaticsProvider,
-    ):
-        assert cls.max_upload_bytes is None, (
-            f"{cls.__name__} unexpectedly declares a max_upload_bytes; "
-            f"if their docs added a cap, update this test with the new "
-            f"value AND verify the chunker can produce chunks that fit."
-        )
-
-
 def test_transcription_options_accepts_mixed_language():
     """The dataclass shouldn't reject the new sentinel string —
     .language is typed `str | None` with no validator."""

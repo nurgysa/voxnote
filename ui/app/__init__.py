@@ -21,7 +21,6 @@ from utils import get_app_icon_path, load_config, save_config
 from .builder import build_ui
 from .constants import (
     APPEARANCE_MODES,
-    DEVICES,
     LANGUAGES,
     MODELS,
     SPEAKER_COUNTS,
@@ -48,7 +47,6 @@ init_logging()
 __all__ = [
     "APPEARANCE_MODES",
     "App",
-    "DEVICES",
     "LANGUAGES",
     "MODELS",
     "SPEAKER_COUNTS",

@@ -97,7 +97,7 @@ def get_ffmpeg_path() -> str | None:
       2. System PATH — shutil.which("ffmpeg")
       3. None — caller's responsibility to surface a user-friendly error
 
-    audio_io.py and transcriber/cloud_chunker.py use this in place of bare
+    audio_io.py uses this in place of bare
     `"ffmpeg"` subprocess args so the cloud-only PyInstaller bundle works
     without ffmpeg on the user's PATH (vendored binaries from gyan.dev
     release-essentials live under vendor/ffmpeg/ — see audio_transcriber.spec).

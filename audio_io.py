@@ -1,13 +1,11 @@
 """Torch-free audio I/O helpers shared across the transcription pipeline.
 
-This module is deliberately dependency-light: only os/subprocess/tempfile
-plus numpy and soundfile. It MUST NOT import torch, ctranslate2,
-faster_whisper, or pyannote — any of those would drag torch's CUDA DLLs
-into the import order, and that breaks ctranslate2 on Windows
-(see memory/windows_ctranslate2_order.md and transcriber.py line 8-10).
-
-Callers that need torch tensors (e.g. diarize_worker.py) convert numpy
-→ tensor at the call site, AFTER importing torch in their own module.
+Deliberately dependency-light: only os/subprocess/tempfile plus numpy and
+soundfile. It MUST NOT import torch, ctranslate2, faster_whisper, or
+pyannote — those are gone from the cloud-only build (invariant #2), and
+re-adding them would drag CUDA DLLs into the import order, which breaks
+ctranslate2 on Windows (see memory/windows_ctranslate2_order.md). Shared by
+transcriber/, recorder, and audio_cutter.
 """
 
 import os

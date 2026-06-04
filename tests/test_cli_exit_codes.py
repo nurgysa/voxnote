@@ -1,8 +1,8 @@
 """exit_code_for maps each pipeline exception class to its process exit code.
 
 These imports (providers / tasks / transcriber) are CI-safe: none pull
-sounddevice/PortAudio at import (transcriber loads cloud_chunker — the only
-soundfile user — lazily). Mirrors the existing test_providers_* imports.
+sounddevice/PortAudio at import (audio_io uses soundfile, not sounddevice;
+sounddevice lives in recorder). Mirrors the existing test_providers_* imports.
 """
 from __future__ import annotations
 

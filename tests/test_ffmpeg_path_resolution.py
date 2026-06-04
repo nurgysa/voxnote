@@ -2,8 +2,8 @@
 
 The helpers resolve to vendor/ffmpeg/<name>.exe inside the PyInstaller
 bundle (`sys.frozen` + `sys._MEIPASS`), else fall back to `shutil.which`.
-Used by audio_io.py (6 sites) + transcriber/cloud_chunker.py (2 sites)
-so the cloud-only bundle works without ffmpeg on the user's PATH.
+Used by audio_io.py so the cloud-only bundle works without ffmpeg on the
+user's PATH.
 """
 import sys
 

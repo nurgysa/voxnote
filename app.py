@@ -1,10 +1,11 @@
 """Entry point — installs the C-level fault handler, then hands off to ui.app.
 
-Faulthandler MUST be installed BEFORE any C-extension imports (ctranslate2,
-torch, pyannote). Without it, a SIGSEGV/SIGABRT during CUDA teardown leaves
-no diagnostic trail — the process just vanishes. Importing ui.app pulls in
-Transcriber → ctranslate2, so we install faulthandler first and only then
-import the rest.
+Faulthandler MUST be installed BEFORE any C-extension import. The cloud-only
+build's native deps (soundfile, sounddevice) can SIGSEGV during shutdown;
+without an early fault handler the process vanishes with no diagnostic trail.
+Importing ui.app pulls those C extensions in, so we enable faulthandler first
+and only then import the rest. (runtime_hook_imports.py is the frozen-app twin
+that also redirects None stdio under PyInstaller windowed mode.)
 """
 
 import faulthandler
