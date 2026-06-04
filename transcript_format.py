@@ -4,10 +4,10 @@ Pure functions over a list of segment dicts of the shape:
 
     {"start": float, "end": float, "text": str, "speaker"?: str}
 
-The optional ``speaker`` key carries either a pyannote auto-label
-(``SPEAKER_XX`` — gets renamed to ``Спикер N``) or a real enrolled name
-from the voice library (kept verbatim). Functions degrade gracefully
-when the key is absent — the same module handles both diarized and
+The optional ``speaker`` key carries the cloud provider's speaker label
+(``SPEAKER_XX`` — gets renamed to ``Спикер N``) or a name already
+substituted in the UI (kept verbatim). Functions degrade gracefully when
+the key is absent — the same module handles both diarized and
 plain-transcription paths.
 
 Kept torch-free and side-effect-free so it can be unit-tested without
@@ -46,10 +46,11 @@ def _fmt_time_vtt(seconds: float) -> str:
 
 
 def _build_speaker_map(segments: list[dict]) -> dict[str, str]:
-    """Map raw pyannote labels to friendly names, preserving enrolled names.
+    """Map raw provider speaker labels to friendly names, preserving any
+    already-substituted names.
 
     SPEAKER_XX → Спикер 1/2/... in first-seen order. Labels that don't
-    match the SPEAKER_ prefix (e.g. real names from the voice library)
+    match the SPEAKER_ prefix (e.g. names already filled in by the user)
     are kept verbatim.
     """
     mapping: dict[str, str] = {}
