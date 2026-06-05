@@ -40,3 +40,17 @@ APPEARANCE_MODES: dict[str, str] = {
     "Светлая": "light",
     "Тёмная": "dark",
 }
+
+
+def compute_first_run(cloud_api_keys: dict, openrouter_key: str) -> bool:
+    """Whether to show the first-run banner.
+
+    True when EITHER mandatory key is missing — the cloud STT key (AssemblyAI,
+    the default provider) OR the OpenRouter key (needed for task/protocol
+    extraction). Checking only one leaves a client who set just one key at a
+    silent dead-end later (e.g. AssemblyAI set, OpenRouter empty → the banner
+    clears but «Извлечь задачи» then fails).
+    """
+    assemblyai = (cloud_api_keys or {}).get("AssemblyAI", "").strip()
+    openrouter = (openrouter_key or "").strip()
+    return not assemblyai or not openrouter

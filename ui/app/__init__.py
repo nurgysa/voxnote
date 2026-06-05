@@ -24,6 +24,7 @@ from .constants import (
     LANGUAGES,
     MODELS,
     SPEAKER_COUNTS,
+    compute_first_run,
 )
 from .dialogs_mixin import DialogsMixin
 from .main_entry import main as main
@@ -205,11 +206,13 @@ class App(
 
         # First-run detection — builder.py uses this to conditionally render
         # the yellow banner at row=0 prompting the user to enter API keys.
-        # Triggers when the AssemblyAI key is empty after config load.
-        # AssemblyAI is the MVP default + only provider that delivers a
-        # diarized transcript out of the box; without its key the app
-        # can't do its primary job.
-        self._first_run = not self._cloud_api_keys.get("AssemblyAI", "").strip()
+        # Triggers when EITHER mandatory key is missing: AssemblyAI (the MVP
+        # default STT provider) OR OpenRouter (needed for task/protocol
+        # extraction). Checking only AssemblyAI left a client who set it but
+        # not OpenRouter at a silent dead-end on «Извлечь задачи».
+        self._first_run = compute_first_run(
+            self._cloud_api_keys, self._config.get("openrouter_api_key", ""),
+        )
 
         build_ui(self)
 
