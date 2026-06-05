@@ -48,17 +48,16 @@ from .constants import (
     _CONTAINER_ACCUSATIVE_BY_BACKEND,
     _CONTAINER_CACHE_TTL,
     _CONTAINER_LABEL_BY_BACKEND,
-    _COST_PER_1M_INPUT_TOKENS_USD,
     _CURATED_MODELS,
     _DISPLAY_TO_NAME,
     _EMPTY_CONTAINER_LABEL_BY_BACKEND,
-    _MODEL_PRICING_USD_PER_M,
     _NAME_TO_DISPLAY,
     _RECENT_MODELS_KEY,
     _RECENT_MODELS_LIMIT,
     _REQUIRED_KEYS_BY_BACKEND,
     _TEAMS_CACHE_KEY,
 )
+from .pricing import estimate_cost_hint, format_real_cost
 from .task_row import _TaskRow
 
 # CTkComboBox sentinel for the «Кто говорит» speaker rows — the dropdown's
@@ -665,27 +664,17 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 self._speaker_row_vars[raw].set(person.full_name)
 
     def _update_cost_hint(self) -> None:
-        """Initial status: cost-of-extract heuristic if a transcript is
-        present, otherwise a welcome that points to the manual paths.
+        """Initial status line — cost-of-extract heuristic or adaptive welcome.
 
-        Phase 6.5 D — adaptive welcome. When the dialog is opened with
-        no transcript (e.g., user wants to add tasks by hand or via
-        Söyle dictation), the old «Стоимость ≈ $0.00 (≈ 1 токенов)»
-        line was both wrong and confusing. Now we show a one-liner
-        that mirrors the empty-state placeholder in the left pane.
+        Phase 6.5 D — adaptive welcome. When the dialog is opened with no
+        transcript (e.g., user wants to add tasks by hand or via Söyle
+        dictation), the old «Стоимость ≈ $0.00 (≈ 1 токенов)» line was both
+        wrong and confusing. The pure heuristic now lives in
+        pricing.estimate_cost_hint; this wrapper only pushes its result onto
+        the status label.
         """
-        chars = len(self._transcript or "")
-        if chars < 50:
-            # No transcript → manual-only flow; skip the cost line.
-            self._status_label.configure(
-                text="Готов к работе. Извлеките из транскрипта или добавьте задачу вручную.",
-                text_color=TEXT_SECONDARY,
-            )
-            return
-        approx_tokens = max(chars // 4, 1)
-        cost = approx_tokens / 1_000_000 * _COST_PER_1M_INPUT_TOKENS_USD * 1.3
         self._status_label.configure(
-            text=f"Стоимость ≈ ${cost:.2f} (≈ {approx_tokens:,} токенов)",
+            text=estimate_cost_hint(len(self._transcript or "")),
             text_color=TEXT_SECONDARY,
         )
 
@@ -1154,45 +1143,12 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         )
 
     def _format_real_cost(self, usage: dict, model: str) -> str:
-        """Build a "X tokens · $0.0123" string from response.usage.
+        """Thin delegate → pricing.format_real_cost.
 
-        Returns "" if usage is empty (defensive — all callers should
-        already guard, but defensive helps composability).
-
-        Cost source priority:
-          1. usage["cost"] if OpenRouter included it (authoritative).
-          2. computed: prompt × in_rate + completion × out_rate, where
-             rates come from _MODEL_PRICING_USD_PER_M for the actual
-             model that served the request.
-          3. token count only — for unknown models we still show
-             throughput so the user knows extraction did something.
-
-        Format examples:
-            "1,234↑ + 567↓ т.  ·  $0.0234"      (full, known model)
-            "1,234↑ + 567↓ т."                    (unknown model)
+        Kept as a method for call-site stability; the real branch logic
+        (usage["cost"] vs the per-model rate table) now lives in pricing.py.
         """
-        if not usage:
-            return ""
-        prompt = int(usage.get("prompt_tokens") or 0)
-        completion = int(usage.get("completion_tokens") or 0)
-        if prompt == 0 and completion == 0:
-            return ""
-
-        cost: float | None = None
-        if "cost" in usage and isinstance(usage.get("cost"), (int, float)):
-            cost = float(usage["cost"])
-        else:
-            rates = _MODEL_PRICING_USD_PER_M.get(model)
-            if rates is not None:
-                in_rate, out_rate = rates
-                cost = (prompt * in_rate + completion * out_rate) / 1_000_000.0
-
-        # Compose. Russian commas via .format spec; locale-agnostic comma
-        # (1,234) is intentional — easier to read than 1234.
-        toks_part = f"{prompt:,}↑ + {completion:,}↓ т."
-        if cost is None:
-            return toks_part
-        return f"{toks_part}  ·  ${cost:.4f}"
+        return format_real_cost(usage, model)
 
     def _on_extract_error(self, msg: str, raw_response: str | None) -> None:
         from tasks.errors import humanize
