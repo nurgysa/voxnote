@@ -44,3 +44,46 @@ def compute_banner_state(
             )
 
     return (None, "")
+
+
+# ── per-backend validation success formatters (dict → status string) ──
+# Each takes the dict returned by the backend client's validate_key() and
+# renders the green "✓ ..." line shown next to the API-key row. Pure
+# branch logic (fallback chains, Russian noun-count, is-not-None vs
+# truthiness) — the dialog passes these as the api_key_row format_success
+# callback.
+
+
+def format_openrouter_success(info: dict) -> str:
+    """OpenRouter: account balance if the API returned one, else the plan
+    label (or 'unlimited'). Uses ``is not None`` so a $0.00 balance still
+    renders rather than falling through to the label."""
+    balance = info.get("balance_remaining")
+    if balance is not None:
+        return f"✓ Активен (баланс: ${balance:.2f})"
+    return f"✓ Активен ({info.get('label') or 'unlimited'})"
+
+
+def format_linear_success(info: dict) -> str:
+    """Linear: viewer name, email fallback, else '(unknown)'."""
+    name = info.get("name") or info.get("email") or "(unknown)"
+    return f"✓ Подключено: {name}"
+
+
+def format_glide_success(info: dict) -> str:
+    """Glide: board count + a sample of board names.
+
+    Russian noun-count is awkward; "{n} досок" is correct enough for all
+    sizes. board_count / sample_names are guaranteed by validate_key().
+    """
+    count = info["board_count"]
+    sample = info["sample_names"]
+    base = f"✓ Подключено: {count} досок"
+    if sample:
+        base += f" ({', '.join(sample)})"
+    return base
+
+
+def format_trello_success(info: dict) -> str:
+    """Trello: member name, else '(unknown)'."""
+    return f"✓ Подключено: {info.get('name', '(unknown)')}"
