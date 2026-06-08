@@ -176,6 +176,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         # Tab 3 «Резервная копия» — independent housekeeping
         self._build_gdrive_section(scroll_backup)
+        self._build_diagnostics_section(scroll_backup)
 
         # Reactive banner: subscribe to the three vars whose values
         # determine the banner state. Tokens kept on self so destroy()
@@ -971,3 +972,72 @@ class SettingsDialog(ctk.CTkToplevel):
         # (network, quota, disk full) where buttons should re-enable
         # to allow retry.
         self._refresh_gdrive_button_state()
+
+    # ── Diagnostics: "Сохранить лог для отправки" (WS-3 / D4) ──────────
+
+    def _build_diagnostics_section(self, parent) -> None:
+        """Diagnostics export: bundle logs/ + a redacted config.json into a
+        zip the user can send to support. No telemetry backend (D4) — the
+        user picks where to save and ships it themselves."""
+        section = self._section_card(parent, "Диагностика", row=1)
+        label(section, "Логи").grid(
+            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
+        )
+        self._send_log_btn = tonal_button(
+            section, text="Сохранить лог для отправки",
+            command=self._handle_send_log, width=240,
+        )
+        self._send_log_btn.grid(row=0, column=1, padx=4, pady=6, sticky="w")
+        self._send_log_status = label(section, "", anchor="w")
+        self._send_log_status.grid(
+            row=0, column=2, padx=(8, 4), pady=6, sticky="ew",
+        )
+
+    def _handle_send_log(self) -> None:
+        """Pick a destination, then build the logs+config zip in a worker.
+
+        filedialog must run on the Tk main thread; the zip is built off-thread
+        so a large rotated-log set doesn't freeze the dialog."""
+        from datetime import datetime
+
+        default_name = f"audio-transcriber-log-{datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
+        dest = filedialog.asksaveasfilename(
+            parent=self,
+            title="Сохранить лог-архив",
+            defaultextension=".zip",
+            initialfile=default_name,
+            filetypes=[("ZIP архив", "*.zip")],
+        )
+        if not dest:
+            return   # user cancelled the save dialog
+
+        self._send_log_btn.configure(state="disabled")
+        self._send_log_status.configure(
+            text="Собираю архив...", text_color=TEXT_SECONDARY,
+        )
+
+        def worker() -> None:
+            try:
+                from support_bundle import build_log_bundle
+                summary = build_log_bundle(self._parent._config, dest)
+                self.after(0, lambda: self._on_send_log_success(summary))
+            except Exception as e:   # disk full, permission, bad path — all surface here
+                _logger.exception("Log bundle failed: %s", e)
+                error_msg = str(e)
+                self.after(0, lambda: self._on_send_log_failure(error_msg))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_send_log_success(self, summary: dict) -> None:
+        """Worker → main thread: show the saved path + re-enable the button."""
+        self._send_log_status.configure(
+            text=f"✓ Сохранено: {summary['dest']}", text_color=GREEN,
+        )
+        self._send_log_btn.configure(state="normal")
+
+    def _on_send_log_failure(self, error_msg: str) -> None:
+        """Worker → main thread: surface the error (truncated) + re-enable."""
+        self._send_log_status.configure(
+            text=f"✗ {error_msg[:100]}", text_color=RED,
+        )
+        self._send_log_btn.configure(state="normal")

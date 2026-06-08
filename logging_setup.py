@@ -69,6 +69,12 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+def get_log_dir() -> str:
+    """Absolute path to the ``logs/`` directory (app.log + rotated backups +
+    crash dumps). Used by the "Сохранить лог" diagnostic bundle."""
+    return _LOG_DIR
+
+
 def log_callback_exception(exc_type, exc_value, exc_tb) -> None:
     """Replacement for ``tkinter.Tk.report_callback_exception``.
 
