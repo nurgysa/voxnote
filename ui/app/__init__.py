@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
-from logging_setup import init_logging
+from logging_setup import init_logging, log_callback_exception
 from recorder import Recorder
 from theme import BG
 from utils import get_app_icon_path, load_config, save_config
@@ -102,6 +102,12 @@ class App(
 ):
     def __init__(self):
         super().__init__()
+
+        # Route uncaught Tk-callback exceptions to the logger instead of Tk's
+        # default stderr print (invisible in a windowed PyInstaller build), so
+        # a GUI crash lands in logs/app.log instead of vanishing silently. The
+        # "Отправить лог" button (D4) then lets the user ship that log. WS-3.
+        self.report_callback_exception = log_callback_exception
 
         self.title("Audio Transcriber")
         # Geometry will be overwritten by the fullscreen setup below — kept

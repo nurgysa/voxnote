@@ -69,6 +69,24 @@ def get_logger(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 
+def log_callback_exception(exc_type, exc_value, exc_tb) -> None:
+    """Replacement for ``tkinter.Tk.report_callback_exception``.
+
+    Tk's default prints the traceback to ``sys.stderr`` — invisible in a
+    windowed PyInstaller build (no console). Routing it through the logger
+    lands the crash in ``logs/app.log`` (and the future "Отправить лог"
+    bundle), so an uncaught exception in a GUI event callback is recoverable
+    instead of silently swallowed. The console handler still surfaces it on
+    stderr for a developer running ``python app.py`` from a terminal.
+
+    Install via ``root.report_callback_exception = log_callback_exception``.
+    """
+    logging.getLogger("tk.callback").error(
+        "Unhandled exception in a Tk callback",
+        exc_info=(exc_type, exc_value, exc_tb),
+    )
+
+
 def crash_log_path(prefix: str) -> str:
     """Return a unique path under ``logs/`` for a structured crash dump.
 
