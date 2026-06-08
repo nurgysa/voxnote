@@ -38,7 +38,13 @@ from theme import (
     TEXT_SECONDARY,
 )
 from ui.app.constants import LANGUAGES
-from ui.dialogs.settings_helpers import compute_banner_state
+from ui.dialogs.settings_helpers import (
+    compute_banner_state,
+    format_glide_success,
+    format_linear_success,
+    format_openrouter_success,
+    format_trello_success,
+)
 from ui.widgets import (
     api_key_row,
     card,
@@ -601,12 +607,6 @@ class SettingsDialog(ctk.CTkToplevel):
             finally:
                 client.close()
 
-        def _format_success(info: dict) -> str:
-            balance = info.get("balance_remaining")
-            if balance is not None:
-                return f"✓ Активен (баланс: ${balance:.2f})"
-            return f"✓ Активен ({info.get('label') or 'unlimited'})"
-
         refs = api_key_row(
             section,
             label_text="API ключ",
@@ -614,7 +614,7 @@ class SettingsDialog(ctk.CTkToplevel):
             placeholder="sk-or-...",
             on_validate=_on_validate,
             on_key_persisted=_persist,
-            format_success=_format_success,
+            format_success=format_openrouter_success,
             row=0,
         )
         self._openrouter_status = refs["status"]
@@ -650,10 +650,6 @@ class SettingsDialog(ctk.CTkToplevel):
             finally:
                 client.close()
 
-        def _format_success(info: dict) -> str:
-            name = info.get("name") or info.get("email") or "(unknown)"
-            return f"✓ Подключено: {name}"
-
         refs = api_key_row(
             section,
             label_text="API ключ",
@@ -664,7 +660,7 @@ class SettingsDialog(ctk.CTkToplevel):
             enabled_var=self._parent._linear_enabled_var,
             enabled_label="Использовать Linear",
             on_enabled_changed=self._parent._on_linear_enabled_changed,
-            format_success=_format_success,
+            format_success=format_linear_success,
             row=0,
         )
         self._linear_status = refs["status"]
@@ -689,16 +685,6 @@ class SettingsDialog(ctk.CTkToplevel):
             finally:
                 client.close()
 
-        def _format_success(info: dict) -> str:
-            count = info["board_count"]
-            sample = info["sample_names"]
-            # "5 досок" / "1 доска" / "0 досок" — Russian noun-count is
-            # awkward; use a simple form that's correct for all sizes.
-            base = f"✓ Подключено: {count} досок"
-            if sample:
-                base += f" ({', '.join(sample)})"
-            return base
-
         refs = api_key_row(
             section,
             label_text="API ключ",
@@ -709,7 +695,7 @@ class SettingsDialog(ctk.CTkToplevel):
             enabled_var=self._parent._glide_enabled_var,
             enabled_label="Использовать Glide",
             on_enabled_changed=self._parent._on_glide_enabled_changed,
-            format_success=_format_success,
+            format_success=format_glide_success,
             row=0,
         )
         self._glide_status = refs["status"]
@@ -750,9 +736,6 @@ class SettingsDialog(ctk.CTkToplevel):
             finally:
                 client.close()
 
-        def _format_success(info: dict) -> str:
-            return f"✓ Подключено: {info.get('name', '(unknown)')}"
-
         # Key row — owns the enable-checkbox; no Validate button.
         api_key_row(
             key_frame,
@@ -773,7 +756,7 @@ class SettingsDialog(ctk.CTkToplevel):
             placeholder="(токен Trello)",
             on_validate=_on_validate,
             on_key_persisted=_persist,
-            format_success=_format_success,
+            format_success=format_trello_success,
             row=0,
         )
         self._trello_status = refs["status"]

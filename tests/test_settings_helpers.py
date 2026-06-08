@@ -8,7 +8,13 @@ isolation from the real LANGUAGES / PROVIDERS tables.
 """
 from __future__ import annotations
 
-from ui.dialogs.settings_helpers import compute_banner_state
+from ui.dialogs.settings_helpers import (
+    compute_banner_state,
+    format_glide_success,
+    format_linear_success,
+    format_openrouter_success,
+    format_trello_success,
+)
 
 
 class _FakeProvider:
@@ -64,3 +70,52 @@ def test_unknown_provider_hides_banner():
     # provider_cls is None → no warning (the `is not None` guard).
     action, _ = compute_banner_state("sk-xxx", _MIXED, "Ghost", _LANGUAGES, _PROVIDERS)
     assert action is None
+
+
+# ── per-backend validation success formatters ──────────────────────
+
+def test_format_openrouter_success_with_balance():
+    assert format_openrouter_success({"balance_remaining": 12.5}) == "✓ Активен (баланс: $12.50)"
+
+
+def test_format_openrouter_success_zero_balance_still_shows_balance():
+    # `is not None` (not truthiness) — a $0.00 balance must still render.
+    assert format_openrouter_success({"balance_remaining": 0}) == "✓ Активен (баланс: $0.00)"
+
+
+def test_format_openrouter_success_without_balance_uses_label():
+    assert format_openrouter_success({"label": "Tier-1"}) == "✓ Активен (Tier-1)"
+
+
+def test_format_openrouter_success_without_balance_or_label_is_unlimited():
+    assert format_openrouter_success({}) == "✓ Активен (unlimited)"
+
+
+def test_format_linear_success_prefers_name():
+    assert format_linear_success({"name": "Nur", "email": "n@x.io"}) == "✓ Подключено: Nur"
+
+
+def test_format_linear_success_falls_back_to_email():
+    assert format_linear_success({"email": "n@x.io"}) == "✓ Подключено: n@x.io"
+
+
+def test_format_linear_success_unknown_when_empty():
+    assert format_linear_success({}) == "✓ Подключено: (unknown)"
+
+
+def test_format_glide_success_with_samples():
+    info = {"board_count": 3, "sample_names": ["A", "B"]}
+    assert format_glide_success(info) == "✓ Подключено: 3 досок (A, B)"
+
+
+def test_format_glide_success_without_samples():
+    info = {"board_count": 0, "sample_names": []}
+    assert format_glide_success(info) == "✓ Подключено: 0 досок"
+
+
+def test_format_trello_success_with_name():
+    assert format_trello_success({"name": "My Board"}) == "✓ Подключено: My Board"
+
+
+def test_format_trello_success_unknown_when_missing():
+    assert format_trello_success({}) == "✓ Подключено: (unknown)"
