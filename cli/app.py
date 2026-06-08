@@ -15,6 +15,7 @@ import json
 import sys
 
 from cli import config, core
+from cli._paths import ensure_outside_secret_store
 
 # ── Exit codes (contract with the calling agent) ──────────────────────
 EXIT_OK = 0
@@ -123,6 +124,7 @@ def _resolve_language(value: str | None) -> str | None:
 def _read_transcript(args) -> str:
     if getattr(args, "stdin", False):
         return sys.stdin.read()
+    ensure_outside_secret_store(args.transcript)
     with open(args.transcript, encoding="utf-8") as f:
         return f.read()
 
@@ -133,6 +135,7 @@ def _read_tasks(args):
     if getattr(args, "stdin", False):
         raw = sys.stdin.read()
     else:
+        ensure_outside_secret_store(args.tasks)
         with open(args.tasks, encoding="utf-8") as f:
             raw = f.read()
     data = json.loads(raw)

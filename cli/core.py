@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from cli._paths import ensure_outside_secret_store
+
 # Mirror the GUI's task-extraction default model (extract_tasks autofill path).
 DEFAULT_MODEL = "google/gemini-3.5-flash"
 
@@ -71,9 +73,14 @@ def run_transcribe(
 
     ``language`` is already a code (``ru`` / ``kk`` / ``en`` / ``mixed``) or
     None — the caller maps ``auto`` → None. Raises ``ValueError`` (missing
-    provider/key), ``providers.ProviderError`` / ``RuntimeError`` (provider
+    provider/key, or an ``audio_path`` inside the secret store — see
+    ``cli._paths``), ``providers.ProviderError`` / ``RuntimeError`` (provider
     failure) or ``transcriber.TranscriptionCancelled``.
     """
+    # Confine the model-/user-supplied path before any read (audit WS-5 P1):
+    # reject ~/.audio-transcriber/* so a transcribe call can't exfiltrate keys.
+    ensure_outside_secret_store(audio_path)
+
     from transcriber import Transcriber
 
     transcriber = Transcriber()
