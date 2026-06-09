@@ -29,23 +29,33 @@ VENDOR_FFMPEG = PROJECT_ROOT / "vendor" / "ffmpeg"
 APP_ICON = PROJECT_ROOT / "vendor" / "icons" / "audio_transcriber.ico"
 
 # markitdown document grounding (tasks/doc_context.py — attach reference docs →
-# Markdown → LLM context). Three things PyInstaller's static analysis can't see
-# on its own:
+# Markdown → LLM context). Two packages genuinely NEED collect_all because
+# PyInstaller's static analysis can't see their runtime resources:
 #   1. markitdown resolves converters via importlib.metadata ENTRY POINTS →
 #      copy_metadata("markitdown") or discovery returns nothing in the .exe.
-#   2. Its core dep `magika` (file-type sniffing) rides on `onnxruntime` and
-#      ships a compiled ONNX MODEL — native .dll/.pyd + data files that only
-#      collect_all() pulls. (onnxruntime is local CPU ONNX — allowed under the
-#      amended invariant #2; never the GPU build.)
-#   3. `pandas` (xlsx extra) + the pdf/docx/pptx parsers below.
+#   2. Its core dep `magika` (file-type sniffing) ships a compiled ONNX MODEL
+#      as package DATA that only collect_all() pulls. (magika runs local CPU
+#      ONNX inference — allowed under the amended invariant #2; never GPU.)
+# `onnxruntime` and `pandas` do NOT get collect_all: it over-collects
+# `onnxruntime.transformers`/`.tools` (which import scipy → ~76 MB of BLAS the
+# inference path never touches) and the entire `pandas.tests` suite (~12 MB).
+# PyInstaller's OFFICIAL hook-onnxruntime.py / hook-pandas.py collect exactly
+# the native runtime + data leanly; we just need each in the import graph, so
+# they go in hiddenimports below. magika imports onnxruntime; markitdown's xlsx
+# converter imports pandas — both reach the hooks. (Measured: this drops the
+# bundle from 568 MB to ~390 MB. See package_release.py size guard.)
 _md_datas, _md_binaries, _md_hidden = [], [], []
-for _pkg in ("markitdown", "magika", "onnxruntime", "pandas"):
+for _pkg in ("markitdown", "magika"):
     _d, _b, _h = collect_all(_pkg)
     _md_datas += _d
     _md_binaries += _b
     _md_hidden += _h
 _md_datas += copy_metadata("markitdown")
 _md_hidden += [
+    # Lean official-hook deps (see note above) — listed so the hooks fire.
+    "pandas", "onnxruntime",
+    # markitdown's per-format parsers (static analysis misses these because
+    # markitdown loads converters lazily via entry points).
     "pdfminer", "pdfplumber", "PIL", "lxml", "pptx", "openpyxl",
     "mammoth", "markdownify", "bs4", "charset_normalizer", "defusedxml",
 ]
@@ -115,6 +125,13 @@ a = Analysis(
         "unittest",
         "IPython",
         "jupyter",
+        # scipy — present ONLY as pandas' OPTIONAL dep (interpolation / sparse /
+        # stats). markitdown's xlsx path is pandas.read_excel(engine=openpyxl),
+        # which never touches scipy; our code has zero scipy imports; magika
+        # uses numpy+onnxruntime. pandas guards its scipy imports, so
+        # `import pandas` still succeeds. Excluding drops scipy + scipy.libs
+        # (~76 MB of BLAS/LAPACK). Verified by the xlsx doc-grounding smoke.
+        "scipy",
         # PyInstaller itself — never needed inside the bundle.
         "PyInstaller",
     ],
@@ -123,6 +140,22 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Trim googleapiclient's bundled API-discovery cache. Its PyInstaller hook
+# collects ALL 581 discovery documents — every Google API, ~94 MB — into
+# _internal/googleapiclient/discovery_cache/documents/. We only ever build the
+# Drive v3 service (gdrive/client.py: build("drive", "v3")), so keep
+# drive.v3.json and drop the other 580. build() reads the kept static doc
+# offline; were it absent it would fall back to an HTTPS discovery fetch, so
+# this is a size-only trim, not a behaviour change.
+def _keep_datum(entry):
+    dest = entry[0].replace("\\", "/")
+    if "/discovery_cache/documents/" in dest:
+        return dest.endswith("/drive.v3.json")
+    return True
+
+
+a.datas = [e for e in a.datas if _keep_datum(e)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

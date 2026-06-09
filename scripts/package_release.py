@@ -126,6 +126,38 @@ def _check_required_assets(bundle: Path) -> list[str]:
     return violations
 
 
+def _check_no_bloat(bundle: Path) -> list[str]:
+    """Return violation messages for known over-collection bloat that must NOT ship.
+
+    The inverse of _check_required_assets: these directories reappear only when
+    ``audio_transcriber.spec`` regresses to an over-broad ``collect_all``. The
+    app imports neither at runtime, so each is pure dead weight that once nearly
+    doubled the bundle (568 vs 355 MB):
+
+      * ``scipy`` — ~76 MB of BLAS/LAPACK, pulled transitively via
+        ``onnxruntime.transformers`` when onnxruntime is collect_all'd. It's
+        only pandas' OPTIONAL dep, dropped via ``excludes=["scipy"]``.
+      * ``pandas/tests`` — the entire ~12 MB pandas test suite, pulled by
+        ``collect_all("pandas")``. The lean fix uses a plain hiddenimport so
+        the official ``hook-pandas.py`` collects pandas without its tests.
+    """
+    violations = []
+    internal = bundle / "_internal"
+    base = internal if internal.is_dir() else bundle  # older layouts: root
+    if (base / "scipy").is_dir():
+        violations.append(
+            "scipy present in bundle (~76 MB) — the app never imports it; the "
+            'spec collect_all likely regressed. Keep excludes=["scipy"] and use '
+            "plain hiddenimports for pandas/onnxruntime, not collect_all."
+        )
+    if (base / "pandas" / "tests").is_dir():
+        violations.append(
+            'pandas/tests present in bundle (~12 MB) — collect_all("pandas") '
+            "regressed; use a plain hiddenimport so hook-pandas.py collects it leanly."
+        )
+    return violations
+
+
 def _pack(bundle: Path, out_zip: Path, top_name: str) -> int:
     """Zip the bundle with forward-slash arcnames under ``top_name/``. Returns file count."""
     if out_zip.exists():
@@ -222,11 +254,22 @@ def main() -> int:
         return 1
     print("  OK: markitdown + ffmpeg license present")
 
-    # 4. Pack with POSIX separators.
+    # 4. No-bloat: known over-collection markers must never ship (regression
+    #    guard for the spec's collect_all — once shipped a 568 MB bundle).
+    print("Checking for bundle bloat...")
+    bloat_violations = _check_no_bloat(bundle)
+    if bloat_violations:
+        for v in bloat_violations:
+            print(f"  X {v}", file=sys.stderr)
+        print("ABORT: bundle contains known bloat (spec collect_all regressed).", file=sys.stderr)
+        return 1
+    print("  OK: no scipy / pandas.tests bloat")
+
+    # 5. Pack with POSIX separators.
     print("Packing...")
     written = _pack(bundle, out_zip, top_name)
 
-    # 5. Verify the archive is extractable everywhere.
+    # 6. Verify the archive is extractable everywhere.
     names, problems = _verify(out_zip, top_name)
     if problems:
         for p in problems:
