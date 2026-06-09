@@ -1,6 +1,8 @@
+import getpass
 import json
 import os
 import shutil
+import subprocess
 import sys
 from datetime import datetime
 
@@ -24,6 +26,66 @@ def _default_config_path() -> str:
 
 
 _CONFIG_PATH = _default_config_path()
+
+
+def _restrict_posix(path: str) -> bool:
+    """chmod a directory to 0o700 (owner-only). False on failure, never raises."""
+    try:
+        os.chmod(path, 0o700)
+        return True
+    except OSError as exc:
+        logger.warning("could not chmod %s to 0o700: %s", path, exc)
+        return False
+
+
+def _restrict_windows(path: str) -> bool:
+    """icacls a directory to the current user only. False on failure, never raises.
+
+    ``/inheritance:r`` drops inherited ACEs (so accounts that would inherit from
+    the parent lose access); ``/grant:r`` replaces the user's grant with Full +
+    object/container inheritance, making the dir owner-only AND letting existing
+    children re-propagate to owner-only while new children inherit it; ``/C``
+    continue-on-error; ``/Q`` quiet. CREATE_NO_WINDOW stops a console flashing
+    when this runs during a Settings save in the (windowed) GUI build.
+
+    Deliberately NO ``/T``: a real-icacls smoke showed ``/T`` applies the
+    ``(OI)(CI)`` inheritance flags to existing FILES (where they are invalid —
+    container-only), corrupting their DACL to empty and locking the owner out of
+    config.json. The dir-only grant re-propagates owner-only to existing
+    children safely (verified: existing config.json -> ``user:(I)(F)``).
+    """
+    user = os.environ.get("USERNAME") or getpass.getuser()
+    cmd = [
+        "icacls", path, "/inheritance:r",
+        "/grant:r", f"{user}:(OI)(CI)F", "/C", "/Q",
+    ]
+    try:
+        result = subprocess.run(
+            cmd, capture_output=True, timeout=15,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.warning("icacls could not run on %s: %s", path, exc)
+        return False
+    if result.returncode != 0:
+        stderr = (result.stderr or b"").decode("utf-8", "ignore").strip()
+        logger.warning("icacls failed on %s (rc=%s): %s", path, result.returncode, stderr)
+        return False
+    return True
+
+
+def restrict_dir_to_owner(path: str) -> bool:
+    """Best-effort lock directory ``path`` to the current user only (WS-5 P2).
+
+    Defense-in-depth for the secret store ``~/.audio-transcriber`` (config.json
+    API keys + gdrive-token.json). POSIX: ``chmod 0o700``. Windows: ``icacls``
+    owner-only — the ``os.chmod(0o600)`` the codebase relied on is a silent
+    no-op there. Never raises: a failed hardening is logged and the caller
+    proceeds (availability > a best-effort ACL). Returns True on success.
+    """
+    if os.name == "nt":
+        return _restrict_windows(path)
+    return _restrict_posix(path)
 
 
 def validate_audio(path: str) -> bool:
@@ -195,6 +257,11 @@ def save_config(config: dict) -> None:
     parent = os.path.dirname(_CONFIG_PATH)
     if parent:
         os.makedirs(parent, exist_ok=True)
+        # WS-5 P2: in frozen mode `parent` is the secret store
+        # ~/.audio-transcriber (API keys at rest) — lock it owner-only. In dev
+        # mode `parent` is the repo root (config.json beside the code), so skip.
+        if getattr(sys, "frozen", False):
+            restrict_dir_to_owner(parent)
     # Atomic write: a crash/power-loss mid-write must not leave a half-written
     # config.json (the exact corruption load_config now has to recover from).
     # Write to a sibling tmp, then os.replace (atomic on Windows + POSIX).
