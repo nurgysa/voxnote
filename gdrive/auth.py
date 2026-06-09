@@ -117,7 +117,7 @@ class GDriveAuth:
         self.token_path.parent.mkdir(parents=True, exist_ok=True)
         payload = json.loads(self._credentials.to_json())
         payload["account_email"] = self._account_email
-        self.token_path.write_text(json.dumps(payload, indent=2))
+        self.token_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         # Defensive: tighten perms on POSIX. No-op on Windows.
         try:
             os.chmod(self.token_path, 0o600)
@@ -166,7 +166,7 @@ class GDriveAuth:
 
         if not self.token_path.exists():
             return False
-        raw = json.loads(self.token_path.read_text())
+        raw = json.loads(self.token_path.read_text(encoding="utf-8"))
         # account_email is our addition; google-auth's Credentials doesn't
         # know about it. Pop before handing the rest to Credentials.
         self._account_email = raw.pop("account_email", None)

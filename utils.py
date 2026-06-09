@@ -328,7 +328,7 @@ def get_meetings_dir() -> str:
             os.makedirs(path, exist_ok=True)
             # Touch-test writability via a temp marker file
             test_marker = os.path.join(path, ".write-test")
-            with open(test_marker, "w") as f:
+            with open(test_marker, "w", encoding="utf-8") as f:
                 f.write("")
             os.remove(test_marker)
             return path

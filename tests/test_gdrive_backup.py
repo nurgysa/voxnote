@@ -113,8 +113,10 @@ def test_zip_history_includes_text_files(tmp_path):
     src = tmp_path / "history"
     src.mkdir()
     (src / "2026-05-23_meeting").mkdir()
-    (src / "2026-05-23_meeting" / "transcript.txt").write_text("Привет мир")
-    (src / "2026-05-23_meeting" / "diarized.json").write_text('{"speakers": []}')
+    (src / "2026-05-23_meeting" / "transcript.txt").write_text("Привет мир", encoding="utf-8")
+    (src / "2026-05-23_meeting" / "diarized.json").write_text(
+        '{"speakers": []}', encoding="utf-8",
+    )
 
     out_zip = tmp_path / "history.zip"
     zip_history(src, out_zip)
