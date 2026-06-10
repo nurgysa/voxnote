@@ -15,6 +15,10 @@ Cloud-only since the 2026-05-28 rip-out. The local CUDA / Whisper / pyannote
 code is gone — both from the codebase and from `requirements.txt`. No GPU
 needed; transcription is HTTPS calls.
 
+Open source (MIT) and public since 2026-06-10. End users get the
+PyInstaller zip from GitHub Releases; support is GitHub Issues. The user
+setup guide is `docs/CLIENT_SETUP.md` (Russian).
+
 Earlier history (pre-2026-05-28): targeted ASUS ROG Strix G15, GTX 1650 Ti
 (4 GB VRAM), faster-whisper + pyannote locally. Many architectural ghosts
 from that era (`_DIARIZE_WORKER_PATH`, `cuda_utils`, the 25-min STFT chunker
@@ -23,11 +27,13 @@ threshold) are gone; only what cloud paths actively use remains.
 ## Hard invariants — DO NOT BREAK
 
 1. **Faulthandler must initialize before any C-extension import.** See
-   `app.py:13-16`. Native deps (soundfile, sounddevice) can SIGSEGV during
-   shutdown; without the early `faulthandler.enable()`, the process
-   vanishes silently. The old CUDA-teardown concern that motivated this
-   in the GPU-era codebase is gone, but the invariant is cheap and still
-   buys diagnostic value.
+   the guarded block at the top of `app.py` (dev/source mode) and its
+   frozen twin `runtime_hook_imports.py` (which also redirects the None
+   stdio streams under PyInstaller windowed mode). Native deps
+   (soundfile, sounddevice) can SIGSEGV during shutdown; without the
+   early `faulthandler.enable()`, the process vanishes silently. The old
+   CUDA-teardown concern that motivated this in the GPU-era codebase is
+   gone, but the invariant is cheap and still buys diagnostic value.
 2. **No local CUDA / pyannote / faster-whisper / ctranslate2 / torch
    code may be reintroduced.** The codebase has been cloud-only since
    the 2026-05-28 rip-out. Adding any of those imports anywhere —
@@ -51,9 +57,6 @@ preserves the rationale if anyone needs it.)
 - **Logging**: `from logging_setup import get_logger; logger =
   get_logger(__name__)` for main-process modules. `tasks/*` uses
   `logging.getLogger(__name__)` directly — both are fine.
-  `diarize_worker.py` is a subprocess; it uses
-  `print(..., file=sys.stderr, flush=True)` because the parent captures
-  stderr — do not introduce logger.* calls there.
 - **Exceptions**: prefer narrow `except` classes over `except Exception`.
   The codebase uses `tk.TclError` for widget-cleanup paths,
   `OSError` for file I/O / socket cleanup,
@@ -74,22 +77,24 @@ preserves the rationale if anyone needs it.)
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline ≈ 690 tests (regenerate: pytest --collect-only -q | tail -1)
-                             # (was 462 pre-2026-05-28; -135 local-path
-                             # tests removed alongside the cuda_utils /
-                             # segmenter / speaker_aligner / prompt /
-                             # progress / diarize_worker / enrollment_worker
-                             # / voice_library / silence_remover modules,
-                             # +6 unanticipated cloud-helper survivors
-                             # in test_transcriber_pure-adjacent fixtures.
-                             # Tasks 5-7 of the v5 plan add ~13 more.)
+pytest                       # must show green; baseline ≈ 748 tests (regenerate: pytest --collect-only -q)
 python -m ruff check .       # must be clean
 ```
 
-CI (`.github/workflows/tests.yml`) runs both on every push. The `lint` job
-is fast (~30 s); the `pytest` job is slow on cold install (~5 min) but
-cached after first run (~1 min). Don't push expecting CI to catch your
-local regressions — run both locally first.
+CI (`.github/workflows/tests.yml`) runs both on every push and PR, on a
+[ubuntu-latest, windows-latest] matrix. The `lint` job is fast (~30 s);
+each `pytest` leg is slow on cold install (~5 min) but cached after first
+run (~1-3 min). Don't push expecting CI to catch your local regressions —
+run both locally first. The windows leg exists because stock Windows
+defaults `open()`/`write_text()` to cp1252 — always pass
+`encoding="utf-8"`; Linux CI and UTF-8-mode dev machines both mask that
+bug class.
+
+Windows shell gotchas (PowerShell 5.1): piping or `>`-redirecting pytest
+output can swallow the final summary line — read the dot-lines or use
+`--junitxml`; and args containing embedded `"` get mangled when passed to
+native exes — pass long content via files (`git commit -F msg.txt`,
+`gh pr create --body-file body.md`).
 
 `pytest.ini` is configured (`testpaths = tests`). `pyproject.toml` holds the
 ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
@@ -101,7 +106,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Entry point + faulthandler bootstrap | `app.py` |
 | Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
 | All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `terms.py`) — `voices.py` and `system_monitor.py` removed in the 2026-05-28 rip-out (latter was CUDA-era GPU/CPU/RAM diagnostics; useless in cloud-only mode) |
-| Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~250 LOC after the rip-out) and `cloud_chunker.py` (silence-aware splitter for files > provider upload cap). The old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules were deleted in the 2026-05-28 rip-out. |
+| Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~240 LOC). Providers upload files whole — `cloud_chunker` was deleted as unreachable in #103, and the old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules died in the 2026-05-28 rip-out. |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
 | Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,speechmatics}.py` — Groq + OpenAI Whisper deleted in the 2026-05-28 rip-out (no native diarization, depended on the now-gone hybrid-with-local-pyannote path) |
@@ -110,13 +115,15 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Reference-document grounding (markitdown) | `tasks/doc_context.py` (`convert_documents` + `combine_context`) — converts user-attached PDF/DOCX/PPTX/XLSX to Markdown via Microsoft markitdown (document extras ONLY; never `[audio-transcription]` — invariant #2) and folds them into the same `context=` slot the directory grounding feeds. Wired into the Extract dialog's `_run_extraction`; `MarkItDown` is sentinel-lazy-loaded for testability. |
 | Audio editor | `audio_cutter.py` (silence-removal button removed in the 2026-05-28 rip-out; manual trim + preview + export retained) |
 | Logging setup | `logging_setup.py` |
-| Persistent settings | `config.json` (template: `config.example.json`); helper: `utils.save_config` |
+| Persistent settings | dev: repo-root `config.json`; frozen: `~/.audio-transcriber/config.json` (survives app updates — PR #92). Template: `config.example.json`. Helpers: `utils.load_config` (corrupt-JSON quarantine) + `utils.save_config` (atomic write; owner-only ACL on the secret-store dir when frozen) |
 | Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.audio-transcriber/gdrive-token.json`) |
 | Google Drive API wrapper (Phase 7.1) | `gdrive/client.py` (`DriveClient` — thin wrapper over `googleapiclient.discovery.build`; find/create folder + upload file) |
 | Google Drive backup orchestrator (Phase 7.1) | `gdrive/backup.py` (`run_backup` — composes `redact_config` + `zip_history` + `build_manifest` + `DriveClient`) |
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
 | Headless CLI + MCP server | `cli/` (`core` — pipeline glue reused by both surfaces; `app` — argparse CLI; `mcp_server` — MCP stdio server for agent CLIs, see `AGENTS.md`) |
 | Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout` — meetings organized by project on disk + auto-pipeline foundation) |
+| Diagnostics log bundle | `support_bundle.py` (`build_log_bundle` — zips `logs/` + key-redacted config; wired to «Сохранить лог для отправки» in Settings) |
+| Build + release packaging | `scripts/build_exe.ps1` (PyInstaller onedir + size guard) → `scripts/package_release.py` (zips via Python `zipfile` with forward-slash arcnames; guards abort on: secrets/state in bundle, missing markitdown, missing ffmpeg GPL license, scipy / pandas-tests bloat, backslash entries) |
 
 ## Branch + PR workflow
 
@@ -133,147 +140,56 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
   `.github/PULL_REQUEST_TEMPLATE.md` if it exists, otherwise the pattern
   is `## Summary` + `## Test plan` (markdown checkboxes).
 
-## Active work / context
+## Current status & queued work
 
-- **Phase 8 — Cloud-only rip-out** (May 2026, in flight as of 2026-05-28):
-  user pivot «больше cuda не нужен. API буду использовать» triggered
-  deletion of the local CUDA / Whisper / pyannote stack from the codebase.
-  Eleven modules removed: `transcriber/{cuda_utils, segmenter,
-  speaker_aligner, prompt, progress}`, `diarize_worker`,
-  `enrollment_worker`, `voice_library`, `silence_remover`,
-  `providers/groq`, `providers/openai_whisper`. `transcriber/__init__.py`
-  collapsed from ~1300 to ~250 LOC; `TranscriptionCancelled` relocated
-  from `cuda_utils.py` to `transcriber/__init__.py` top (the 4 surviving
-  cloud providers already imported it from `transcriber`, so no caller
-  change). `requirements.txt` dropped 8 heavy deps (faster-whisper /
-  ctranslate2 / torch / torchaudio / pyannote.audio / speechbrain /
-  pytorch-lightning / nvidia-ml-py). All Phase 6.5 hybrid-with-local-
-  diarize work (PR-B) and Phase 2 mixed-language per-segment VAD are
-  gone (AssemblyAI Universal handles KZ+RU+EN code-switching natively
-  and provides diarization, replacing the need for both). Plan at
-  `docs/superpowers/plans/2026-05-28-cloud-only-mvp-v5.md`. Tasks 3-9
-  (UI strip, PyInstaller, protocol generator, bundle integration,
-  smoke, delivery) remain — see plan for sequencing.
-- **Phase 6.5 — Groq STT + hybrid local diarize** (May 2026, in flight):
-  user wants KZ+RU+EN code-switching transcription via cloud API while
-  keeping diarization on the local GTX 1650 Ti (pyannote). PR-A (this PR)
-  adds `providers/groq.py` with `whisper-large-v3` default — Groq is
-  ~60× cheaper than OpenRouter for the same model ($0.111/h full,
-  $0.04/h turbo) and exposes an OpenAI-compatible
-  `/openai/v1/audio/transcriptions` endpoint. Provider requests BOTH
-  `timestamp_granularities[]=segment` and `=word` and the new
-  `_to_segments()` distributes top-level `words[]` to their owning
-  segment by midpoint time-overlap — this preps the data shape for
-  PR-B's hybrid orchestrator. PR-B (next) wires
-  `_transcribe_via_cloud_with_local_diarize` in `transcriber/__init__.py`
-  to spawn pyannote in parallel with the Groq upload, then merge via the
-  existing `speaker_aligner._assign_speakers_word_level`. PR-C (deferred):
-  Settings UI model picker. Spec/plan at
-  `~/.claude/plans/glittery-foraging-scott.md` (user-local).
-- **Codebase review** (May 2026): F1–F8 archived in
-  `~/.claude/plans/codebase-review-keen-thompson.md` (user-local).
-  Shipped: F1/F3/F5/F6 (PR #1), F3-B Tk-cleanup narrowing (PR #2),
-  **F4-PR-1** transcriber split (PR #4), **F4-PR-3** extract_tasks split
-  (PR #5), **F7** ARCHITECTURE.md (PR #6/#7), worker-path follow-up
-  (PR #9), **F4-PR-2** ui/app split into a 5-mixin package
-  (PRs #12/#14–#18, May 2026 — `__init__.py` 1278 → 133 LOC). The
-  full codebase-review punchlist is now closed.
-- **Phase 6.4** (May 2026, PR #10): added 4 cloud transcription
-  providers (Deepgram, Gladia, Speechmatics, OpenAI Whisper) and the
-  Glide LLM backend via the new `tasks/backends/` Protocol layer. UI
-  got per-backend Settings checkboxes, Extract dialog backend selector,
-  real-cost display via `_format_real_cost`, humanized errors via
-  `tasks/errors.humanize()`, and Phase 6.5 keyboard shortcuts
-  (Ctrl+N, Ctrl+Shift+E, Ctrl+Shift+S, F5, Esc) in the extract dialog.
-- **Phase 7.1** (May 2026, shipped): Google Drive manual backup.
-  Shipped via PR-A `gdrive/client.py` Drive API v3 wrapper (#45 +
-  #46 Codex P2 fix for root-parent folder filter), PR-B
-  `gdrive/backup.py` orchestrator (#47), PR-C Settings UI button +
-  config key (this PR). New "Сделать backup сейчас" button under
-  the Google Drive section of Settings; click triggers a worker
-  thread that ensures auth is valid, zips `history/` (excluding
-  `*.wav/*.mp3/*.m4a` per text-only scope), redacts API keys
-  from `config.json`, builds a SHA-256 + size manifest, and
-  uploads all three files to `audio-transcriber-backup/<ISO-ts>/`
-  on Drive. New config keys: `gdrive_root_folder_id` (cached
-  after first backup to skip find_or_create round-trip),
-  `gdrive_last_backup` (ISO snapshot name; Phase 7.3 scheduler
-  reads it). Spec at
-  `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`,
-  plan at `docs/superpowers/plans/2026-05-23-gdrive-phase-7.1-backup.md`.
-  `DriveClient` imported lazily via a sentinel-pattern inside
-  `gdrive/backup.py` so `from gdrive.backup import run_backup`
-  stays cheap AND `patch("gdrive.backup.DriveClient", ...)` works
-  cleanly in tests. Phase 7.2 (restore), 7.3 (auto-schedule),
-  7.4 (audio opt-in) remain unstarted.
-- **Phase 7.0** (May 2026, shipped): Google Drive auth + Settings UI.
-  Shipped via PR #40 (PR-A `gdrive/auth.py` foundation) + #41 (Codex
-  P2 fix — JSON decode in userinfo lookup) + #42 (PR-B Settings UI
-  integration). New `gdrive/` package with `auth.py::GDriveAuth`
-  wrapping `google_auth_oauthlib.flow.InstalledAppFlow` for the
-  desktop OAuth loopback dance; tokens cached at
-  `~/.audio-transcriber/gdrive-token.json` (outside `config.json`
-  because the latter gets backed up to Drive — chicken/egg). Scope
-  is `drive.file` (non-sensitive — no Google manual verification
-  needed). Settings dialog gained a "Google Drive" section (row=9)
-  with status badge + Войти/Выйти buttons; sign-in runs in a daemon
-  thread to keep the UI responsive while the browser blocks. Spec at
-  `docs/superpowers/specs/2026-04-30-gdrive-backup-design.md`, plan
-  at `docs/superpowers/plans/2026-05-23-gdrive-phase-7.0-auth.md`.
-  Note: `CLIENT_ID` / `CLIENT_SECRET` constants in `gdrive/auth.py`
-  are placeholder strings — manual smoke + real-GCP wire-up deferred
-  to a tiny follow-up commit once the GCP project Pre-flight is done
-  (B.5 in the plan). Phase 7.1+ (backup, restore, scheduler, audio
-  opt-in) remain unstarted.
-- **Code-switching KZ+RU+EN Phase 1** (May 2026): shipped via 4 PRs
-  (#21 PR-A foundation, #22 PR-B Gladia + Deepgram + capability gate,
-  #23 PR-C AssemblyAI + Speechmatics + OpenAI Whisper, #24 PR-D Settings
-  UI warning) plus a #25 hotfix for Settings-dialog Var trace lifecycle.
-  Spec + plan at `docs/superpowers/specs/2026-05-21-code-switching-kz-ru-en-design.md`
-  and `docs/superpowers/plans/2026-05-21-code-switching-kz-ru-en-phase-1.md`.
-  Adds a `"Смешанный (KZ+RU+EN)"` → `"mixed"` sentinel: local Whisper
-  gets a trilingual `initial_prompt` (frame in `transcriber/prompt.py`)
-  and `language=None` (via `_effective_whisper_language()`); cloud
-  providers branch on `options.language == "mixed"` to emit their native
-  multilingual config — Gladia `code_switching: true`, AssemblyAI
-  `speech_model: universal`, Speechmatics `language_identification_config`,
-  OpenAI Whisper omits the language form field. Deepgram opts out
-  (`supports_mixed = False`) because nova-3 lacks Kazakh — runtime guard
-  in `Transcriber.transcribe()` raises a Russian `ProviderError` for
-  any provider whose class attribute `supports_mixed = False`.
-- **Code-switching KZ+RU+EN Phase 2** (May 2026, closed): local-Whisper
-  per-segment language detection — true code-switching, not just the
-  prompt-only Phase 1 band-aid. Shipped via PR #28 (PR-A segmenter
-  foundation), PR #29 (PR-B integration: `_decode_chunk_single` +
-  `_decode_chunk_mixed` + `language` field round-trip through
-  `speaker_aligner`), then 3 sequential hotfixes (#30 sampling-rate
-  bug, #31 ordering invariant, #32 cleanup-scope leak) — each Codex-
-  caught post-merge, each fixing one dimension while breaking another.
-  Two follow-up VAD fixes then hardened the invariant-#8 surface
-  (#34 forwards `sampling_rate` to `get_speech_timestamps`, #35
-  resamples non-16k input in `silence_remover`; #36 docs-only closed
-  the latent-bug note and codified invariant #8). Lessons captured at
-  [feedback_relocating_code_audit_all_invariants.md](memory).
-  Spec + plan at `docs/superpowers/specs/2026-05-22-code-switching-kz-ru-en-phase-2-design.md`
-  and `docs/superpowers/plans/2026-05-22-code-switching-kz-ru-en-phase-2.md`.
-  Architecture: `transcriber/segmenter.py::vad_split()` wraps
-  `faster_whisper.vad.get_speech_timestamps` with language-detection-
-  tuned params (500 ms min speech / silence); `_decode_chunk_mixed`
-  loads the chunk via `load_mono_float32`, VAD-splits it, and runs
-  `model.transcribe(seg_audio, language=None, vad_filter=False, ...)`
-  per region — Whisper's `detect_language` fires per slice. Output
-  dicts carry a new `language` field (preserved through both
-  no-diarize projection AND `_assign_speakers_word_level` /
-  `_flush_word_group` paths). The PR-C formal A/B QA pass was
-  deferred — quality signal came instead from the hotfix cycle on
-  real workloads. If regression suspected later, Phase 1 baseline
-  commit = `79071ff` (last commit before PR-A).
+Snapshot as of 2026-06-10. This section is deliberately a snapshot, not a
+chronicle — the phase-by-phase history lives in the dated specs/plans
+under `docs/superpowers/` and in git history.
+
+- **v0.1.0 released publicly** (2026-06-10): repo is open source (MIT),
+  the bundle ships as a GitHub Release asset, support is GitHub Issues.
+  Release flow: `scripts/build_exe.ps1` → `scripts/package_release.py`
+  (see the packaging row above for the guards it enforces).
+- **Audit remediation complete** (2026-06-04 → 06-09, PRs #100–#122):
+  secret redaction in Drive backups, docs truth pass, dead-code removal
+  (incl. `cloud_chunker`), CI safety net (py3.12 + ffmpeg + coverage +
+  windows-latest leg), correctness fixes (config corrupt-JSON quarantine
+  + atomic save, provider poll-loop JSON guards, Tk callback-exception
+  logging, diagnostics log-bundle button), security hardening (CLI/MCP
+  path confinement, markitdown size cap, owner-only ACL on
+  `~/.audio-transcriber`), PyInstaller de-bloat (568 → 355 MB) with
+  packaging guards. Roadmap spec:
+  `docs/superpowers/specs/2026-06-04-audit-remediation-design.md`.
+- **Mixed-language is live behavior** (not history): Settings'
+  `"Смешанный (KZ+RU+EN)"` maps to the `"mixed"` language sentinel and
+  cloud providers branch on `options.language == "mixed"` — Gladia
+  `code_switching: true`, AssemblyAI `speech_model: universal`,
+  Speechmatics `language_identification_config`. Deepgram opts out via
+  the class attribute `supports_mixed = False` (nova-3 lacks Kazakh);
+  `Transcriber.transcribe()` raises a Russian `ProviderError` for any
+  provider with that flag false.
+- **Google Drive**: auth (7.0) + manual backup (7.1) shipped. The
+  `CLIENT_ID` / `CLIENT_SECRET` constants in `gdrive/auth.py` are
+  placeholders by design — every deployment (and every fork) brings its
+  own GCP OAuth desktop client (`drive.file` scope, non-sensitive).
+  Restore (7.2), auto-schedule (7.3), audio opt-in (7.4) unstarted.
+- **Queued / deferred:**
+  - Widget-tree → free-function refactor (`builder.py` style) of the two
+    remaining god-objects: `ui/dialogs/extract_tasks/__init__.py`
+    (~1820 LOC) and `ui/dialogs/settings.py` (~900 LOC). Deliberately
+    deferred as its own workstream: UI-risky, needs design-first and a
+    heavy manual GUI smoke.
+  - Processing-queue worker + UI on top of `cli.core` (the `processing/`
+    foundation is merged; the auto-pipeline wiring is not).
+  - Voice-ID Phase B (local speaker identification; blocked on model
+    choice — any revival must respect invariant #2).
 
 ## Don't
 
-- Don't bump `requirements.txt` versions casually (see invariant 6).
+- Don't bump `requirements.txt` versions casually (see invariant 3).
 - Don't add `print()` for diagnostics in main-process code — use the
-  logger. (`diarize_worker.py` is the documented exception.)
+  logger. (CLI surfaces in `cli/` and `scripts/` print by design —
+  that's their stdout contract, not diagnostics.)
 - Don't broaden `except` classes back to `except Exception` without a
   comment justifying it. The codebase deliberately narrowed these.
 - Don't commit `config.json`, `logs/`, or anything in `.cache/` — see
