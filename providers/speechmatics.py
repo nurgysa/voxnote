@@ -50,6 +50,27 @@ class SpeechmaticsProvider(TranscriptionProvider):
         self._api_key = api_key.strip()
         self._headers = {"Authorization": f"Bearer {self._api_key}"}
 
+    def validate_key(self) -> dict:
+        """Cheap auth check: GET /jobs/?limit=1 — 2xx means the key is live."""
+        try:
+            r = requests.get(
+                f"{_API_BASE}/jobs/", params={"limit": 1},
+                headers=self._headers, timeout=15,
+            )
+        except requests.RequestException as e:
+            raise ProviderError(f"Сеть не отвечает при проверке ключа: {e}") from e
+        if r.status_code in (401, 403):
+            raise ProviderError(
+                "Speechmatics отклонил ключ (401). Проверь API-ключ в "
+                "Настройках → Облако."
+            )
+        if r.status_code >= 400:
+            raise ProviderError(
+                f"Speechmatics: проверка ключа не удалась ({r.status_code}): "
+                f"{r.text[:200]}"
+            )
+        return {}
+
     # --------------------------- public API ----------------------------
 
     def transcribe(

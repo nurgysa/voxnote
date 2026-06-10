@@ -57,6 +57,28 @@ class DeepgramProvider(TranscriptionProvider):
             )
         self._api_key = api_key.strip()
 
+    def validate_key(self) -> dict:
+        """Cheap auth check: GET /v1/auth/token — 2xx means the key is live."""
+        try:
+            r = requests.get(
+                "https://api.deepgram.com/v1/auth/token",
+                headers={"Authorization": f"Token {self._api_key}"},
+                timeout=15,
+            )
+        except requests.RequestException as e:
+            raise ProviderError(f"Сеть не отвечает при проверке ключа: {e}") from e
+        if r.status_code in (401, 403):
+            raise ProviderError(
+                "Deepgram отклонил ключ (401). Проверь API-ключ в "
+                "Настройках → Облако."
+            )
+        if r.status_code >= 400:
+            raise ProviderError(
+                f"Deepgram: проверка ключа не удалась ({r.status_code}): "
+                f"{r.text[:200]}"
+            )
+        return {}
+
     # --------------------------- public API ----------------------------
 
     def transcribe(

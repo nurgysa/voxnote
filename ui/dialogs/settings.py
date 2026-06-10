@@ -384,11 +384,11 @@ class SettingsDialog(ctk.CTkToplevel):
     def _build_cloud_section(self, parent) -> None:
         """Cloud STT provider + API key + privacy + pricing disclosure.
 
-        Key handling via api_key_row (no validate — Cloud STT validation
-        is deferred to a follow-up PR per the spec). Provider dropdown
-        stays as a separate row because its callback wires into the
-        first-run banner's mixed-lang condition. Captures
-        self._cloud_api_key_entry so the banner can focus_set() it.
+        Key handling via api_key_row; «Проверить» runs the selected
+        provider's cheap auth check (validate_key) on the row's worker
+        thread. Provider dropdown stays as a separate row because its
+        callback wires into the first-run banner's mixed-lang condition.
+        Captures self._cloud_api_key_entry so the banner can focus_set() it.
         """
         section = self._section_card(parent, "Облачное распознавание", row=3)
 
@@ -401,14 +401,31 @@ class SettingsDialog(ctk.CTkToplevel):
             command=self._parent._on_cloud_provider_changed,
         ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
 
-        # API key row — no validate (deferred). Capture entry ref so the
-        # global first-run banner can focus_set() it on click.
+        def _on_validate(key: str) -> dict:
+            # Lazy import — keeps providers/ HTTP plumbing off the
+            # dialog-construction path. Dispatches on whatever provider
+            # is selected at click time; an empty key raises the
+            # provider's own Russian "ключ не задан" ProviderError.
+            from providers import get_provider
+            provider = get_provider(self._parent._cloud_provider_var.get(), key)
+            return provider.validate_key()
+
+        def _persist(key: str, _info: dict) -> None:
+            name = self._parent._cloud_provider_var.get()
+            self._parent._cloud_api_keys[name] = key
+            self._parent._config["cloud_api_keys"] = self._parent._cloud_api_keys
+            save_config(self._parent._config)
+
+        # API key row — capture entry ref so the global first-run banner
+        # can focus_set() it on click.
         refs = api_key_row(
             section,
             label_text="API ключ",
             key_var=self._parent._cloud_api_key_var,
             placeholder="API ключ провайдера",
-            on_validate=None,
+            on_validate=_on_validate,
+            on_key_persisted=_persist,
+            format_success=lambda _info: "✓ Ключ действителен",
             row=1,
         )
         self._cloud_api_key_entry = refs["entry"]

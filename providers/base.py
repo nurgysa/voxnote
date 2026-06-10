@@ -120,3 +120,18 @@ class TranscriptionProvider(ABC):
                 untouched and end up in the crash log.
         """
         ...
+
+    def validate_key(self) -> dict:
+        """Cheap server-side auth check for the Settings «Проверить» button.
+
+        Returns a (possibly empty) info dict on success; raises
+        ProviderError with a Russian, user-actionable message on a
+        rejected key or a network failure. Concrete providers override
+        this with their cheapest authenticated GET. The base refuses
+        instead of guessing, so an unwired provider reads as "not
+        supported" in the UI rather than silently passing.
+        """
+        raise ProviderError(
+            f"Провайдер {self.display_name or type(self).__name__} "
+            "не поддерживает проверку ключа."
+        )
