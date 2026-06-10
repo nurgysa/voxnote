@@ -439,10 +439,10 @@ def build_gdrive_section(dialog, parent) -> None:
     frequency dropdown (7.3), no audio opt-in (7.4). Adding those
     widgets later just extends this method.
 
-    Threading: sign_in() blocks while the browser is open; we run
-    it in a daemon thread and route the result back to the Tk loop
-    via `self.after(0, ...)` so widget updates happen on the main
-    thread. Mirrors the _validate_openrouter pattern.
+    Threading lives on the class: SettingsDialog._handle_gdrive_signin
+    runs sign_in() in a daemon thread and routes results back to the Tk
+    loop via dialog.after(0, ...); this builder only creates the widgets
+    and sets their initial state.
     """
     section = section_card(dialog, parent, "Google Drive", row=0)
 

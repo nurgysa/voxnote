@@ -11,6 +11,9 @@ bind to them directly. Closing the dialog destroys widgets but leaves the
 vars untouched, so subsequent transcribe() calls read the right values.
 The existing _on_*_changed callbacks on App fire on every change and persist
 to config.json — no extra save logic needed here.
+Widget construction lives in ui/dialogs/settings_builder.py (free
+build_*_section functions); this module owns state, traces, handlers and
+workers.
 """
 
 from __future__ import annotations

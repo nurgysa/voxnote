@@ -38,7 +38,7 @@ def test_settings_dialog_has_gdrive_section_builder():
 
 
 def test_settings_dialog_has_gdrive_handlers():
-    """All 5 button/state handlers referenced by _build_gdrive_section
+    """All 5 button/state handlers referenced by build_gdrive_section
     must be defined as methods on SettingsDialog."""
     src = _read(os.path.join("ui", "dialogs", "settings.py"))
     for method in (
