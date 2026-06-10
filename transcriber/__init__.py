@@ -242,7 +242,7 @@ class Transcriber:
         """
         # Optional pre-denoise: when the user opted in via Settings, run
         # the source through RNNoise (via ensure_wav's denoise flag) BEFORE
-        # handing audio to the provider or chunker. Cleaned WAV is a temp
+        # handing audio to the provider. Cleaned WAV is a temp
         # file we own — cleanup in the finally below.
         #
         # normalize=False here on purpose: cloud providers expect the
