@@ -13,7 +13,7 @@ _SETTINGS = Path("ui/dialogs/settings.py")
 def _cloud_section_body() -> str:
     src = _SETTINGS.read_text(encoding="utf-8")
     start = src.index("def _build_cloud_section(")
-    end = src.index("def _build_meetings_section(", start)
+    end = src.index("def _refresh_meetings_stats(", start)
     return src[start:end]
 
 

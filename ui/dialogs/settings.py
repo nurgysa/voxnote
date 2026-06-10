@@ -28,16 +28,15 @@ from theme import (
     BG,
     BLUE,
     BLUE_DIM,
-    BORDER,
     FONT,
     GREEN,
-    INPUT_BG,
     RED,
     SURFACE,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
 from ui.app.constants import LANGUAGES
+from ui.dialogs import settings_builder
 from ui.dialogs.settings_helpers import (
     compute_banner_state,
     format_glide_success,
@@ -47,7 +46,6 @@ from ui.dialogs.settings_helpers import (
 )
 from ui.widgets import (
     api_key_row,
-    card,
     label,
     option_menu,
     primary_button,
@@ -161,12 +159,12 @@ class SettingsDialog(ctk.CTkToplevel):
         self._tabview.set("Транскрипция")
 
         # Tab 1 «Транскрипция» — core loop (minimal sufficient set)
-        self._build_appearance_section(scroll_transcription)
-        self._build_transcription_section(scroll_transcription)
-        self._build_audio_section(scroll_transcription)
+        settings_builder.build_appearance_section(self, scroll_transcription)
+        settings_builder.build_transcription_section(self, scroll_transcription)
+        settings_builder.build_audio_section(self, scroll_transcription)
         self._build_cloud_section(scroll_transcription)
-        self._build_meetings_section(scroll_transcription)
-        self._build_dictionaries_section(scroll_transcription)
+        settings_builder.build_meetings_section(self, scroll_transcription)
+        settings_builder.build_dictionaries_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
         self._build_openrouter_section(scroll_integrations)
@@ -314,72 +312,8 @@ class SettingsDialog(ctk.CTkToplevel):
             menu.focus_set()
 
     def _section_card(self, parent, title: str, row: int) -> ctk.CTkFrame:
-        """A titled card. Returns the inner content frame (already gridded)."""
-        wrapper = card(parent)
-        wrapper.grid(row=row, column=0, padx=4, pady=8, sticky="ew")
-        wrapper.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            wrapper, text=title,
-            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
-            text_color=TEXT_SECONDARY,
-        ).grid(row=0, column=0, padx=16, pady=(12, 4), sticky="w")
-        inner = ctk.CTkFrame(wrapper, fg_color="transparent")
-        inner.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
-        inner.grid_columnconfigure(1, weight=1)
-        return inner
-
-    def _build_appearance_section(self, parent) -> None:
-        # Lazy import — APPEARANCE_MODES lives in ui.app, importing at
-        # module-load would create a circular dependency.
-        from ui.app import APPEARANCE_MODES
-
-        section = self._section_card(parent, "Внешний вид", row=0)
-
-        label(section, "Тема").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._appearance_var, list(APPEARANCE_MODES.keys()),
-            command=self._parent._on_appearance_changed,
-        ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-        label(
-            section,
-            "«Системная» следует за настройкой Windows (Light/Dark mode).",
-            anchor="w",
-        ).grid(row=1, column=0, columnspan=2, padx=4, pady=(0, 4), sticky="w")
-
-    def _build_transcription_section(self, parent) -> None:
-        section = self._section_card(parent, "Транскрипция", row=1)
-
-        label(section, "Язык").grid(row=0, column=0, padx=(4, 8), pady=6, sticky="w")
-        # Capture ref so the banner's _jump_to_lang can focus_set() it.
-        self._lang_menu = option_menu(
-            section, self._parent._lang_var, list(LANGUAGES.keys()),
-            command=self._parent._on_language_changed,
-        )
-        self._lang_menu.grid(row=0, column=1, padx=4, pady=6, sticky="w")
-
-    def _build_audio_section(self, parent) -> None:
-        section = self._section_card(parent, "Аудио", row=2)
-        # No loudness-normalization toggle here on purpose: the cloud path
-        # hardcodes ensure_wav(normalize=False) — provider gateways apply
-        # their own gain normalization, so a checkbox would control nothing.
-
-        # RNNoise (arnndn) — opt-in noise suppression. Default off; the
-        # neural denoiser can clip soft consonants on already-clean
-        # recordings. ~85 KB model lazy-downloaded on first use.
-        denoise_check = ctk.CTkCheckBox(
-            section, text="Подавлять шум (RNNoise — для записей с фоном)",
-            variable=self._parent._denoise_var,
-            command=self._parent._on_denoise_changed,
-            font=ctk.CTkFont(family=FONT, size=13),
-            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
-            border_color=BORDER, corner_radius=4,
-            checkbox_height=20, checkbox_width=20,
-        )
-        denoise_check.grid(
-            row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-        )
+        """Shim during the split — remaining sections move in Tasks 1.2/1.3."""
+        return settings_builder.section_card(self, parent, title, row)
 
     def _build_cloud_section(self, parent) -> None:
         """Cloud STT provider + API key + privacy + pricing disclosure.
@@ -448,48 +382,6 @@ class SettingsDialog(ctk.CTkToplevel):
             "Speechmatics ~$1.04/ч.",
             anchor="w",
         ).grid(row=4, column=0, columnspan=4, padx=4, pady=(0, 4), sticky="w")
-
-    def _build_meetings_section(self, parent) -> None:
-        """Meetings folder picker — path entry + Выбрать + Default + stats.
-
-        On path change: triggers MigrationPromptDialog if the current
-        folder has entries (mode="settings"). Otherwise silent save.
-        """
-        section = self._section_card(parent, "Митинги", row=4)
-
-        label(section, "Папка хранения").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-
-        self._meetings_path_var = ctk.StringVar(value=get_meetings_dir())
-        self._meetings_entry = ctk.CTkEntry(
-            section, textvariable=self._meetings_path_var,
-            height=36, corner_radius=10,
-            border_color=BORDER, border_width=1,
-            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT, size=12),
-            state="readonly",
-        )
-        self._meetings_entry.grid(
-            row=0, column=1, columnspan=2, padx=4, pady=6, sticky="ew",
-        )
-
-        tonal_button(
-            section, text="\U0001f4c1 Выбрать",
-            command=self._on_pick_meetings_folder, width=130,
-        ).grid(row=0, column=3, padx=(4, 4), pady=6)
-
-        tonal_button(
-            section, text="↻ Default",
-            command=self._on_reset_meetings_folder, width=120,
-        ).grid(row=1, column=3, padx=(4, 4), pady=(0, 6))
-
-        # Stats label — refreshed on dialog open and after path change
-        self._meetings_stats_label = label(section, "", anchor="w")
-        self._meetings_stats_label.grid(
-            row=1, column=0, columnspan=3, padx=4, pady=(0, 6), sticky="w",
-        )
-        self._refresh_meetings_stats()
 
     def _refresh_meetings_stats(self) -> None:
         """Compute «В этой папке: N митингов • X GB» and update the label."""
@@ -561,20 +453,6 @@ class SettingsDialog(ctk.CTkToplevel):
         new_path = get_meetings_dir()
         self._meetings_path_var.set(new_path)
         self._refresh_meetings_stats()
-
-    def _build_dictionaries_section(self, parent) -> None:
-        section = self._section_card(parent, "Словари", row=5)
-
-        tonal_button(
-            section, text="Словарь терминов",
-            command=self._parent._open_terms_dialog, width=200,
-        ).grid(row=0, column=0, padx=4, pady=6, sticky="w")
-        # Compact summary of what's saved — same source as the main-window
-        # label (kept in sync via _update_terms_label, which we reuse below).
-        self._terms_summary = label(section, "", anchor="w")
-        self._terms_summary.grid(row=0, column=1, padx=(8, 4), pady=6, sticky="ew")
-
-        self._refresh_summaries()
 
     def _refresh_summaries(self) -> None:
         """Mirror App's existing summary-rendering for terms.
