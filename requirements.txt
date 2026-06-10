@@ -1,6 +1,6 @@
 customtkinter==5.2.2
 psutil==6.1.0
-requests==2.32.5
+requests==2.33.0
 soundfile==0.13.1
 sounddevice==0.5.5
 scipy==1.15.3
