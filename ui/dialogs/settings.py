@@ -361,16 +361,9 @@ class SettingsDialog(ctk.CTkToplevel):
 
     def _build_audio_section(self, parent) -> None:
         section = self._section_card(parent, "Аудио", row=2)
-        check = ctk.CTkCheckBox(
-            section, text="Нормализовать громкость (EBU R128 + 80 Hz HPF)",
-            variable=self._parent._normalize_var,
-            command=self._parent._on_normalize_changed,
-            font=ctk.CTkFont(family=FONT, size=13),
-            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
-            border_color=BORDER, corner_radius=4,
-            checkbox_height=20, checkbox_width=20,
-        )
-        check.grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
+        # No loudness-normalization toggle here on purpose: the cloud path
+        # hardcodes ensure_wav(normalize=False) — provider gateways apply
+        # their own gain normalization, so a checkbox would control nothing.
 
         # RNNoise (arnndn) — opt-in noise suppression. Default off; the
         # neural denoiser can clip soft consonants on already-clean
@@ -385,7 +378,7 @@ class SettingsDialog(ctk.CTkToplevel):
             checkbox_height=20, checkbox_width=20,
         )
         denoise_check.grid(
-            row=1, column=0, columnspan=2, padx=4, pady=6, sticky="w",
+            row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w",
         )
 
     def _build_cloud_section(self, parent) -> None:

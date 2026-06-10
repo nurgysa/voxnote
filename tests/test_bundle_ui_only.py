@@ -98,6 +98,31 @@ def test_transcription_mixin_has_no_local_plumbing():
     assert "voices_from_config" not in src, "voice_library import must be removed"
 
 
+def test_ui_has_no_noop_normalize_toggle():
+    # The normalize checkbox was a no-op: since #103 the cloud path hardcodes
+    # ensure_wav(normalize=False) by design (provider gateways apply their own
+    # gain normalization), so the toggle controlled nothing while claiming to.
+    # Verify the whole Var loop is gone: widget (settings.py), Var seed
+    # (builder.py), persistence handler (settings_mixin.py), docstring contract
+    # mentions (transcription_mixin.py).
+    for rel in [
+        "ui/dialogs/settings.py",
+        "ui/app/builder.py",
+        "ui/app/settings_mixin.py",
+        "ui/app/transcription_mixin.py",
+    ]:
+        src = Path(rel).read_text(encoding="utf-8")
+        assert "_normalize_var" not in src, f"{rel} still references _normalize_var"
+        assert "normalize_audio" not in src, f"{rel} still references normalize_audio"
+        assert "_on_normalize_changed" not in src, (
+            f"{rel} still wires the normalize handler"
+        )
+    settings_src = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
+    assert "Нормализовать громкость" not in settings_src, (
+        "Settings still shows the normalize checkbox label"
+    )
+
+
 def test_provider_registry_drops_local_dependent():
     import re
 

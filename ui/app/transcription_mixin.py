@@ -12,7 +12,7 @@ Mixin contract: relies on App providing ``self._is_running``,
 ``self._audio_path``, ``self._transcriber`` (Transcriber | None — set
 lazily here), ``self._cancel_event`` (threading.Event), ``self._config``
 (mutable dict), the persistence vars ``self._lang_var``,
-``self._diar_var``, ``self._spk_count_var``, ``self._normalize_var``,
+``self._diar_var``, ``self._spk_count_var``,
 ``self._denoise_var``, ``self._cloud_provider_var``,
 ``self._cloud_api_key_var``, ``self._cloud_api_keys``,
 ``self._last_history_folder``, and the widget refs ``self._btn_*``,

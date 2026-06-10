@@ -164,12 +164,10 @@ def build_ui(app):
     app._spk_count_var = ctk.StringVar(
         value=saved_spk if saved_spk in SPEAKER_COUNTS else "Авто",
     )
-    app._normalize_var = ctk.BooleanVar(
-        value=bool(app._config.get("normalize_audio", True)),
-    )
     # RNNoise (arnndn) — opt-in, default off. When enabled, the cloud
     # path runs a pre-denoise pass via ffmpeg before sending audio to
-    # the provider.
+    # the provider. (No normalization Var: the cloud path hardcodes
+    # ensure_wav(normalize=False) — provider gateways re-normalize.)
     app._denoise_var = ctk.BooleanVar(
         value=bool(app._config.get("denoise_audio", True)),
     )
@@ -282,8 +280,8 @@ def build_ui(app):
     # --- Run controls card ---
     # Slim card with only per-run controls: diarization toggle, speaker
     # count hint, and the Settings button. Everything else (language,
-    # model, HF token, normalize, devices, dictionaries) lives in the
-    # Settings dialog, opened via the button on the right.
+    # audio toggles, providers, integrations) lives in the Settings
+    # dialog, opened via the button on the right.
     run_card = card(app)
     run_card.grid(row=4, column=0, padx=16, pady=6, sticky="ew")
     run_card.grid_columnconfigure(2, weight=1)

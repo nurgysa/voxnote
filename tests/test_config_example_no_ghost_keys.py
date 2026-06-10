@@ -2,8 +2,9 @@
 
 The template is not just documentation: utils._seed_default_config copies
 it into ~/.audio-transcriber/config.json on every fresh frozen install, so
-dead keys here propagate into real user configs. These six died with the
-2026-05-28 cloud-only rip-out (#103 removed the last plumbing);
+dead keys here propagate into real user configs. These keys died with the
+2026-05-28 cloud-only rip-out (#103 removed the last plumbing; the no-op
+normalize toggle followed once its checkbox was removed);
 test_bundle_ui_only.py guards the code side of the same regression.
 """
 import json
@@ -18,6 +19,7 @@ GHOST_KEYS = {
     "transcribe_device",
     "diarize_device",
     "cloud_enabled",
+    "normalize_audio",
 }
 
 

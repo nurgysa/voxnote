@@ -12,7 +12,7 @@ and cloud-enabled toggle handler were removed in the 2026-05-28 cloud-only
 rip-out (their dialog widgets are gone too).
 
 Mixin contract: relies on App providing ``self._config`` (mutable dict),
-``self._diar_var``, ``self._spk_count_menu``, ``self._normalize_var``,
+``self._diar_var``, ``self._spk_count_menu``,
 ``self._denoise_var``, ``self._cloud_provider_var``,
 ``self._cloud_api_key_var``, ``self._cloud_api_keys`` (dict), the
 ``self._linear_*_var`` / ``self._glide_*_var`` / ``self._openrouter_*_var``
@@ -55,11 +55,6 @@ class SettingsMixin:
 
     def _on_language_changed(self, value: str) -> None:
         self._config["language"] = value
-        save_config(self._config)
-
-    def _on_normalize_changed(self) -> None:
-        """Persist the normalization toggle. BooleanVar supplies no arg."""
-        self._config["normalize_audio"] = bool(self._normalize_var.get())
         save_config(self._config)
 
     def _on_denoise_changed(self) -> None:

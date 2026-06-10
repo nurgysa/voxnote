@@ -2,7 +2,6 @@
   "hotwords": [],
   "language": "Смешанный (KZ+RU+EN)",
   "speaker_count": "Авто",
-  "normalize_audio": true,
   "denoise_audio": true,
   "cloud_provider": "AssemblyAI",
   "cloud_api_keys": {},
