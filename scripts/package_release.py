@@ -281,7 +281,7 @@ def main() -> int:
     print("  OK: 0 backslash entries, integrity verified, exe present")
     print()
     print(f"DONE: {out_zip}  ({size_mb:.1f} MB, {written} files)")
-    print("Ship this zip + docs/CLIENT_SETUP.md to the client.")
+    print("Publish this zip as a GitHub Release asset (user guide: docs/CLIENT_SETUP.md).")
     return 0
 
 

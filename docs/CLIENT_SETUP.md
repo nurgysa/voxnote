@@ -1,7 +1,7 @@
 # Audio Transcriber — установка и первый запуск
 
-**Версия:** v0.1.0 (cloud-only MVP, 2026-05-28)
-**Поддержка:** Telegram / Skype / звонок Андасу
+**Версия:** v0.1.0 (cloud-only)
+**Поддержка:** [GitHub Issues](https://github.com/nurgysa/audio-transcriber/issues)
 
 ---
 
@@ -20,7 +20,7 @@
 
 ## 2. Установка
 
-1. Получите файл `AudioTranscriber-v0.1.0.zip` от Андаса (через Telegram / Skype / email).
+1. Скачайте `AudioTranscriber-v0.1.0.zip` со страницы [Releases](https://github.com/nurgysa/audio-transcriber/releases/latest).
 2. Распакуйте в `C:\Apps\AudioTranscriber\` (или любую папку **под вашим пользователем**).
 3. **НЕ распаковывайте в `C:\Program Files\`** — приложение хранит логи и настройки рядом с собой, а в Program Files обычному пользователю Windows писать нельзя. (Сами митинги по умолчанию пишутся в `Documents\AudioTranscriber\meetings\` — туда писать можно всегда.)
 4. Двойной клик на `AudioTranscriber.exe`.
@@ -129,7 +129,7 @@
 | Транскрипт пустой или явно сломан на казахском | Попробуйте переключить провайдера в Настройках на Gladia или Speechmatics. Или загрузите файл с меньшим уровнем фонового шума. |
 | Протокол «(не зафиксировано в транскрипте)» во всех блоках | LLM не справилась с извлечением — попробуйте другую модель в Извлечь задачи → Модель (рекомендуем `anthropic/claude-sonnet-4.5`, если уже она — попробуйте `openai/gpt-4o`). |
 | Файл >2 ГБ | Не тестировалось. Если очень нужно — обрежьте через Audio Cutter сначала. |
-| Любой неожиданный краш | Пришлите Андасу файлы из папки `_internal\logs\` внутри папки приложения (`app.log` + `faulthandler.log`). Если приложение не открывается вообще — ещё `%TEMP%\audio-transcriber-bootstrap.log` (вставьте `%TEMP%` в адресную строку Проводника). Там полный traceback. |
+| Любой неожиданный краш | Откройте [issue](https://github.com/nurgysa/audio-transcriber/issues) и приложите лог-архив: Настройки → Диагностика → **«Сохранить лог для отправки»** (zip с логами; API-ключи вырезаются из него автоматически). Если приложение не открывается вообще — приложите файлы из `_internal\logs\` (`app.log` + `faulthandler.log`) и `%TEMP%\audio-transcriber-bootstrap.log` (вставьте `%TEMP%` в адресную строку Проводника). Там полный traceback. |
 
 ---
 
@@ -151,41 +151,9 @@
 
 ## 8. Обратная связь
 
-Это первая внешняя версия. Любой фидбэк ценен — что неудобно, что неочевидно, что вообще не работает. Telegram / Skype / звонок Андасу.
+Это первая публичная версия. Любой фидбэк ценен — что неудобно, что неочевидно, что вообще не работает: [GitHub Issues](https://github.com/nurgysa/audio-transcriber/issues).
 
 Особенно интересно услышать:
 - Как качество на ВАШИХ типах встреч (1-on-1 / совещания / интервью / звонки с клиентами)
 - Качество казахского распознавания на ВАШИХ аудио
 - Что хочется добавить в протокол (5 блоков сейчас могут быть не идеальны для всех типов встреч)
-
----
-
-## Tester checklist (для Андаса)
-
-| Client | Дата отгрузки | Windows ver | AssemblyAI key | OpenRouter key | Первый запуск OK? | E2E smoke OK? | Linear/Glide/Trello? | Заметки |
-|---|---|---|---|---|---|---|---|---|
-| Client A | | | ☐ | ☐ | ☐ | ☐ | | |
-| Client B | | | ☐ | ☐ | ☐ | ☐ | | |
-| Client C | | | ☐ | ☐ | ☐ | ☐ | | |
-
-**Перед отгрузкой каждому:**
-
-- [ ] Bundle пересобран из свежего main (`.\scripts\build_exe.ps1`)
-- [ ] ZIP создан **через Python `zipfile`** (НЕ `Compress-Archive` и НЕ .NET `ZipFile` — на PowerShell 5.1 обе пишут обратные слэши в имена записей, и архив не распакуется на macOS / 7-Zip / WinRAR у клиента). Паковать с forward-slash arcnames под верхней папкой `AudioTranscriber/`, затем проверить: записей с `\` ровно **0** и `testzip()` == OK. Итог: `dist\AudioTranscriber-v0.1.0.zip` (~147 MB, 2056 записей).
-- [ ] Бандл **template-only / без секретов** — в `dist\AudioTranscriber\` НЕТ `_internal\config.json` (только `config.example.json`-шаблон), нет gdrive-токена. Ключи клиента живут в `~/.audio-transcriber/config.json` (PR #92), а НЕ в бандле — поэтому раздача ключи не утекает. Перед отгрузкой прогнать поиск секретов по всему дереву бандла (искать значения своих реальных ключей; ожидаемо — 0 совпадений).
-- [ ] Smoke на чистой папке пройден (распаковал в `C:\Apps\AudioTranscriber-test\` → реальные ключи → транскрибировал 1 sample → protocol.md создался)
-- [ ] У клиента запланирован 15-мин Skype/Zoom (guided first-run сильно увеличивает retention)
-
-**На звонке с клиентом:**
-
-1. Walk through документ на screenshare (этот файл — открыт прямо из распакованной папки)
-2. Помочь получить AssemblyAI + OpenRouter ключи (нужно пройти регистрацию = ~5 минут на каждый)
-3. Запустить ОДИН реальный transcribe + extract на их звонке
-4. Записать в чеклист выше
-
-**После отгрузки трёх:**
-
-```powershell
-git add docs/CLIENT_SETUP.md
-git commit -m "docs(client-setup): delivery outcomes for first 3 MVP clients"
-```
