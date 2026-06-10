@@ -116,7 +116,7 @@ class SettingsDialog(ctk.CTkToplevel):
         tab_backup = self._tabview.add("Резервная копия")
 
         # Each tab wraps its content in a CTkScrollableFrame so taller
-        # sections (Tab 1 has 5) don't clip when the dialog is shrunk.
+        # sections (Tab 1 has 6) don't clip when the dialog is shrunk.
         # The tab itself owns the scrollbar; sections grid into the
         # inner scroll frame at rows 0..N.
         for tab in (tab_transcription, tab_integrations, tab_backup):
