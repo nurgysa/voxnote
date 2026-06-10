@@ -20,9 +20,14 @@ def _method_src(name: str) -> str | None:
 
 
 def test_diagnostics_section_is_built_in_backup_tab():
-    src = SETTINGS.read_text(encoding="utf-8")
-    assert "_build_diagnostics_section" in src
-    assert "self._build_diagnostics_section(scroll_backup)" in src
+    from pathlib import Path
+    builder_path = (
+        Path(__file__).resolve().parent.parent / "ui" / "dialogs" / "settings_builder.py"
+    )
+    builder_src = builder_path.read_text(encoding="utf-8")
+    assert "def build_diagnostics_section(dialog, parent)" in builder_src
+    dialog_src = SETTINGS.read_text(encoding="utf-8")
+    assert "settings_builder.build_diagnostics_section(self, scroll_backup)" in dialog_src
 
 
 def test_send_log_handler_builds_bundle_off_main_thread():

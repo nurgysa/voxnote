@@ -25,19 +25,20 @@ def _read(rel_path: str) -> str:
 
 
 def test_settings_dialog_has_gdrive_section_builder():
-    """SettingsDialog source must define _build_gdrive_section + register
-    it in the constructor's section-build dispatch."""
-    src = _read(os.path.join("ui", "dialogs", "settings.py"))
-    assert "def _build_gdrive_section(self, parent)" in src
-    assert "self._build_gdrive_section(scroll_backup)" in src, (
-        "Section method exists but is never called from __init__ dispatch "
+    """settings_builder must define build_gdrive_section + SettingsDialog
+    must call it in the constructor's section-build dispatch."""
+    builder_src = _read(os.path.join("ui", "dialogs", "settings_builder.py"))
+    assert "def build_gdrive_section(dialog, parent)" in builder_src
+    dialog_src = _read(os.path.join("ui", "dialogs", "settings.py"))
+    assert "settings_builder.build_gdrive_section(self, scroll_backup)" in dialog_src, (
+        "Builder function exists but is never called from __init__ dispatch "
         "(expected parent=scroll_backup — inner CTkScrollableFrame inside "
         "the Резервная копия tab, per the 2026-05-28 tabview redesign)"
     )
 
 
 def test_settings_dialog_has_gdrive_handlers():
-    """All 5 button/state handlers referenced by _build_gdrive_section
+    """All 5 button/state handlers referenced by build_gdrive_section
     must be defined as methods on SettingsDialog."""
     src = _read(os.path.join("ui", "dialogs", "settings.py"))
     for method in (

@@ -1,0 +1,31 @@
+"""Regression locks for the widget-tree split (spec 2026-06-10).
+
+Source-text checks only — importing ui.* would load sounddevice, which
+Linux CI cannot (no PortAudio). Encoding pinned: stock Windows defaults
+to cp1252.
+"""
+
+from pathlib import Path
+
+SETTINGS = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
+BUILDER = Path("ui/dialogs/settings_builder.py").read_text(encoding="utf-8")
+
+
+def test_settings_class_has_no_build_methods():
+    # The split's whole point: widget-tree construction lives in the
+    # builder module, not on the dialog class.
+    assert "def _build_" not in SETTINGS
+
+
+def test_settings_builder_defines_no_class():
+    # Free functions only — a class here means the god-object is regrowing.
+    assert "\nclass " not in BUILDER and not BUILDER.startswith("class ")
+
+
+def test_settings_builder_import_discipline():
+    # Cycle guard: the builder must never import its own dialog module,
+    # and ui.app only lazily (inside build_appearance_section).
+    assert "from ui.dialogs.settings import" not in BUILDER
+    assert "import ui.dialogs.settings" not in BUILDER
+    head = BUILDER.split("\ndef ", 1)[0]  # module level = before first def
+    assert "from ui.app import" not in head

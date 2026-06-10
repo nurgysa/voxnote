@@ -7,6 +7,9 @@ from pathlib import Path
 SETTINGS_PATH = (
     Path(__file__).resolve().parent.parent / "ui" / "dialogs" / "settings.py"
 )
+BUILDER_PATH = (
+    Path(__file__).resolve().parent.parent / "ui" / "dialogs" / "settings_builder.py"
+)
 
 
 def test_no_inner_h1_label():
@@ -20,6 +23,19 @@ def test_no_inner_h1_label():
     )
     assert inline == 0, (
         f"Expected 0 widget text='Настройки' (title is in OS bar), got {inline}"
+    )
+
+
+def test_no_inner_h1_label_in_builder():
+    """settings_builder.py must also not introduce a text='Настройки' widget."""
+    source = BUILDER_PATH.read_text(encoding="utf-8")
+    inline = (
+        source.count('text="Настройки"')
+        + source.count("text='Настройки'")
+    )
+    assert inline == 0, (
+        f"Expected 0 widget text='Настройки' in settings_builder.py "
+        f"(title is in OS bar), got {inline}"
     )
 
 

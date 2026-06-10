@@ -15,44 +15,50 @@ def test_voices_dialog_deleted():
 
 
 def test_settings_has_no_voice_library_section():
-    src = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
-    assert "Голоса" not in src, "voice library button must be removed from Settings"
-    assert "_open_voices_dialog" not in src, "voices dialog launcher must be removed"
+    for rel in ["ui/dialogs/settings.py", "ui/dialogs/settings_builder.py"]:
+        src = Path(rel).read_text(encoding="utf-8")
+        assert "Голоса" not in src, f"voice library button must be removed from {rel}"
+        assert "_open_voices_dialog" not in src, (
+            f"voices dialog launcher must be removed from {rel}"
+        )
 
 
 def test_settings_has_no_model_size_picker():
     import re
 
-    src = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
-    # Whisper model size dropdown is local-only — verify the runtime bindings
-    # are gone (the docstring may still mention 'whisper-model' historically).
-    # _model_var is the binding the deleted dropdown used; MODELS is the
-    # constants dict; _on_model_changed is the App's callback.
-    assert not re.search(r"\b_model_var\b", src), (
-        "Settings still binds to App._model_var"
-    )
-    assert not re.search(r"\bMODELS\b", src), (
-        "Settings still imports MODELS constants"
-    )
-    assert "_on_model_changed" not in src, (
-        "Settings still wires the Whisper model-changed callback"
-    )
+    for rel in ["ui/dialogs/settings.py", "ui/dialogs/settings_builder.py"]:
+        src = Path(rel).read_text(encoding="utf-8")
+        # Whisper model size dropdown is local-only — verify the runtime bindings
+        # are gone (the docstring may still mention 'whisper-model' historically).
+        # _model_var is the binding the deleted dropdown used; MODELS is the
+        # constants dict; _on_model_changed is the App's callback.
+        assert not re.search(r"\b_model_var\b", src), (
+            f"{rel} still binds to App._model_var"
+        )
+        assert not re.search(r"\bMODELS\b", src), (
+            f"{rel} still imports MODELS constants"
+        )
+        assert "_on_model_changed" not in src, (
+            f"{rel} still wires the Whisper model-changed callback"
+        )
 
 
 def test_settings_has_no_device_picker():
-    src = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
-    # Both transcription + diarization device pickers are local-only
-    assert "tr_device" not in src and "di_device" not in src, (
-        "device pickers must be removed from Settings"
-    )
+    for rel in ["ui/dialogs/settings.py", "ui/dialogs/settings_builder.py"]:
+        src = Path(rel).read_text(encoding="utf-8")
+        # Both transcription + diarization device pickers are local-only
+        assert "tr_device" not in src and "di_device" not in src, (
+            f"device pickers must be removed from {rel}"
+        )
 
 
 def test_settings_has_no_hf_token_field():
-    src = Path("ui/dialogs/settings.py").read_text(encoding="utf-8")
-    lower = src.lower()
-    assert "hf_token" not in lower and "huggingface" not in lower, (
-        "HuggingFace token field must be removed (pyannote is gone)"
-    )
+    for rel in ["ui/dialogs/settings.py", "ui/dialogs/settings_builder.py"]:
+        src = Path(rel).read_text(encoding="utf-8")
+        lower = src.lower()
+        assert "hf_token" not in lower and "huggingface" not in lower, (
+            f"HuggingFace token field must be removed from {rel} (pyannote is gone)"
+        )
 
 
 def test_builder_has_no_local_state_vars():
@@ -107,6 +113,7 @@ def test_ui_has_no_noop_normalize_toggle():
     # mentions (transcription_mixin.py).
     for rel in [
         "ui/dialogs/settings.py",
+        "ui/dialogs/settings_builder.py",
         "ui/app/builder.py",
         "ui/app/settings_mixin.py",
         "ui/app/transcription_mixin.py",

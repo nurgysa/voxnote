@@ -11,6 +11,9 @@ bind to them directly. Closing the dialog destroys widgets but leaves the
 vars untouched, so subsequent transcribe() calls read the right values.
 The existing _on_*_changed callbacks on App fire on every change and persist
 to config.json — no extra save logic needed here.
+Widget construction lives in ui/dialogs/settings_builder.py (free
+build_*_section functions); this module owns state, traces, handlers and
+workers.
 """
 
 from __future__ import annotations
@@ -28,41 +31,22 @@ from theme import (
     BG,
     BLUE,
     BLUE_DIM,
-    BORDER,
     FONT,
     GREEN,
-    INPUT_BG,
     RED,
     SURFACE,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
 from ui.app.constants import LANGUAGES
-from ui.dialogs.settings_helpers import (
-    compute_banner_state,
-    format_glide_success,
-    format_linear_success,
-    format_openrouter_success,
-    format_trello_success,
-)
+from ui.dialogs import settings_builder
+from ui.dialogs.settings_helpers import compute_banner_state
 from ui.widgets import (
-    api_key_row,
-    card,
-    label,
-    option_menu,
-    primary_button,
     tonal_button,
 )
 from utils import get_meetings_dir, save_config
 
 _logger = logging.getLogger(__name__)
-
-# Curated dropdown for OpenRouter default model. Slug → display label.
-# Display label keeps the slug visible — power users recognize 'sonnet-4.5'
-# faster than 'Anthropic Claude Sonnet 4.5 (latest)'.
-_CURATED_MODELS = {
-    "google/gemini-3.5-flash":        "google/gemini-3.5-flash",
-}
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -132,7 +116,7 @@ class SettingsDialog(ctk.CTkToplevel):
         tab_backup = self._tabview.add("Резервная копия")
 
         # Each tab wraps its content in a CTkScrollableFrame so taller
-        # sections (Tab 1 has 5) don't clip when the dialog is shrunk.
+        # sections (Tab 1 has 6) don't clip when the dialog is shrunk.
         # The tab itself owns the scrollbar; sections grid into the
         # inner scroll frame at rows 0..N.
         for tab in (tab_transcription, tab_integrations, tab_backup):
@@ -161,22 +145,22 @@ class SettingsDialog(ctk.CTkToplevel):
         self._tabview.set("Транскрипция")
 
         # Tab 1 «Транскрипция» — core loop (minimal sufficient set)
-        self._build_appearance_section(scroll_transcription)
-        self._build_transcription_section(scroll_transcription)
-        self._build_audio_section(scroll_transcription)
-        self._build_cloud_section(scroll_transcription)
-        self._build_meetings_section(scroll_transcription)
-        self._build_dictionaries_section(scroll_transcription)
+        settings_builder.build_appearance_section(self, scroll_transcription)
+        settings_builder.build_transcription_section(self, scroll_transcription)
+        settings_builder.build_audio_section(self, scroll_transcription)
+        settings_builder.build_cloud_section(self, scroll_transcription)
+        settings_builder.build_meetings_section(self, scroll_transcription)
+        settings_builder.build_dictionaries_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
-        self._build_openrouter_section(scroll_integrations)
-        self._build_linear_section(scroll_integrations)
-        self._build_glide_section(scroll_integrations)
-        self._build_trello_section(scroll_integrations)
+        settings_builder.build_openrouter_section(self, scroll_integrations)
+        settings_builder.build_linear_section(self, scroll_integrations)
+        settings_builder.build_glide_section(self, scroll_integrations)
+        settings_builder.build_trello_section(self, scroll_integrations)
 
         # Tab 3 «Резервная копия» — independent housekeeping
-        self._build_gdrive_section(scroll_backup)
-        self._build_diagnostics_section(scroll_backup)
+        settings_builder.build_gdrive_section(self, scroll_backup)
+        settings_builder.build_diagnostics_section(self, scroll_backup)
 
         # Reactive banner: subscribe to the three vars whose values
         # determine the banner state. Tokens kept on self so destroy()
@@ -301,7 +285,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _jump_to_stt(self) -> None:
         """Switch to Транскрипция tab + focus the STT API key entry."""
         self._tabview.set("Транскрипция")
-        # _cloud_api_key_entry is captured in _build_cloud_section.
+        # _cloud_api_key_entry is captured in settings_builder.build_cloud_section.
         entry = getattr(self, "_cloud_api_key_entry", None)
         if entry is not None:
             entry.focus_set()
@@ -312,184 +296,6 @@ class SettingsDialog(ctk.CTkToplevel):
         menu = getattr(self, "_lang_menu", None)
         if menu is not None:
             menu.focus_set()
-
-    def _section_card(self, parent, title: str, row: int) -> ctk.CTkFrame:
-        """A titled card. Returns the inner content frame (already gridded)."""
-        wrapper = card(parent)
-        wrapper.grid(row=row, column=0, padx=4, pady=8, sticky="ew")
-        wrapper.grid_columnconfigure(0, weight=1)
-        ctk.CTkLabel(
-            wrapper, text=title,
-            font=ctk.CTkFont(family=FONT, size=13, weight="bold"),
-            text_color=TEXT_SECONDARY,
-        ).grid(row=0, column=0, padx=16, pady=(12, 4), sticky="w")
-        inner = ctk.CTkFrame(wrapper, fg_color="transparent")
-        inner.grid(row=1, column=0, padx=12, pady=(0, 12), sticky="ew")
-        inner.grid_columnconfigure(1, weight=1)
-        return inner
-
-    def _build_appearance_section(self, parent) -> None:
-        # Lazy import — APPEARANCE_MODES lives in ui.app, importing at
-        # module-load would create a circular dependency.
-        from ui.app import APPEARANCE_MODES
-
-        section = self._section_card(parent, "Внешний вид", row=0)
-
-        label(section, "Тема").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._appearance_var, list(APPEARANCE_MODES.keys()),
-            command=self._parent._on_appearance_changed,
-        ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-        label(
-            section,
-            "«Системная» следует за настройкой Windows (Light/Dark mode).",
-            anchor="w",
-        ).grid(row=1, column=0, columnspan=2, padx=4, pady=(0, 4), sticky="w")
-
-    def _build_transcription_section(self, parent) -> None:
-        section = self._section_card(parent, "Транскрипция", row=1)
-
-        label(section, "Язык").grid(row=0, column=0, padx=(4, 8), pady=6, sticky="w")
-        # Capture ref so the banner's _jump_to_lang can focus_set() it.
-        self._lang_menu = option_menu(
-            section, self._parent._lang_var, list(LANGUAGES.keys()),
-            command=self._parent._on_language_changed,
-        )
-        self._lang_menu.grid(row=0, column=1, padx=4, pady=6, sticky="w")
-
-    def _build_audio_section(self, parent) -> None:
-        section = self._section_card(parent, "Аудио", row=2)
-        # No loudness-normalization toggle here on purpose: the cloud path
-        # hardcodes ensure_wav(normalize=False) — provider gateways apply
-        # their own gain normalization, so a checkbox would control nothing.
-
-        # RNNoise (arnndn) — opt-in noise suppression. Default off; the
-        # neural denoiser can clip soft consonants on already-clean
-        # recordings. ~85 KB model lazy-downloaded on first use.
-        denoise_check = ctk.CTkCheckBox(
-            section, text="Подавлять шум (RNNoise — для записей с фоном)",
-            variable=self._parent._denoise_var,
-            command=self._parent._on_denoise_changed,
-            font=ctk.CTkFont(family=FONT, size=13),
-            text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
-            border_color=BORDER, corner_radius=4,
-            checkbox_height=20, checkbox_width=20,
-        )
-        denoise_check.grid(
-            row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-        )
-
-    def _build_cloud_section(self, parent) -> None:
-        """Cloud STT provider + API key + privacy + pricing disclosure.
-
-        Key handling via api_key_row; «Проверить» runs the selected
-        provider's cheap auth check (validate_key) on the row's worker
-        thread. Provider dropdown stays as a separate row because its
-        callback wires into the first-run banner's mixed-lang condition.
-        Captures self._cloud_api_key_entry so the banner can focus_set() it.
-        """
-        section = self._section_card(parent, "Облачное распознавание", row=3)
-
-        # Provider dropdown
-        label(section, "Провайдер").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._cloud_provider_var, list(PROVIDERS.keys()),
-            command=self._parent._on_cloud_provider_changed,
-        ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-
-        def _on_validate(key: str) -> dict:
-            # Lazy import — keeps providers/ HTTP plumbing off the
-            # dialog-construction path. Dispatches on whatever provider
-            # is selected at click time; an empty key raises the
-            # provider's own Russian "ключ не задан" ProviderError.
-            from providers import get_provider
-            provider = get_provider(self._parent._cloud_provider_var.get(), key)
-            return provider.validate_key()
-
-        def _persist(key: str, _info: dict) -> None:
-            name = self._parent._cloud_provider_var.get()
-            self._parent._cloud_api_keys[name] = key
-            self._parent._config["cloud_api_keys"] = self._parent._cloud_api_keys
-            save_config(self._parent._config)
-
-        # API key row — capture entry ref so the global first-run banner
-        # can focus_set() it on click.
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._cloud_api_key_var,
-            placeholder="API ключ провайдера",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=lambda _info: "✓ Ключ действителен",
-            row=1,
-        )
-        self._cloud_api_key_entry = refs["entry"]
-
-        # Disclosure: audio leaves the user's machine and ends up on a
-        # third-party server. Surfacing this in the cloud section is the
-        # cheapest mitigation. Placed AFTER the key field so it reads
-        # as context for the field it applies to.
-        label(
-            section,
-            "⚠ Аудио загружается на сервер провайдера. "
-            "Не используй для конфиденциальных записей.",
-            anchor="w",
-        ).grid(row=3, column=0, columnspan=4, padx=4, pady=(2, 6), sticky="w")
-        # Static price summary. Cheapest with diarization first.
-        label(
-            section,
-            "ℹ Цены с диаризацией: AssemblyAI ~$0.17/ч • "
-            "Deepgram ~$0.43/ч • Gladia ~$0.61/ч • "
-            "Speechmatics ~$1.04/ч.",
-            anchor="w",
-        ).grid(row=4, column=0, columnspan=4, padx=4, pady=(0, 4), sticky="w")
-
-    def _build_meetings_section(self, parent) -> None:
-        """Meetings folder picker — path entry + Выбрать + Default + stats.
-
-        On path change: triggers MigrationPromptDialog if the current
-        folder has entries (mode="settings"). Otherwise silent save.
-        """
-        section = self._section_card(parent, "Митинги", row=4)
-
-        label(section, "Папка хранения").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-
-        self._meetings_path_var = ctk.StringVar(value=get_meetings_dir())
-        self._meetings_entry = ctk.CTkEntry(
-            section, textvariable=self._meetings_path_var,
-            height=36, corner_radius=10,
-            border_color=BORDER, border_width=1,
-            fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT, size=12),
-            state="readonly",
-        )
-        self._meetings_entry.grid(
-            row=0, column=1, columnspan=2, padx=4, pady=6, sticky="ew",
-        )
-
-        tonal_button(
-            section, text="\U0001f4c1 Выбрать",
-            command=self._on_pick_meetings_folder, width=130,
-        ).grid(row=0, column=3, padx=(4, 4), pady=6)
-
-        tonal_button(
-            section, text="↻ Default",
-            command=self._on_reset_meetings_folder, width=120,
-        ).grid(row=1, column=3, padx=(4, 4), pady=(0, 6))
-
-        # Stats label — refreshed on dialog open and after path change
-        self._meetings_stats_label = label(section, "", anchor="w")
-        self._meetings_stats_label.grid(
-            row=1, column=0, columnspan=3, padx=4, pady=(0, 6), sticky="w",
-        )
-        self._refresh_meetings_stats()
 
     def _refresh_meetings_stats(self) -> None:
         """Compute «В этой папке: N митингов • X GB» and update the label."""
@@ -562,20 +368,6 @@ class SettingsDialog(ctk.CTkToplevel):
         self._meetings_path_var.set(new_path)
         self._refresh_meetings_stats()
 
-    def _build_dictionaries_section(self, parent) -> None:
-        section = self._section_card(parent, "Словари", row=5)
-
-        tonal_button(
-            section, text="Словарь терминов",
-            command=self._parent._open_terms_dialog, width=200,
-        ).grid(row=0, column=0, padx=4, pady=6, sticky="w")
-        # Compact summary of what's saved — same source as the main-window
-        # label (kept in sync via _update_terms_label, which we reuse below).
-        self._terms_summary = label(section, "", anchor="w")
-        self._terms_summary.grid(row=0, column=1, padx=(8, 4), pady=6, sticky="ew")
-
-        self._refresh_summaries()
-
     def _refresh_summaries(self) -> None:
         """Mirror App's existing summary-rendering for terms.
 
@@ -593,249 +385,7 @@ class SettingsDialog(ctk.CTkToplevel):
         else:
             self._terms_summary.configure(text="Нет сохранённых терминов")
 
-    # ── OpenRouter section (Phase 6.0 Task 13) ────────────────────────
-
-    def _build_openrouter_section(self, parent) -> None:
-        """OpenRouter API key + default model.
-
-        Key handling delegated to ui.widgets.api_key_row (entry + eye-toggle
-        + Проверить + status). Default-model dropdown stays as a separate
-        row below.
-        """
-        section = self._section_card(parent, "OpenRouter", row=0)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["openrouter_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            # Lazy import — keeps tasks/openrouter_client (and transitively
-            # requests) off the dialog-construction path.
-            from tasks.openrouter_client import OpenRouterClient
-            client = OpenRouterClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._openrouter_key_var,
-            placeholder="sk-or-...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=format_openrouter_success,
-            row=0,
-        )
-        self._openrouter_status = refs["status"]
-
-        # Default model dropdown (unchanged — separate row below the key)
-        label(section, "Модель по умолчанию").grid(
-            row=2, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._openrouter_default_model_var,
-            list(_CURATED_MODELS.keys()),
-        ).grid(row=2, column=1, columnspan=2, padx=4, pady=6, sticky="ew")
-
-    # ── Linear section (Phase 6.0 Task 15) ────────────────────────────
-
-    def _build_linear_section(self, parent) -> None:
-        """Linear API key + connection status.
-
-        enable-checkbox + API key handling delegated to api_key_row.
-        No team picker here — that's per-run in ExtractTasksDialog.
-        """
-        section = self._section_card(parent, "Linear", row=1)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["linear_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            from tasks.linear_client import LinearClient
-            client = LinearClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._linear_key_var,
-            placeholder="lin_api_...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            enabled_var=self._parent._linear_enabled_var,
-            enabled_label="Использовать Linear",
-            on_enabled_changed=self._parent._on_linear_enabled_changed,
-            format_success=format_linear_success,
-            row=0,
-        )
-        self._linear_status = refs["status"]
-
-    def _build_glide_section(self, parent) -> None:
-        """Glide API key + connection status (Phase 6.4).
-
-        Mirrors the Linear section pattern (enable-checkbox + validate
-        through api_key_row).
-        """
-        section = self._section_card(parent, "Glide", row=2)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["glide_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            from tasks.glide_client import GlideClient
-            client = GlideClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._glide_key_var,
-            placeholder="glide_pk_<workspace>_...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            enabled_var=self._parent._glide_enabled_var,
-            enabled_label="Использовать Glide",
-            on_enabled_changed=self._parent._on_glide_enabled_changed,
-            format_success=format_glide_success,
-            row=0,
-        )
-        self._glide_status = refs["status"]
-
-    def _build_trello_section(self, parent) -> None:
-        """Trello API key + token + connection status (spec 2026-05-29).
-
-        Trello needs two secrets (key + token). The shared api_key_row
-        helper renders one masked field, so we compose two calls:
-        - key row: enable-checkbox + masked key field (no Validate)
-        - token row: masked token field + Validate + status badge
-
-        api_key_row only persists on Validate success, and only the token
-        row has a Validate button — so the token row's _persist saves BOTH
-        credentials, and its _on_validate reads BOTH vars.
-        """
-        section = self._section_card(parent, "Trello", row=3)
-
-        key_frame = ctk.CTkFrame(section, fg_color="transparent")
-        key_frame.grid(row=0, column=0, sticky="ew")
-        key_frame.grid_columnconfigure(1, weight=1)
-
-        token_frame = ctk.CTkFrame(section, fg_color="transparent")
-        token_frame.grid(row=1, column=0, sticky="ew")
-        token_frame.grid_columnconfigure(1, weight=1)
-
-        def _persist(_token: str, _info: dict) -> None:
-            self._parent._config["trello_api_key"] = self._parent._trello_key_var.get().strip()
-            self._parent._config["trello_token"] = self._parent._trello_token_var.get().strip()
-            save_config(self._parent._config)
-
-        def _on_validate(token: str) -> dict:
-            from tasks.trello_client import TrelloClient
-            api_key = self._parent._trello_key_var.get().strip()
-            client = TrelloClient(api_key, token)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        # Key row — owns the enable-checkbox; no Validate button.
-        api_key_row(
-            key_frame,
-            label_text="API ключ",
-            key_var=self._parent._trello_key_var,
-            placeholder="(ключ Trello — trello.com/app-key)",
-            enabled_var=self._parent._trello_enabled_var,
-            enabled_label="Использовать Trello",
-            on_enabled_changed=self._parent._on_trello_enabled_changed,
-            row=0,
-        )
-
-        # Token row — owns Validate + status; persists both credentials.
-        refs = api_key_row(
-            token_frame,
-            label_text="Токен",
-            key_var=self._parent._trello_token_var,
-            placeholder="(токен Trello)",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=format_trello_success,
-            row=0,
-        )
-        self._trello_status = refs["status"]
-
     # ── Google Drive section (Phase 7.0) ──────────────────────────────
-
-    def _build_gdrive_section(self, parent) -> None:
-        """Google Drive backup: sign-in/out + status badge.
-
-        Phase 7.0 surface only — no backup-now button (7.1), no
-        frequency dropdown (7.3), no audio opt-in (7.4). Adding those
-        widgets later just extends this method.
-
-        Threading: sign_in() blocks while the browser is open; we run
-        it in a daemon thread and route the result back to the Tk loop
-        via `self.after(0, ...)` so widget updates happen on the main
-        thread. Mirrors the _validate_openrouter pattern.
-        """
-        section = self._section_card(parent, "Google Drive", row=0)
-
-        # Status row — badge bound to the App's _gdrive_status_var.
-        label(section, "Статус").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        self._gdrive_status_label = ctk.CTkLabel(
-            section,
-            textvariable=self._parent._gdrive_status_var,
-            anchor="w",
-            text_color=TEXT_PRIMARY,
-            font=ctk.CTkFont(family=FONT, size=12),
-        )
-        self._gdrive_status_label.grid(
-            row=0, column=1, columnspan=2, padx=4, pady=6, sticky="ew",
-        )
-
-        # Action row — Войти + Выйти (one of them disabled at any time).
-        self._gdrive_signin_btn = primary_button(
-            section, text="Войти через Google",
-            command=self._handle_gdrive_signin, width=180,
-        )
-        self._gdrive_signin_btn.grid(
-            row=1, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-        )
-
-        self._gdrive_signout_btn = tonal_button(
-            section, text="Выйти",
-            command=self._handle_gdrive_signout, width=100,
-        )
-        self._gdrive_signout_btn.grid(row=1, column=2, padx=(4, 4), pady=6, sticky="e")
-
-        # Backup-now row (Phase 7.1) — button + status label. Status is
-        # local (not bound to a parent Var) because backup status is a
-        # transient dialog-only concern; persistence of
-        # gdrive_last_backup happens on success via the mixin callback.
-        self._gdrive_backup_btn = tonal_button(
-            section, text="Сделать backup сейчас",
-            command=self._handle_gdrive_backup_now, width=200,
-        )
-        self._gdrive_backup_btn.grid(
-            row=2, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-        )
-        self._gdrive_backup_status = label(section, "", anchor="w")
-        self._gdrive_backup_status.grid(
-            row=2, column=2, padx=(8, 4), pady=6, sticky="ew",
-        )
-
-        # Initial button enabled-state reflects current sign-in state.
-        self._refresh_gdrive_button_state()
 
     def _refresh_gdrive_button_state(self) -> None:
         """Войти is enabled iff not signed in; Выйти + Сделать backup
@@ -984,24 +534,6 @@ class SettingsDialog(ctk.CTkToplevel):
         self._refresh_gdrive_button_state()
 
     # ── Diagnostics: "Сохранить лог для отправки" (WS-3 / D4) ──────────
-
-    def _build_diagnostics_section(self, parent) -> None:
-        """Diagnostics export: bundle logs/ + a redacted config.json into a
-        zip the user can send to support. No telemetry backend (D4) — the
-        user picks where to save and ships it themselves."""
-        section = self._section_card(parent, "Диагностика", row=1)
-        label(section, "Логи").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        self._send_log_btn = tonal_button(
-            section, text="Сохранить лог для отправки",
-            command=self._handle_send_log, width=240,
-        )
-        self._send_log_btn.grid(row=0, column=1, padx=4, pady=6, sticky="w")
-        self._send_log_status = label(section, "", anchor="w")
-        self._send_log_status.grid(
-            row=0, column=2, padx=(8, 4), pady=6, sticky="ew",
-        )
 
     def _handle_send_log(self) -> None:
         """Pick a destination, then build the logs+config zip in a worker.
