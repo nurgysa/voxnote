@@ -1209,9 +1209,20 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         # Persist any pending form edits before tearing down.
         try:
             self._persist_current_task()
-        except OSError:
+        except OSError as exc:
             import logging
             logging.getLogger(__name__).exception("persist on close failed")
+            # Data-loss guard: closing now discards the un-persisted edits.
+            # Let the user keep the dialog open (free disk space / release
+            # the file lock) and close again, instead of losing work silently.
+            close_anyway = messagebox.askyesno(
+                "Сохранение",
+                "Не удалось сохранить задачи на диск:\n"
+                f"{exc}\n\nЗакрыть без сохранения?",
+                parent=self,
+            )
+            if not close_anyway:
+                return
         self._cancel_event.set()
         # Closing the requests.Session sockets interrupts any blocked .post()
         # in the worker; it raises ConnectionError, which the worker catches
