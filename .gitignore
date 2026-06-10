@@ -16,6 +16,7 @@ __pycache__/
 .venv/
 venv/
 .pytest_cache/
+.coverage
 
 # Editors / IDE / agent state
 .vscode/
