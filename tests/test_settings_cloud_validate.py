@@ -1,19 +1,20 @@
 """The cloud-STT key row must wire the «Проверить» button.
 
-Source-text checks window-sliced to _build_cloud_section (Linux CI can't
-import ui/ — sounddevice loads PortAudio at import time). Before this
-feature the row was built with on_validate=None («deferred to a follow-up
-PR per the spec») — a wrong key stayed silent until the first transcription.
+Source-text checks window-sliced to build_cloud_section in settings_builder
+(Linux CI can't import ui/ — sounddevice loads PortAudio at import time).
+Before this feature the row was built with on_validate=None («deferred to a
+follow-up PR per the spec») — a wrong key stayed silent until the first
+transcription.
 """
 from pathlib import Path
 
-_SETTINGS = Path("ui/dialogs/settings.py")
+_BUILDER = Path("ui/dialogs/settings_builder.py")
 
 
 def _cloud_section_body() -> str:
-    src = _SETTINGS.read_text(encoding="utf-8")
-    start = src.index("def _build_cloud_section(")
-    end = src.index("def _refresh_meetings_stats(", start)
+    src = _BUILDER.read_text(encoding="utf-8")
+    start = src.index("def build_cloud_section(")
+    end = src.index("def build_openrouter_section(", start)
     return src[start:end]
 
 

@@ -37,30 +37,15 @@ from theme import (
 )
 from ui.app.constants import LANGUAGES
 from ui.dialogs import settings_builder
-from ui.dialogs.settings_helpers import (
-    compute_banner_state,
-    format_glide_success,
-    format_linear_success,
-    format_openrouter_success,
-    format_trello_success,
-)
+from ui.dialogs.settings_helpers import compute_banner_state
 from ui.widgets import (
-    api_key_row,
     label,
-    option_menu,
     primary_button,
     tonal_button,
 )
 from utils import get_meetings_dir, save_config
 
 _logger = logging.getLogger(__name__)
-
-# Curated dropdown for OpenRouter default model. Slug → display label.
-# Display label keeps the slug visible — power users recognize 'sonnet-4.5'
-# faster than 'Anthropic Claude Sonnet 4.5 (latest)'.
-_CURATED_MODELS = {
-    "google/gemini-3.5-flash":        "google/gemini-3.5-flash",
-}
 
 
 class SettingsDialog(ctk.CTkToplevel):
@@ -162,15 +147,15 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_appearance_section(self, scroll_transcription)
         settings_builder.build_transcription_section(self, scroll_transcription)
         settings_builder.build_audio_section(self, scroll_transcription)
-        self._build_cloud_section(scroll_transcription)
+        settings_builder.build_cloud_section(self, scroll_transcription)
         settings_builder.build_meetings_section(self, scroll_transcription)
         settings_builder.build_dictionaries_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
-        self._build_openrouter_section(scroll_integrations)
-        self._build_linear_section(scroll_integrations)
-        self._build_glide_section(scroll_integrations)
-        self._build_trello_section(scroll_integrations)
+        settings_builder.build_openrouter_section(self, scroll_integrations)
+        settings_builder.build_linear_section(self, scroll_integrations)
+        settings_builder.build_glide_section(self, scroll_integrations)
+        settings_builder.build_trello_section(self, scroll_integrations)
 
         # Tab 3 «Резервная копия» — independent housekeeping
         self._build_gdrive_section(scroll_backup)
@@ -299,7 +284,7 @@ class SettingsDialog(ctk.CTkToplevel):
     def _jump_to_stt(self) -> None:
         """Switch to Транскрипция tab + focus the STT API key entry."""
         self._tabview.set("Транскрипция")
-        # _cloud_api_key_entry is captured in _build_cloud_section.
+        # _cloud_api_key_entry is captured in settings_builder.build_cloud_section.
         entry = getattr(self, "_cloud_api_key_entry", None)
         if entry is not None:
             entry.focus_set()
@@ -314,74 +299,6 @@ class SettingsDialog(ctk.CTkToplevel):
     def _section_card(self, parent, title: str, row: int) -> ctk.CTkFrame:
         """Shim during the split — remaining sections move in Tasks 1.2/1.3."""
         return settings_builder.section_card(self, parent, title, row)
-
-    def _build_cloud_section(self, parent) -> None:
-        """Cloud STT provider + API key + privacy + pricing disclosure.
-
-        Key handling via api_key_row; «Проверить» runs the selected
-        provider's cheap auth check (validate_key) on the row's worker
-        thread. Provider dropdown stays as a separate row because its
-        callback wires into the first-run banner's mixed-lang condition.
-        Captures self._cloud_api_key_entry so the banner can focus_set() it.
-        """
-        section = self._section_card(parent, "Облачное распознавание", row=3)
-
-        # Provider dropdown
-        label(section, "Провайдер").grid(
-            row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._cloud_provider_var, list(PROVIDERS.keys()),
-            command=self._parent._on_cloud_provider_changed,
-        ).grid(row=0, column=1, padx=4, pady=6, sticky="w")
-
-        def _on_validate(key: str) -> dict:
-            # Lazy import — keeps providers/ HTTP plumbing off the
-            # dialog-construction path. Dispatches on whatever provider
-            # is selected at click time; an empty key raises the
-            # provider's own Russian "ключ не задан" ProviderError.
-            from providers import get_provider
-            provider = get_provider(self._parent._cloud_provider_var.get(), key)
-            return provider.validate_key()
-
-        def _persist(key: str, _info: dict) -> None:
-            name = self._parent._cloud_provider_var.get()
-            self._parent._cloud_api_keys[name] = key
-            self._parent._config["cloud_api_keys"] = self._parent._cloud_api_keys
-            save_config(self._parent._config)
-
-        # API key row — capture entry ref so the global first-run banner
-        # can focus_set() it on click.
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._cloud_api_key_var,
-            placeholder="API ключ провайдера",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=lambda _info: "✓ Ключ действителен",
-            row=1,
-        )
-        self._cloud_api_key_entry = refs["entry"]
-
-        # Disclosure: audio leaves the user's machine and ends up on a
-        # third-party server. Surfacing this in the cloud section is the
-        # cheapest mitigation. Placed AFTER the key field so it reads
-        # as context for the field it applies to.
-        label(
-            section,
-            "⚠ Аудио загружается на сервер провайдера. "
-            "Не используй для конфиденциальных записей.",
-            anchor="w",
-        ).grid(row=3, column=0, columnspan=4, padx=4, pady=(2, 6), sticky="w")
-        # Static price summary. Cheapest with diarization first.
-        label(
-            section,
-            "ℹ Цены с диаризацией: AssemblyAI ~$0.17/ч • "
-            "Deepgram ~$0.43/ч • Gladia ~$0.61/ч • "
-            "Speechmatics ~$1.04/ч.",
-            anchor="w",
-        ).grid(row=4, column=0, columnspan=4, padx=4, pady=(0, 4), sticky="w")
 
     def _refresh_meetings_stats(self) -> None:
         """Compute «В этой папке: N митингов • X GB» and update the label."""
@@ -470,185 +387,6 @@ class SettingsDialog(ctk.CTkToplevel):
             self._terms_summary.configure(text=preview)
         else:
             self._terms_summary.configure(text="Нет сохранённых терминов")
-
-    # ── OpenRouter section (Phase 6.0 Task 13) ────────────────────────
-
-    def _build_openrouter_section(self, parent) -> None:
-        """OpenRouter API key + default model.
-
-        Key handling delegated to ui.widgets.api_key_row (entry + eye-toggle
-        + Проверить + status). Default-model dropdown stays as a separate
-        row below.
-        """
-        section = self._section_card(parent, "OpenRouter", row=0)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["openrouter_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            # Lazy import — keeps tasks/openrouter_client (and transitively
-            # requests) off the dialog-construction path.
-            from tasks.openrouter_client import OpenRouterClient
-            client = OpenRouterClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._openrouter_key_var,
-            placeholder="sk-or-...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=format_openrouter_success,
-            row=0,
-        )
-        self._openrouter_status = refs["status"]
-
-        # Default model dropdown (unchanged — separate row below the key)
-        label(section, "Модель по умолчанию").grid(
-            row=2, column=0, padx=(4, 8), pady=6, sticky="w",
-        )
-        option_menu(
-            section, self._parent._openrouter_default_model_var,
-            list(_CURATED_MODELS.keys()),
-        ).grid(row=2, column=1, columnspan=2, padx=4, pady=6, sticky="ew")
-
-    # ── Linear section (Phase 6.0 Task 15) ────────────────────────────
-
-    def _build_linear_section(self, parent) -> None:
-        """Linear API key + connection status.
-
-        enable-checkbox + API key handling delegated to api_key_row.
-        No team picker here — that's per-run in ExtractTasksDialog.
-        """
-        section = self._section_card(parent, "Linear", row=1)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["linear_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            from tasks.linear_client import LinearClient
-            client = LinearClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._linear_key_var,
-            placeholder="lin_api_...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            enabled_var=self._parent._linear_enabled_var,
-            enabled_label="Использовать Linear",
-            on_enabled_changed=self._parent._on_linear_enabled_changed,
-            format_success=format_linear_success,
-            row=0,
-        )
-        self._linear_status = refs["status"]
-
-    def _build_glide_section(self, parent) -> None:
-        """Glide API key + connection status (Phase 6.4).
-
-        Mirrors the Linear section pattern (enable-checkbox + validate
-        through api_key_row).
-        """
-        section = self._section_card(parent, "Glide", row=2)
-
-        def _persist(key: str, _info: dict) -> None:
-            self._parent._config["glide_api_key"] = key
-            save_config(self._parent._config)
-
-        def _on_validate(key: str) -> dict:
-            from tasks.glide_client import GlideClient
-            client = GlideClient(key)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        refs = api_key_row(
-            section,
-            label_text="API ключ",
-            key_var=self._parent._glide_key_var,
-            placeholder="glide_pk_<workspace>_...",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            enabled_var=self._parent._glide_enabled_var,
-            enabled_label="Использовать Glide",
-            on_enabled_changed=self._parent._on_glide_enabled_changed,
-            format_success=format_glide_success,
-            row=0,
-        )
-        self._glide_status = refs["status"]
-
-    def _build_trello_section(self, parent) -> None:
-        """Trello API key + token + connection status (spec 2026-05-29).
-
-        Trello needs two secrets (key + token). The shared api_key_row
-        helper renders one masked field, so we compose two calls:
-        - key row: enable-checkbox + masked key field (no Validate)
-        - token row: masked token field + Validate + status badge
-
-        api_key_row only persists on Validate success, and only the token
-        row has a Validate button — so the token row's _persist saves BOTH
-        credentials, and its _on_validate reads BOTH vars.
-        """
-        section = self._section_card(parent, "Trello", row=3)
-
-        key_frame = ctk.CTkFrame(section, fg_color="transparent")
-        key_frame.grid(row=0, column=0, sticky="ew")
-        key_frame.grid_columnconfigure(1, weight=1)
-
-        token_frame = ctk.CTkFrame(section, fg_color="transparent")
-        token_frame.grid(row=1, column=0, sticky="ew")
-        token_frame.grid_columnconfigure(1, weight=1)
-
-        def _persist(_token: str, _info: dict) -> None:
-            self._parent._config["trello_api_key"] = self._parent._trello_key_var.get().strip()
-            self._parent._config["trello_token"] = self._parent._trello_token_var.get().strip()
-            save_config(self._parent._config)
-
-        def _on_validate(token: str) -> dict:
-            from tasks.trello_client import TrelloClient
-            api_key = self._parent._trello_key_var.get().strip()
-            client = TrelloClient(api_key, token)
-            try:
-                return client.validate_key()
-            finally:
-                client.close()
-
-        # Key row — owns the enable-checkbox; no Validate button.
-        api_key_row(
-            key_frame,
-            label_text="API ключ",
-            key_var=self._parent._trello_key_var,
-            placeholder="(ключ Trello — trello.com/app-key)",
-            enabled_var=self._parent._trello_enabled_var,
-            enabled_label="Использовать Trello",
-            on_enabled_changed=self._parent._on_trello_enabled_changed,
-            row=0,
-        )
-
-        # Token row — owns Validate + status; persists both credentials.
-        refs = api_key_row(
-            token_frame,
-            label_text="Токен",
-            key_var=self._parent._trello_token_var,
-            placeholder="(токен Trello)",
-            on_validate=_on_validate,
-            on_key_persisted=_persist,
-            format_success=format_trello_success,
-            row=0,
-        )
-        self._trello_status = refs["status"]
 
     # ── Google Drive section (Phase 7.0) ──────────────────────────────
 
