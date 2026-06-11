@@ -24,7 +24,7 @@ import time
 
 import requests
 
-from ._common import cancel_remote, check_cancel, require_key, validate_via_get
+from ._common import cancel_remote, check_cancel, file_stream, require_key, validate_via_get
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -33,10 +33,6 @@ from .base import (
 )
 
 _API_BASE = "https://api.assemblyai.com/v2"
-# Upload chunk size for streaming the audio into POST /v2/upload. 5 MB is a
-# good middle ground: small enough to give responsive cancel-poll feedback,
-# big enough that overhead is negligible vs. AssemblyAI's accept loop.
-_UPLOAD_CHUNK = 5 * 1024 * 1024
 # Polling cadence for transcript completion. AssemblyAI typically processes
 # audio at 5-15× realtime; 3 s keeps wall-time-to-final-status low without
 # burning quota on excessive GETs.
@@ -120,29 +116,14 @@ class AssemblyAIProvider(TranscriptionProvider):
         approximate progress bar (0..70% slice — leaves 70..100 for the
         remote processing phase, mirroring the local progress contract).
         """
-        size = os.path.getsize(audio_path)
-        sent = 0
-
-        def _gen():
-            nonlocal sent
-            with open(audio_path, "rb") as f:
-                while True:
-                    check_cancel(cancel_event)
-                    chunk = f.read(_UPLOAD_CHUNK)
-                    if not chunk:
-                        return
-                    sent += len(chunk)
-                    if on_progress and size > 0:
-                        # 0..70% band for upload, leaving 70..100 for
-                        # the AssemblyAI processing wait below.
-                        on_progress(min(sent / size, 1.0) * 70.0)
-                    yield chunk
-
         try:
             r = requests.post(
                 f"{_API_BASE}/upload",
                 headers=self._headers,
-                data=_gen(),
+                data=file_stream(
+                    audio_path, cancel_event=cancel_event,
+                    on_progress=on_progress,
+                ),
                 timeout=60 * 30,  # 30 min absolute upload cap
             )
         except requests.RequestException as e:

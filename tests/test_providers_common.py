@@ -16,6 +16,7 @@ import requests
 from providers._common import (
     cancel_remote,
     check_cancel,
+    file_stream,
     guess_content_type,
     require_key,
     validate_via_get,
@@ -155,3 +156,41 @@ def test_validate_via_get_network_failure():
             ProviderError, match="Сеть не отвечает при проверке ключа"
         ):
             validate_via_get("u", headers={}, provider="X")
+
+
+# ── file_stream ───────────────────────────────────────────────────────
+
+
+def test_file_stream_yields_all_bytes_and_band_progress(tmp_path):
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"0123456789")  # 10 bytes
+    calls: list[float] = []
+    chunks = list(
+        file_stream(
+            str(f), cancel_event=None, on_progress=calls.append, chunk_size=4,
+        )
+    )
+    assert b"".join(chunks) == b"0123456789"
+    # 4/10, 8/10, 10/10 of the default 70 % band
+    assert calls == pytest.approx([28.0, 56.0, 70.0])
+
+
+def test_file_stream_no_progress_callback_ok(tmp_path):
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"xy")
+    assert b"".join(
+        file_stream(str(f), cancel_event=None, on_progress=None)
+    ) == b"xy"
+
+
+def test_file_stream_cancel_mid_stream(tmp_path):
+    from transcriber import TranscriptionCancelled
+
+    f = tmp_path / "a.bin"
+    f.write_bytes(b"x" * 10)
+    ev = threading.Event()
+    gen = file_stream(str(f), cancel_event=ev, on_progress=None, chunk_size=4)
+    assert next(gen) == b"xxxx"
+    ev.set()
+    with pytest.raises(TranscriptionCancelled):
+        next(gen)

@@ -102,3 +102,25 @@ def validate_via_get(url: str, *, headers: dict, provider: str,
             f"{r.text[:300]}"
         )
     return {}
+
+
+def file_stream(path: str, *, cancel_event, on_progress,
+                band: float = 70.0, chunk_size: int = UPLOAD_CHUNK):
+    """Chunked file reader for streaming upload bodies.
+
+    Yields ``chunk_size`` blocks, checking the cancel event between reads
+    and reporting progress 0..``band`` % — the remaining band belongs to
+    the caller's processing phase (mirrors the local progress contract).
+    """
+    size = os.path.getsize(path)
+    sent = 0
+    with open(path, "rb") as f:
+        while True:
+            check_cancel(cancel_event)
+            chunk = f.read(chunk_size)
+            if not chunk:
+                return
+            sent += len(chunk)
+            if on_progress and size > 0:
+                on_progress(min(sent / size, 1.0) * band)
+            yield chunk

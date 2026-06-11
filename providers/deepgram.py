@@ -25,7 +25,7 @@ import os
 
 import requests
 
-from ._common import check_cancel, guess_content_type, require_key, validate_via_get
+from ._common import check_cancel, file_stream, guess_content_type, require_key, validate_via_get
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -34,9 +34,6 @@ from .base import (
 )
 
 _API_URL = "https://api.deepgram.com/v1/listen"
-# Same chunk size as the AssemblyAI uploader — small enough for snappy
-# cancel response, big enough that per-request overhead is negligible.
-_UPLOAD_CHUNK = 5 * 1024 * 1024
 
 
 class DeepgramProvider(TranscriptionProvider):
@@ -94,29 +91,15 @@ class DeepgramProvider(TranscriptionProvider):
             "Content-Type": guess_content_type(audio_path),
         }
 
-        size = os.path.getsize(audio_path)
-        sent = [0]
-
-        def _gen():
-            with open(audio_path, "rb") as f:
-                while True:
-                    check_cancel(cancel_event)
-                    chunk = f.read(_UPLOAD_CHUNK)
-                    if not chunk:
-                        return
-                    sent[0] += len(chunk)
-                    if on_progress and size > 0:
-                        # 0..70% during streaming; the response itself comes
-                        # back fast so we leave 70..100 for parsing.
-                        on_progress(min(sent[0] / size, 1.0) * 70.0)
-                    yield chunk
-
         try:
             r = requests.post(
                 _API_URL,
                 params=params,
                 headers=headers,
-                data=_gen(),
+                data=file_stream(
+                    audio_path, cancel_event=cancel_event,
+                    on_progress=on_progress,
+                ),
                 timeout=60 * 30,
             )
         except requests.RequestException as e:
