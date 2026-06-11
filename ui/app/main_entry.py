@@ -45,6 +45,9 @@ def main():
         from . import App
         app = App()
         app.mainloop()
+    # Last-resort crash handler: anything escaping App must be logged and
+    # shown to the user before the process dies — frozen windowed builds
+    # have no console where a traceback could be seen.
     except Exception as e:
         logger.exception("fatal error in main()")
         try:
@@ -52,6 +55,8 @@ def main():
             root.withdraw()
             messagebox.showerror("Ошибка запуска", str(e))
             root.destroy()
+        # Tk itself may be unusable here (the crash above may BE a Tk init
+        # failure) — fall back to the console so dev runs still see it.
         except Exception:
             print(f"Ошибка: {e}")
             input("Нажмите Enter для выхода...")

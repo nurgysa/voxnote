@@ -287,6 +287,9 @@ class AudioCutter(ctk.CTkToplevel):
             self._draw_waveform()
             self._lbl_status.configure(text="Готово", text_color=GREEN)
 
+        # Decode failures are heterogeneous (libsndfile, ffmpeg subprocess,
+        # OSError) — any of them must land in the status label rather than
+        # crash the Tk callback.
         except Exception as e:
             self._lbl_status.configure(text=f"Ошибка: {e}", text_color=RED)
 
@@ -395,8 +398,8 @@ class AudioCutter(ctk.CTkToplevel):
         try:
             self._canvas.config(bg=t(SURFACE))
             self._draw_waveform()
-        except Exception:
-            pass
+        except tk.TclError:
+            pass  # cutter window may be mid-destroy when the theme flips
 
     def _sec_to_x(self, sec: float, canvas_width: int) -> float:
         if self._duration <= 0:
@@ -556,7 +559,9 @@ class AudioCutter(ctk.CTkToplevel):
             try:
                 sd.play(selection, samplerate=self._sample_rate)
                 sd.wait()
-            except Exception:
+            except (sd.PortAudioError, ValueError):
+                # Device gone / bad format — the preview just stops; the
+                # finally restores the play button either way.
                 pass
             finally:
                 self.after(0, self._on_playback_done)

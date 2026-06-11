@@ -411,7 +411,13 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 finally:
                     self._active_clients.remove(backend)
                     backend.close()
+            # Worker-thread boundary: bootstrap() raises backend-specific
+            # errors and backend_from_name() raises ValueError/KeyError on
+            # a bad registry name — every class must surface in the dialog
+            # instead of killing the thread silently.
             except Exception as e:
+                import logging
+                logging.getLogger(__name__).exception("containers fetch failed")
                 if self._cancel_event.is_set():
                     return
                 self.after(0, self._on_containers_error, str(e))
@@ -822,8 +828,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         fire (e.g., a focused textbox would get a literal 'E')."""
         try:
             state = str(self._btn_extract.cget("state"))
-        except Exception:
-            state = "disabled"
+        except tk.TclError:
+            state = "disabled"  # button already destroyed (dialog closing)
         if state == "normal":
             self._on_extract()
         return "break"
@@ -832,8 +838,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         """Ctrl+Shift+S → trigger Отправить выбранные if enabled."""
         try:
             state = str(self._btn_send.cget("state"))
-        except Exception:
-            state = "disabled"
+        except tk.TclError:
+            state = "disabled"  # button already destroyed (dialog closing)
         if state == "normal":
             self._on_send_clicked()
         return "break"
@@ -1315,7 +1321,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
             if openrouter is not None:
                 try:
                     openrouter.close()
-                except Exception:
+                except OSError:
+                    # Best-effort socket cleanup; never mask the result.
                     pass
                 if openrouter in self._active_clients:
                     self._active_clients.remove(openrouter)
@@ -1357,8 +1364,8 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         if self._selected_index < len(getattr(self, "_task_rows", [])):
             try:
                 self._task_rows[self._selected_index].refresh_from_task()
-            except Exception:
-                pass
+            except tk.TclError:
+                pass  # row widgets may be destroyed mid-rebuild
         self._save_tasks_to_disk()
 
         # Clear the hint textbox so the next dictation starts clean.

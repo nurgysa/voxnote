@@ -29,6 +29,9 @@ class RecorderMixin:
     def _start_recording(self):
         try:
             self._recorder.start(output_dir=get_recordings_dir())
+        # Mic-open failures are heterogeneous (PortAudio device errors,
+        # libsndfile open, OSError from makedirs) — any of them must reach
+        # the error dialog rather than crash the Tk callback.
         except Exception as e:
             messagebox.showerror("Ошибка записи", str(e))
             return

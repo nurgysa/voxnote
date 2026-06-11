@@ -90,6 +90,8 @@ class SpeechmaticsProvider(TranscriptionProvider):
             self._wait_for_job(job_id, on_status, cancel_event)
             payload = self._fetch_transcript(job_id)
         except Exception:
+            # Best-effort cancel on the server side so the user isn't billed
+            # for a full run after we've already given up locally.
             self._cancel_remote(job_id)
             raise
 
