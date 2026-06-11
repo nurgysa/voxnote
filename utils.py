@@ -567,3 +567,21 @@ def open_in_explorer(path: str) -> None:
     """Open a folder in the system file explorer."""
     if os.path.isdir(path):
         os.startfile(path)
+
+
+def plural_ru(n: int, one: str, few: str, many: str) -> str:
+    """Russian plural word form for ``n``: 1 встреча / 2 встречи / 5 встреч.
+
+    Returns the WORD ONLY — callers compose ``f"{n} {plural_ru(...)}"``).
+    Handles the 11–14 exception at any hundred (11 встреч, 111 встреч,
+    but 21 встреча, 121 встреча).
+    """
+    n = abs(n) % 100
+    if 11 <= n <= 14:
+        return many
+    d = n % 10
+    if d == 1:
+        return one
+    if 2 <= d <= 4:
+        return few
+    return many
