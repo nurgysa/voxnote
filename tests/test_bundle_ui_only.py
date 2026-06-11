@@ -34,9 +34,21 @@ def test_settings_has_no_model_size_picker():
         # are gone (the docstring may still mention 'whisper-model' historically).
         # _model_var is the binding the deleted dropdown used; MODELS is the
         # constants dict; _on_model_changed is the App's callback.
-        assert not re.search(r"\b_model_var\b", src), (
-            f"{rel} still binds to App._model_var"
-        )
+        #
+        # extract_tasks/builder.py legitimately sets dialog._model_var — that is
+        # the OpenRouter default-model ComboBox, NOT the dead Whisper model-size
+        # picker.  We qualify the pattern for that file so the OpenRouter var
+        # (accessed as `dialog._model_var`) is allowed while a ghost resurrection
+        # in class-method form (`self._model_var`) still trips the guard.
+        # All other scanned files remain fully guarded by the unqualified pattern.
+        if rel == "ui/dialogs/extract_tasks/builder.py":
+            assert not re.search(r"\bself\._model_var\b", src), (
+                f"{rel} still binds to self._model_var (Whisper ghost)"
+            )
+        else:
+            assert not re.search(r"\b_model_var\b", src), (
+                f"{rel} still binds to App._model_var"
+            )
         assert not re.search(r"\bMODELS\b", src), (
             f"{rel} still imports MODELS constants"
         )

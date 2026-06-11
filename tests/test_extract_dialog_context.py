@@ -12,7 +12,10 @@ def test_dialog_loads_directory_store():
 
 def test_dialog_builds_context_section():
     src = SRC.read_text(encoding="utf-8")
-    assert "Контекст встречи" in src
+    bld = BUILDER.read_text(encoding="utf-8")
+    # "Контекст встречи" lives in the builder comment after the widget-tree move.
+    assert "Контекст встречи" in bld
+    # State vars are initialised in ExtractTasksDialog.__init__ (still __init__.py).
     assert "_context_project_var" in src
     assert "_context_person_vars" in src
 
@@ -48,7 +51,8 @@ def test_run_extraction_persists_speakers_json():
 def test_dialog_builds_speaker_rows():
     src = SRC.read_text(encoding="utf-8")
     bld = BUILDER.read_text(encoding="utf-8")
-    assert "Кто говорит" in src
+    # "Кто говорит" label lives in build_ui (builder.py) after the widget-tree move.
+    assert "Кто говорит" in bld
     assert "build_speaker_rows" in bld
     assert "_speaker_row_vars" in src
     assert "load_segments" in bld

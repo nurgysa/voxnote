@@ -13,12 +13,281 @@ sibling ``.constants`` / ``.task_row`` — never the package ``__init__``.
 
 from __future__ import annotations
 
+from tkinter import messagebox
+
 import customtkinter as ctk
 
-from theme import BLUE, BLUE_DIM, BORDER, FONT, INPUT_BG, TEXT_PRIMARY
-from ui.widgets import label, tonal_button
+from theme import (
+    BLUE,
+    BLUE_DIM,
+    BORDER,
+    FONT,
+    INPUT_BG,
+    SURFACE,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
+from ui.widgets import label, primary_button, tonal_button
 
-from .constants import _NO_SELECTION
+from .constants import (
+    _CONTAINER_LABEL_BY_BACKEND,
+    _CURATED_MODELS,
+    _NAME_TO_DISPLAY,
+    _NO_SELECTION,
+    _RECENT_MODELS_KEY,
+)
+
+
+def build_ui(dialog) -> None:
+    dialog.grid_columnconfigure(0, weight=1)
+    dialog.grid_rowconfigure(2, weight=1)   # editor row stretches
+
+    # --- Header row: model + backend + container + refresh + extract ---
+    header = ctk.CTkFrame(dialog, fg_color="transparent")
+    header.grid(row=0, column=0, padx=16, pady=(14, 6), sticky="ew")
+    header.grid_columnconfigure(1, weight=1)   # model
+    header.grid_columnconfigure(5, weight=1)   # container
+
+    label(header, "Модель").grid(row=0, column=0, padx=(0, 6), sticky="w")
+    default_model = dialog._config.get(
+        "tasks_default_model", _CURATED_MODELS[0],
+    )
+    recent = dialog._config.get(_RECENT_MODELS_KEY, []) or []
+    all_models = list(_CURATED_MODELS)
+    for slug in recent:
+        if slug not in all_models:
+            all_models.append(slug)
+    dialog._model_var = ctk.StringVar(value=default_model)
+    # CTkComboBox lets the user type custom slugs that aren't in the list.
+    dialog._model_combo = ctk.CTkComboBox(
+        header, variable=dialog._model_var, values=all_models,
+        width=240, height=32,
+        font=ctk.CTkFont(family=FONT, size=12),
+        border_color=BORDER, button_color=BORDER,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+    )
+    dialog._model_combo.grid(row=0, column=1, padx=(0, 12), sticky="ew")
+
+    # Phase 6.4.1: backend selection. Values come from Settings flags;
+    # changing it triggers re-fetch of containers.
+    label(header, "Backend").grid(row=0, column=2, padx=(0, 6), sticky="w")
+    backend_display = [_NAME_TO_DISPLAY[n] for n in dialog._enabled_backends]
+    dialog._backend_var = ctk.StringVar(
+        value=backend_display[0] if backend_display else "Linear",
+    )
+    dialog._backend_menu = ctk.CTkComboBox(
+        header, variable=dialog._backend_var, values=backend_display or ["Linear"],
+        width=110, height=32, state="readonly",
+        font=ctk.CTkFont(family=FONT, size=12),
+        border_color=BORDER, button_color=BORDER,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+        command=dialog._on_backend_changed,
+    )
+    dialog._backend_menu.grid(row=0, column=3, padx=(0, 12), sticky="w")
+
+    # Container dropdown — label changes per backend (Команда / Доска).
+    dialog._container_label = label(
+        header, _CONTAINER_LABEL_BY_BACKEND.get(dialog._current_backend_name(), "Команда"),
+    )
+    dialog._container_label.grid(row=0, column=4, padx=(0, 6), sticky="w")
+    dialog._team_var = ctk.StringVar(value="(загрузка...)")
+    dialog._team_menu = ctk.CTkComboBox(
+        header, variable=dialog._team_var, values=["(загрузка...)"],
+        width=180, height=32, state="readonly",
+        font=ctk.CTkFont(family=FONT, size=12),
+        border_color=BORDER, button_color=BORDER,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+    )
+    dialog._team_menu.grid(row=0, column=5, padx=(0, 4), sticky="ew")
+
+    dialog._btn_refresh = tonal_button(
+        header, text="↻", command=dialog._refresh_containers, width=36,
+    )
+    dialog._btn_refresh.grid(row=0, column=6, padx=(0, 8))
+
+    dialog._btn_extract = primary_button(
+        header, text="Извлечь", command=dialog._on_extract, width=120,
+    )
+    dialog._btn_extract.grid(row=0, column=7)
+
+    # Task 6 (MVP v5): protocol-generation opt-in checkbox.
+    # Spans the full header width so the long Russian label has room.
+    # State var `dialog.generate_protocol` was created in __init__ (kept
+    # together with other state); only the widget binding lives here.
+    ctk.CTkCheckBox(
+        header,
+        text="Также сгенерировать протокол встречи (protocol.md)",
+        variable=dialog.generate_protocol,
+        font=ctk.CTkFont(family=FONT, size=12),
+        text_color=TEXT_SECONDARY,
+        checkbox_height=18, checkbox_width=18,
+    ).grid(row=1, column=0, columnspan=8, padx=0, pady=(8, 0), sticky="w")
+
+    # Phase A UI part 2: «Контекст встречи» — project + participants feed
+    # render_meeting_context() → context= for both protocol and tasks.
+    # Nested in `header` (row=2) so no self-level row renumbering is needed.
+    ctx_frame = ctk.CTkFrame(header, fg_color="transparent")
+    ctx_frame.grid(row=2, column=0, columnspan=8, padx=0, pady=(8, 0), sticky="ew")
+    ctx_frame.grid_columnconfigure(1, weight=1)
+
+    label(ctx_frame, "Проект").grid(row=0, column=0, padx=(0, 6), sticky="w")
+    # Load now — window geometry is already set; the warning below is
+    # deferred via after() so it never stacks on a half-built window.
+    from directory.store import DirectoryError
+    try:
+        dialog._dir_store.load()
+    except DirectoryError as exc:
+        dialog._dir_load_error = str(exc)
+    dialog._dir_projects = dialog._dir_store.projects()
+    project_labels = ["— нет —"] + [p.name for p in dialog._dir_projects]
+    dialog._context_project_menu = ctk.CTkComboBox(
+        ctx_frame, variable=dialog._context_project_var, values=project_labels,
+        width=240, height=30, state="readonly",
+        font=ctk.CTkFont(family=FONT, size=12),
+        border_color=BORDER, button_color=BORDER,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+        command=dialog._on_context_project_changed,
+    )
+    dialog._context_project_menu.grid(row=0, column=1, padx=(0, 12), sticky="ew")
+
+    label(ctx_frame, "Участники").grid(
+        row=1, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+    )
+    dialog._context_participants_frame = ctk.CTkScrollableFrame(
+        ctx_frame, fg_color=INPUT_BG, height=90, corner_radius=8,
+    )
+    dialog._context_participants_frame.grid(
+        row=1, column=1, padx=0, pady=(6, 0), sticky="ew",
+    )
+
+    label(ctx_frame, "Кто говорит").grid(
+        row=2, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+    )
+    dialog._speaker_rows_frame = ctk.CTkFrame(ctx_frame, fg_color="transparent")
+    dialog._speaker_rows_frame.grid(
+        row=2, column=1, padx=0, pady=(6, 0), sticky="ew",
+    )
+
+    # markitdown document grounding (row=3): attach reference docs (agenda,
+    # brief, prior protocol) — converted to Markdown in _run_extraction and
+    # merged into the same context= slot as the directory grounding above.
+    label(ctx_frame, "Документы").grid(
+        row=3, column=0, padx=(0, 6), pady=(6, 0), sticky="nw",
+    )
+    docs_row = ctk.CTkFrame(ctx_frame, fg_color="transparent")
+    docs_row.grid(row=3, column=1, padx=0, pady=(6, 0), sticky="ew")
+    tonal_button(
+        docs_row, "Приложить документы", dialog._on_attach_documents, width=180,
+    ).grid(row=0, column=0, padx=(0, 8))
+    dialog._docs_count_label = label(docs_row, "")
+    dialog._docs_count_label.grid(row=0, column=1, sticky="w")
+    tonal_button(
+        docs_row, "Очистить", dialog._clear_attached_documents, width=90,
+    ).grid(row=0, column=2, padx=(8, 0))
+
+    rebuild_context_participants(dialog, set())
+    build_speaker_rows(dialog)
+    dialog._restore_context_selection()
+    if dialog._dir_load_error:
+        # Defer to the event loop so the modal stacks on the fully-built,
+        # realized window rather than mid-construction.
+        dialog.after(0, lambda: messagebox.showwarning(
+            "Справочник",
+            "Не удалось прочитать справочник — контекст недоступен."
+            f"\n\n{dialog._dir_load_error}",
+            parent=dialog,
+        ))
+
+    # --- Status / cost hint row ---
+    dialog._status_label = label(dialog, "", anchor="w")
+    dialog._status_label.grid(row=1, column=0, padx=18, pady=(2, 4), sticky="ew")
+    dialog._update_cost_hint()
+
+    # --- Editor: master-detail layout ---
+    editor = ctk.CTkFrame(dialog, fg_color="transparent")
+    editor.grid(row=2, column=0, padx=16, pady=(2, 4), sticky="nsew")
+    editor.grid_columnconfigure(0, weight=1, minsize=180)
+    editor.grid_columnconfigure(1, weight=2, minsize=360)
+    editor.grid_rowconfigure(0, weight=1)
+
+    # Left: scrollable list of task rows + bottom action bar.
+    left_panel = ctk.CTkFrame(editor, fg_color=SURFACE, corner_radius=10)
+    left_panel.grid(row=0, column=0, padx=(0, 6), sticky="nsew")
+    left_panel.grid_rowconfigure(0, weight=1)
+    left_panel.grid_columnconfigure(0, weight=1)
+
+    dialog._task_list = ctk.CTkScrollableFrame(
+        left_panel, fg_color="transparent", corner_radius=0,
+    )
+    dialog._task_list.grid(row=0, column=0, padx=4, pady=4, sticky="nsew")
+    dialog._task_list.grid_columnconfigure(0, weight=1)
+
+    # Action bar inside left panel: Add / SelectAll / SelectNone / Delete
+    list_actions = ctk.CTkFrame(left_panel, fg_color="transparent")
+    list_actions.grid(row=1, column=0, padx=4, pady=(0, 4), sticky="ew")
+    list_actions.grid_columnconfigure(0, weight=1)
+    list_actions.grid_columnconfigure(1, weight=1)
+    list_actions.grid_columnconfigure(2, weight=1)
+    list_actions.grid_columnconfigure(3, weight=1)
+    dialog._btn_add = tonal_button(
+        list_actions, text="+ Добавить", command=dialog._on_add_task, width=110,
+    )
+    dialog._btn_add.grid(row=0, column=0, padx=2, sticky="ew")
+    dialog._btn_select_all = tonal_button(
+        list_actions, text="✓ Все", command=dialog._on_select_all, width=70,
+    )
+    dialog._btn_select_all.grid(row=0, column=1, padx=2, sticky="ew")
+    dialog._btn_select_none = tonal_button(
+        list_actions, text="✗ Снять", command=dialog._on_select_none, width=80,
+    )
+    dialog._btn_select_none.grid(row=0, column=2, padx=2, sticky="ew")
+    dialog._btn_delete = tonal_button(
+        list_actions, text="🗑 Удалить", command=dialog._on_delete_task, width=100,
+    )
+    dialog._btn_delete.grid(row=0, column=3, padx=2, sticky="ew")
+
+    # Right: form for editing selected task. The form has ~7 fields
+    # stacked vertically (autofill textbox + title + priority +
+    # assignee + labels + date + description) that overflow at
+    # smaller dialog heights. Wrap in a CTkScrollableFrame so the
+    # footer (Send/Retry/Close) always stays visible regardless of
+    # form height.
+    form_outer = ctk.CTkFrame(editor, fg_color=SURFACE, corner_radius=10)
+    form_outer.grid(row=0, column=1, padx=(6, 0), sticky="nsew")
+    form_outer.grid_columnconfigure(0, weight=1)
+    form_outer.grid_rowconfigure(0, weight=1)
+    dialog._form_panel = ctk.CTkScrollableFrame(
+        form_outer, fg_color="transparent", corner_radius=0,
+    )
+    dialog._form_panel.grid(row=0, column=0, sticky="nsew")
+    dialog._form_panel.grid_columnconfigure(0, weight=1)
+    build_form(dialog)
+
+    # Disable buttons that need a selection until something is selected.
+    dialog._set_editor_buttons_state(empty=True)
+
+    # --- Footer: saved-path + Send / Retry / Close ---
+    footer = ctk.CTkFrame(dialog, fg_color="transparent")
+    footer.grid(row=3, column=0, padx=16, pady=(2, 14), sticky="ew")
+    footer.grid_columnconfigure(0, weight=1)
+    dialog._saved_label = label(footer, "", anchor="w")
+    dialog._saved_label.grid(row=0, column=0, sticky="ew")
+
+    dialog._btn_send = primary_button(
+        footer, text="Отправить выбранные (0)",
+        command=dialog._on_send_clicked, width=220, state="disabled",
+    )
+    dialog._btn_send.grid(row=0, column=1, padx=(8, 4), sticky="e")
+
+    dialog._btn_retry = tonal_button(
+        footer, text="Повторить упавшие",
+        command=dialog._on_retry_clicked, width=170, state="disabled",
+    )
+    dialog._btn_retry.grid(row=0, column=2, padx=(0, 4), sticky="e")
+
+    tonal_button(
+        footer, text="Закрыть", command=dialog._on_close, width=110,
+    ).grid(row=0, column=3, sticky="e")
 
 
 def rebuild_context_participants(dialog, checked_ids: set[str]) -> None:
