@@ -20,6 +20,7 @@ from providers._common import (
     file_stream,
     guess_content_type,
     parse_json,
+    poll,
     request,
     require_key,
     validate_via_get,
@@ -308,3 +309,95 @@ def test_extract_json_key_missing_key():
     r.json.return_value = {"other": 1}
     with pytest.raises(ProviderError, match="Неожиданный ответ X на submit"):
         extract_json_key(r, "id", provider="X", context="submit")
+
+
+# ── poll ──────────────────────────────────────────────────────────────
+
+
+def _json_resp(payload):
+    r = MagicMock(ok=True, status_code=200, text="")
+    r.json.return_value = payload
+    return r
+
+
+def _spec(**over):
+    from providers._common import PollSpec
+
+    kw = dict(
+        url="https://api.example/job/1",
+        headers={"h": "1"},
+        provider="X",
+        interval_s=3.0,
+        extract_status=lambda p: p.get("status"),
+        done_statuses=frozenset({"completed"}),
+        error_statuses=frozenset({"error"}),
+        extract_error=lambda p: p.get("error", "<no detail>"),
+        pretty={"queued": "В очереди X...", "processing": "Обработка X..."},
+    )
+    kw.update(over)
+    return PollSpec(**kw)
+
+
+def test_poll_returns_payload_on_done():
+    done = {"status": "completed", "text": "hi"}
+    with patch("providers._common.requests.get", return_value=_json_resp(done)):
+        assert poll(_spec(), None, None) == done
+
+
+def test_poll_error_status_raises_with_detail():
+    bad = {"status": "error", "error": "quota exceeded"}
+    with patch("providers._common.requests.get", return_value=_json_resp(bad)):
+        with pytest.raises(
+            ProviderError, match="X вернул ошибку: quota exceeded"
+        ):
+            poll(_spec(), None, None)
+
+
+def test_poll_pretty_status_dedup_and_fallback():
+    seq = [
+        _json_resp({"status": "queued"}),
+        _json_resp({"status": "queued"}),
+        _json_resp({"status": "processing"}),
+        _json_resp({"status": "completed"}),
+    ]
+    seen: list[str] = []
+    with patch("providers._common.requests.get", side_effect=seq), \
+         patch("providers._common.time.sleep"):
+        poll(_spec(), seen.append, None)
+    # one line per DISTINCT status; unmapped statuses fall back to "X: <s>"
+    assert seen == ["В очереди X...", "Обработка X...", "X: completed"]
+
+
+def test_poll_deadline_raises_before_get():
+    with patch(
+        "providers._common.time.monotonic", side_effect=[0.0, 90 * 60 + 1.0]
+    ), patch("providers._common.requests.get") as g:
+        with pytest.raises(
+            ProviderError, match="X не вернул результат за 90 минут"
+        ):
+            poll(_spec(), None, None)
+    g.assert_not_called()
+
+
+def test_poll_non_json_raises_providererror():
+    r = MagicMock(ok=True, status_code=200, text="<html>502 Bad Gateway</html>")
+    r.json.side_effect = ValueError("no json")
+    with patch("providers._common.requests.get", return_value=r):
+        with pytest.raises(
+            ProviderError, match="X вернул не-JSON ответ при опросе"
+        ):
+            poll(_spec(), None, None)
+
+
+def test_poll_cancel_between_polls_raises():
+    from transcriber import TranscriptionCancelled
+
+    ev = threading.Event()
+    with patch(
+        "providers._common.requests.get",
+        return_value=_json_resp({"status": "queued"}),
+    ), patch(
+        "providers._common.time.sleep", side_effect=lambda _s: ev.set()
+    ):
+        with pytest.raises(TranscriptionCancelled):
+            poll(_spec(), None, ev)

@@ -1,8 +1,8 @@
 """Shared transport machinery for cloud transcription providers.
 
 Everything here is plumbing that must behave identically across the four
-providers: cancel checks, MIME guessing, key checks, streaming upload, best-effort
-remote cancel; PR-2 adds the HTTP error idiom and the completion poll loop.
+providers: cancel checks, MIME guessing, key checks, the HTTP error idiom,
+the completion poll loop, streaming upload, best-effort remote cancel.
 Domain logic (payload building, response mapping, workflow order) stays in
 the provider modules.
 
@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
+import time
+from collections.abc import Callable
+from dataclasses import dataclass
 
 import requests
 
@@ -180,3 +183,76 @@ def file_stream(path: str, *, cancel_event, on_progress,
             if on_progress and size > 0:
                 on_progress(min(sent / size, 1.0) * band)
             yield chunk
+
+
+@dataclass
+class PollSpec:
+    """Per-provider knobs for the shared completion-poll loop.
+
+    The callables keep response-shape knowledge in the provider module
+    (e.g. Speechmatics nests status under ``payload["job"]``); the loop
+    machinery — deadline, JSON guard, pretty-status dedup, sliced sleep —
+    lives once, in ``poll()``.
+    """
+
+    url: str
+    headers: dict
+    provider: str                      # display name for messages
+    interval_s: float                  # AAI/Gladia 3.0; Speechmatics 5.0
+    extract_status: Callable[[dict], str | None]
+    done_statuses: frozenset
+    error_statuses: frozenset
+    extract_error: Callable[[dict], str]
+    pretty: dict                       # status → Russian status line
+    max_wait_s: float = 90 * 60        # generous safety net
+
+
+def poll(spec: PollSpec, on_status=None, cancel_event=None) -> dict:
+    """Block until the remote job reaches a terminal status.
+
+    Behaviour-compatible with the three per-provider loops it replaced:
+    0.25 s sleep slices for cancel responsiveness, status lines emitted
+    once per distinct status, hard deadline with a Russian timeout message.
+    Returns the final payload.
+    """
+    start = time.monotonic()
+    last_status = ""
+    while True:
+        check_cancel(cancel_event)
+        if time.monotonic() - start > spec.max_wait_s:
+            raise ProviderError(
+                f"{spec.provider} не вернул результат за "
+                f"{int(spec.max_wait_s / 60)} минут. Возможно, сервис "
+                f"перегружен — попробуй позже."
+            )
+
+        r = request(
+            "get", spec.url, provider=spec.provider,
+            action_ru="опросе", action_en="poll",
+            timeout=30, headers=spec.headers,
+        )
+        try:
+            payload = r.json()
+        except ValueError as e:
+            raise ProviderError(
+                f"{spec.provider} вернул не-JSON ответ при опросе "
+                f"({r.status_code}): {r.text[:300]}"
+            ) from e
+
+        status = spec.extract_status(payload)
+        if status != last_status and on_status is not None:
+            on_status(spec.pretty.get(status, f"{spec.provider}: {status}"))
+            last_status = status
+
+        if status in spec.done_statuses:
+            return payload
+        if status in spec.error_statuses:
+            raise ProviderError(
+                f"{spec.provider} вернул ошибку: {spec.extract_error(payload)}"
+            )
+
+        slept = 0.0
+        while slept < spec.interval_s:
+            check_cancel(cancel_event)
+            time.sleep(0.25)
+            slept += 0.25
