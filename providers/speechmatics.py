@@ -18,11 +18,19 @@ from __future__ import annotations
 
 import json
 import os
-import time
 
-import requests
-
-from ._common import cancel_remote, check_cancel, guess_content_type, require_key, validate_via_get
+from ._common import (
+    PollSpec,
+    cancel_remote,
+    check_cancel,
+    extract_json_key,
+    guess_content_type,
+    parse_json,
+    poll,
+    request,
+    require_key,
+    validate_via_get,
+)
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -32,7 +40,6 @@ from .base import (
 
 _API_BASE = "https://asr.api.speechmatics.com/v2"
 _POLL_INTERVAL_S = 5.0    # Speechmatics is slower than Deepgram/AssemblyAI.
-_MAX_WAIT_S = 90 * 60
 
 
 class SpeechmaticsProvider(TranscriptionProvider):
@@ -112,122 +119,59 @@ class SpeechmaticsProvider(TranscriptionProvider):
                 ),
                 "config": (None, json.dumps(config), "application/json"),
             }
-            try:
-                r = requests.post(
-                    f"{_API_BASE}/jobs/",
-                    headers=self._headers,
-                    files=files,
-                    timeout=60 * 30,
-                )
-            except requests.RequestException as e:
-                raise ProviderError(
-                    f"Сеть не отвечает при загрузке аудио: {e}"
-                ) from e
-
-        if r.status_code == 401:
-            raise ProviderError(
-                "Speechmatics отклонил ключ (401). Проверь API-ключ в "
-                "Настройках → Облако."
+            r = request(
+                "post",
+                f"{_API_BASE}/jobs/",
+                provider=self.display_name,
+                action_ru="загрузке аудио",
+                action_en="submit",
+                timeout=60 * 30,
+                headers=self._headers,
+                files=files,
             )
-        if not r.ok:
-            raise ProviderError(
-                f"Speechmatics submit failed ({r.status_code}): "
-                f"{r.text[:300]}"
-            )
-
-        try:
-            return r.json()["id"]
-        except (ValueError, KeyError) as e:
-            raise ProviderError(
-                f"Неожиданный ответ Speechmatics на submit: {r.text[:300]}"
-            ) from e
+        return extract_json_key(
+            r, "id", provider=self.display_name, context="submit",
+        )
 
     def _wait_for_job(self, job_id: str, on_status, cancel_event) -> None:
-        """Poll /v2/jobs/{id} until the job finishes or the deadline trips."""
-        start = time.monotonic()
-        last_status = ""
-        while True:
-            check_cancel(cancel_event)
-            elapsed = time.monotonic() - start
-            if elapsed > _MAX_WAIT_S:
-                raise ProviderError(
-                    f"Speechmatics не вернул результат за "
-                    f"{int(_MAX_WAIT_S/60)} минут. Возможно, сервис "
-                    f"перегружен — попробуй позже."
-                )
+        """Poll /v2/jobs/{id} until done — shared loop, Speechmatics knobs.
 
-            try:
-                r = requests.get(
-                    f"{_API_BASE}/jobs/{job_id}",
-                    headers=self._headers,
-                    timeout=30,
-                )
-            except requests.RequestException as e:
-                raise ProviderError(
-                    f"Сеть не отвечает при опросе: {e}"
-                ) from e
-            if not r.ok:
-                raise ProviderError(
-                    f"Speechmatics poll failed ({r.status_code}): "
-                    f"{r.text[:300]}"
-                )
-
-            try:
-                payload = r.json()
-            except ValueError as e:
-                raise ProviderError(
-                    f"Speechmatics вернул не-JSON ответ при опросе "
-                    f"({r.status_code}): {r.text[:300]}"
-                ) from e
-            status = (payload.get("job") or {}).get("status") \
-                or payload.get("status")
-
-            if status != last_status and on_status is not None:
-                pretty = {
-                    "running": "Обработка на серверах Speechmatics...",
-                    "queued": "В очереди Speechmatics...",
-                }.get(status, f"Speechmatics: {status}")
-                on_status(pretty)
-                last_status = status
-
-            if status == "done":
-                return
-            if status in ("rejected", "deleted", "expired"):
-                err = (payload.get("job") or {}).get("errors") \
-                    or "<no detail>"
-                raise ProviderError(f"Speechmatics вернул ошибку: {err}")
-
-            slept = 0.0
-            while slept < _POLL_INTERVAL_S:
-                check_cancel(cancel_event)
-                time.sleep(0.25)
-                slept += 0.25
+        Returns None deliberately: the job-status payload is not the
+        transcript; ``_fetch_transcript`` does the real result fetch.
+        """
+        spec = PollSpec(
+            url=f"{_API_BASE}/jobs/{job_id}",
+            headers=self._headers,
+            provider=self.display_name,
+            interval_s=_POLL_INTERVAL_S,
+            extract_status=lambda p: (
+                (p.get("job") or {}).get("status") or p.get("status")
+            ),
+            done_statuses=frozenset({"done"}),
+            error_statuses=frozenset({"rejected", "deleted", "expired"}),
+            extract_error=lambda p: (
+                (p.get("job") or {}).get("errors") or "<no detail>"
+            ),
+            pretty={
+                "running": "Обработка на серверах Speechmatics...",
+                "queued": "В очереди Speechmatics...",
+            },
+        )
+        poll(spec, on_status=on_status, cancel_event=cancel_event)
 
     def _fetch_transcript(self, job_id: str) -> dict:
         """GET /v2/jobs/{id}/transcript?format=json-v2 — word-level result."""
-        try:
-            r = requests.get(
-                f"{_API_BASE}/jobs/{job_id}/transcript",
-                params={"format": "json-v2"},
-                headers=self._headers,
-                timeout=60,
-            )
-        except requests.RequestException as e:
-            raise ProviderError(
-                f"Сеть не отвечает при получении транскрипта: {e}"
-            ) from e
-        if not r.ok:
-            raise ProviderError(
-                f"Speechmatics transcript fetch failed "
-                f"({r.status_code}): {r.text[:300]}"
-            )
-        try:
-            return r.json()
-        except ValueError as e:
-            raise ProviderError(
-                f"Неожиданный ответ Speechmatics на transcript: "
-                f"{r.text[:300]}"
-            ) from e
+        r = request(
+            "get",
+            f"{_API_BASE}/jobs/{job_id}/transcript",
+            provider=self.display_name,
+            action_ru="получении транскрипта",
+            action_en="transcript fetch",
+            timeout=60,
+            params={"format": "json-v2"},
+            headers=self._headers,
+        )
+        return parse_json(r, provider=self.display_name, context="transcript")
 
     def _cancel_remote(self, job_id: str) -> None:
         """Best-effort server-side cancel (details in _common.cancel_remote)."""

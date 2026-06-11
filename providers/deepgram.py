@@ -23,9 +23,15 @@ from __future__ import annotations
 
 import os
 
-import requests
-
-from ._common import check_cancel, file_stream, guess_content_type, require_key, validate_via_get
+from ._common import (
+    check_cancel,
+    file_stream,
+    guess_content_type,
+    parse_json,
+    request,
+    require_key,
+    validate_via_get,
+)
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -85,45 +91,23 @@ class DeepgramProvider(TranscriptionProvider):
         if on_status:
             on_status("Загрузка аудио в Deepgram...")
 
-        params = _build_params(options)
-        headers = {
-            "Authorization": f"Token {self._api_key}",
-            "Content-Type": guess_content_type(audio_path),
-        }
-
-        try:
-            r = requests.post(
-                _API_URL,
-                params=params,
-                headers=headers,
-                data=file_stream(
-                    audio_path, cancel_event=cancel_event,
-                    on_progress=on_progress,
-                ),
-                timeout=60 * 30,
-            )
-        except requests.RequestException as e:
-            raise ProviderError(
-                f"Сеть не отвечает при загрузке аудио: {e}"
-            ) from e
-
-        if r.status_code == 401:
-            raise ProviderError(
-                "Deepgram отклонил ключ (401). Проверь API-ключ в "
-                "Настройках → Облако."
-            )
-        if not r.ok:
-            raise ProviderError(
-                f"Deepgram вернул ошибку ({r.status_code}): "
-                f"{r.text[:300]}"
-            )
-
-        try:
-            payload = r.json()
-        except ValueError as e:
-            raise ProviderError(
-                f"Неожиданный ответ Deepgram: {r.text[:300]}"
-            ) from e
+        r = request(
+            "post",
+            _API_URL,
+            provider=self.display_name,
+            action_ru="загрузке аудио",
+            action_en="transcribe",
+            timeout=60 * 30,
+            params=_build_params(options),
+            headers={
+                "Authorization": f"Token {self._api_key}",
+                "Content-Type": guess_content_type(audio_path),
+            },
+            data=file_stream(
+                audio_path, cancel_event=cancel_event, on_progress=on_progress,
+            ),
+        )
+        payload = parse_json(r, provider=self.display_name)
 
         if on_status:
             on_status("Готово.")

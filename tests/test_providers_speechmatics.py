@@ -159,7 +159,7 @@ def test_missing_file_raises():
 def test_submit_401_raises(fake_audio):
     p = SpeechmaticsProvider("bad-key")
     fake = MagicMock(status_code=401, ok=False, text="Unauthorized")
-    with patch("providers.speechmatics.requests.post", return_value=fake):
+    with patch("providers._common.requests.post", return_value=fake):
         with pytest.raises(ProviderError, match="401"):
             p.transcribe(fake_audio, TranscriptionOptions())
 
@@ -183,9 +183,9 @@ def test_successful_round_trip(fake_audio):
 
     p = SpeechmaticsProvider("good-key")
     with patch(
-        "providers.speechmatics.requests.post", return_value=submit_resp,
+        "providers._common.requests.post", return_value=submit_resp,
     ), patch(
-        "providers.speechmatics.requests.get",
+        "providers._common.requests.get",
         side_effect=[poll_resp, transcript_resp],
     ):
         result = p.transcribe(
@@ -209,11 +209,11 @@ def test_rejected_status_raises(fake_audio):
     )
     p = SpeechmaticsProvider("good-key")
     with patch(
-        "providers.speechmatics.requests.post", return_value=submit_resp,
+        "providers._common.requests.post", return_value=submit_resp,
     ), patch(
-        "providers.speechmatics.requests.get", return_value=poll_resp,
+        "providers._common.requests.get", return_value=poll_resp,
     ), patch(
-        "providers.speechmatics.requests.delete",  # best-effort cancel
+        "providers._common.requests.delete",  # best-effort cancel
     ):
         with pytest.raises(ProviderError, match="bad audio"):
             p.transcribe(fake_audio, TranscriptionOptions())
@@ -257,7 +257,7 @@ def test_submit_mixed_enables_language_identification(fake_audio):
         resp.json = MagicMock(return_value={"id": "jid-mixed"})
         return resp
 
-    with patch("providers.speechmatics.requests.post", side_effect=capture_post), \
+    with patch("providers._common.requests.post", side_effect=capture_post), \
          patch.object(p, "_wait_for_job"), \
          patch.object(p, "_fetch_transcript", return_value={"results": []}):
         opts = TranscriptionOptions(language="mixed", diarize=False)
@@ -296,7 +296,7 @@ def test_submit_single_language_does_not_leak_mixed_keys(fake_audio):
         resp.json = MagicMock(return_value={"id": "jid-ru"})
         return resp
 
-    with patch("providers.speechmatics.requests.post", side_effect=capture_post), \
+    with patch("providers._common.requests.post", side_effect=capture_post), \
          patch.object(p, "_wait_for_job"), \
          patch.object(p, "_fetch_transcript", return_value={"results": []}):
         opts = TranscriptionOptions(language="ru", diarize=False)

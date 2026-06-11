@@ -158,7 +158,7 @@ def test_401_raises_provider_error(fake_audio):
     fake.status_code = 401
     fake.ok = False
     fake.text = "Unauthorized"
-    with patch("providers.deepgram.requests.post", return_value=fake):
+    with patch("providers._common.requests.post", return_value=fake):
         with pytest.raises(ProviderError, match="401"):
             p.transcribe(fake_audio, TranscriptionOptions())
 
@@ -171,7 +171,7 @@ def test_successful_diarized_round_trip(fake_audio):
     fake.json.return_value = _resp([
         {"punctuated_word": "Привет.", "start": 0.0, "end": 0.5, "speaker": 0},
     ])
-    with patch("providers.deepgram.requests.post", return_value=fake):
+    with patch("providers._common.requests.post", return_value=fake):
         result = p.transcribe(
             fake_audio, TranscriptionOptions(diarize=True),
         )
@@ -194,7 +194,7 @@ def test_transcribe_mixed_raises_before_http(fake_audio):
     short-circuit (B.0) is the primary block; this is the secondary
     block for callers using DeepgramProvider directly."""
     p = DeepgramProvider("test-key")
-    with patch("providers.deepgram.requests.post") as mock_post:
+    with patch("providers._common.requests.post") as mock_post:
         opts = TranscriptionOptions(language="mixed", diarize=False)
         with pytest.raises(ProviderError, match="Қазақша"):
             p.transcribe(fake_audio, opts)

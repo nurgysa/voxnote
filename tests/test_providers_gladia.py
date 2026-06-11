@@ -110,7 +110,7 @@ def test_upload_401_raises(fake_audio):
     fake.status_code = 401
     fake.ok = False
     fake.text = "Unauthorized"
-    with patch("providers.gladia.requests.post", return_value=fake):
+    with patch("providers._common.requests.post", return_value=fake):
         with pytest.raises(ProviderError, match="401"):
             p.transcribe(fake_audio, TranscriptionOptions())
 
@@ -139,10 +139,10 @@ def test_successful_three_call_round_trip(fake_audio):
 
     p = GladiaProvider("good-key")
     with patch(
-        "providers.gladia.requests.post",
+        "providers._common.requests.post",
         side_effect=[upload_resp, submit_resp],
     ), patch(
-        "providers.gladia.requests.get", return_value=poll_resp,
+        "providers._common.requests.get", return_value=poll_resp,
     ):
         result = p.transcribe(
             fake_audio, TranscriptionOptions(diarize=True, language="ru"),
@@ -180,10 +180,10 @@ def test_poll_error_status_raises(fake_audio):
     )
     p = GladiaProvider("good-key")
     with patch(
-        "providers.gladia.requests.post",
+        "providers._common.requests.post",
         side_effect=[upload_resp, submit_resp],
     ), patch(
-        "providers.gladia.requests.get", return_value=poll_resp,
+        "providers._common.requests.get", return_value=poll_resp,
     ):
         with pytest.raises(ProviderError, match="AUDIO_DURATION_TOO_LONG"):
             p.transcribe(fake_audio, TranscriptionOptions())
@@ -213,7 +213,7 @@ def test_submit_mixed_enables_code_switching(fake_audio):
         return resp
 
     with patch.object(p, "_upload", return_value="https://example/audio.wav"), \
-         patch("providers.gladia.requests.post", side_effect=capture_post), \
+         patch("providers._common.requests.post", side_effect=capture_post), \
          patch.object(p, "_poll", return_value={"result": {"transcription": {"utterances": []}}}):
         opts = TranscriptionOptions(language="mixed", diarize=False)
         p.transcribe(fake_audio, opts)
@@ -241,7 +241,7 @@ def test_submit_single_language_unchanged(fake_audio):
         return resp
 
     with patch.object(p, "_upload", return_value="https://example/audio.wav"), \
-         patch("providers.gladia.requests.post", side_effect=capture_post), \
+         patch("providers._common.requests.post", side_effect=capture_post), \
          patch.object(p, "_poll", return_value={"result": {"transcription": {"utterances": []}}}):
         opts = TranscriptionOptions(language="ru", diarize=False)
         p.transcribe(fake_audio, opts)

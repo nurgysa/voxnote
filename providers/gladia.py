@@ -20,11 +20,17 @@ Languages: 95+ via Whisper-Large; including ``ru`` and ``kk``.
 from __future__ import annotations
 
 import os
-import time
 
-import requests
-
-from ._common import check_cancel, guess_content_type, require_key, validate_via_get
+from ._common import (
+    PollSpec,
+    check_cancel,
+    extract_json_key,
+    guess_content_type,
+    poll,
+    request,
+    require_key,
+    validate_via_get,
+)
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -37,8 +43,6 @@ _API_BASE = "https://api.gladia.io/v2"
 # provider — fast enough to keep total wall-time tight, slow enough that
 # we don't hammer the API.
 _POLL_INTERVAL_S = 3.0
-# Hard cap on total processing wait. Generous safety net.
-_MAX_WAIT_S = 90 * 60
 
 
 class GladiaProvider(TranscriptionProvider):
@@ -119,37 +123,21 @@ class GladiaProvider(TranscriptionProvider):
                     os.path.basename(path), f, guess_content_type(path),
                 )
             }
-            try:
-                r = requests.post(
-                    f"{_API_BASE}/upload",
-                    headers=self._headers,
-                    files=files,
-                    timeout=60 * 30,
-                )
-            except requests.RequestException as e:
-                raise ProviderError(
-                    f"Сеть не отвечает при загрузке аудио: {e}"
-                ) from e
-
-        if r.status_code == 401:
-            raise ProviderError(
-                "Gladia отклонил ключ (401). Проверь API-ключ в "
-                "Настройках → Облако."
+            r = request(
+                "post",
+                f"{_API_BASE}/upload",
+                provider=self.display_name,
+                action_ru="загрузке аудио",
+                action_en="upload",
+                timeout=60 * 30,
+                headers=self._headers,
+                files=files,
             )
-        if not r.ok:
-            raise ProviderError(
-                f"Gladia upload failed ({r.status_code}): {r.text[:300]}"
-            )
-
         if on_progress:
             on_progress(50.0)
-
-        try:
-            return r.json()["audio_url"]
-        except (ValueError, KeyError) as e:
-            raise ProviderError(
-                f"Неожиданный ответ Gladia на upload: {r.text[:300]}"
-            ) from e
+        return extract_json_key(
+            r, "audio_url", provider=self.display_name, context="upload",
+        )
 
     def _submit(self, audio_url: str, options: TranscriptionOptions) -> str:
         """POST /v2/pre-recorded — kick off the job. Returns the result_url."""
@@ -183,85 +171,39 @@ class GladiaProvider(TranscriptionProvider):
             if dconf:
                 body["diarization_config"] = dconf
 
-        try:
-            r = requests.post(
-                f"{_API_BASE}/pre-recorded",
-                headers={**self._headers, "content-type": "application/json"},
-                json=body,
-                timeout=30,
-            )
-        except requests.RequestException as e:
-            raise ProviderError(
-                f"Сеть не отвечает при постановке задачи: {e}"
-            ) from e
-
-        if r.status_code == 401:
-            raise ProviderError("Gladia отклонил ключ (401).")
-        if not r.ok:
-            raise ProviderError(
-                f"Gladia submit failed ({r.status_code}): {r.text[:300]}"
-            )
-        try:
-            return r.json()["result_url"]
-        except (ValueError, KeyError) as e:
-            raise ProviderError(
-                f"Неожиданный ответ Gladia на submit: {r.text[:300]}"
-            ) from e
+        r = request(
+            "post",
+            f"{_API_BASE}/pre-recorded",
+            provider=self.display_name,
+            action_ru="постановке задачи",
+            action_en="submit",
+            timeout=30,
+            headers={**self._headers, "content-type": "application/json"},
+            json=body,
+        )
+        return extract_json_key(
+            r, "result_url", provider=self.display_name, context="submit",
+        )
 
     def _poll(self, result_url: str, on_status, cancel_event) -> dict:
-        """Block until the job finishes. Cancel-aware, capped by _MAX_WAIT_S."""
-        start = time.monotonic()
-        last_status = ""
-        while True:
-            check_cancel(cancel_event)
-            elapsed = time.monotonic() - start
-            if elapsed > _MAX_WAIT_S:
-                raise ProviderError(
-                    f"Gladia не вернул результат за {int(_MAX_WAIT_S/60)} "
-                    f"минут. Возможно, сервис перегружен — попробуй позже."
-                )
-
-            try:
-                r = requests.get(result_url, headers=self._headers, timeout=30)
-            except requests.RequestException as e:
-                raise ProviderError(
-                    f"Сеть не отвечает при опросе: {e}"
-                ) from e
-            if not r.ok:
-                raise ProviderError(
-                    f"Gladia poll failed ({r.status_code}): {r.text[:300]}"
-                )
-
-            try:
-                payload = r.json()
-            except ValueError as e:
-                raise ProviderError(
-                    f"Gladia вернул не-JSON ответ при опросе "
-                    f"({r.status_code}): {r.text[:300]}"
-                ) from e
-            status = payload.get("status")
-
-            if status != last_status and on_status is not None:
-                pretty = {
-                    "queued": "В очереди Gladia...",
-                    "processing": "Обработка на серверах Gladia...",
-                }.get(status, f"Gladia: {status}")
-                on_status(pretty)
-                last_status = status
-
-            if status == "done":
-                return payload
-            if status == "error":
-                err = (payload.get("error_code")
-                       or payload.get("error") or "<no detail>")
-                raise ProviderError(f"Gladia вернул ошибку: {err}")
-
-            # 0.25 s slice for cancel responsiveness.
-            slept = 0.0
-            while slept < _POLL_INTERVAL_S:
-                check_cancel(cancel_event)
-                time.sleep(0.25)
-                slept += 0.25
+        """Block until the job finishes — shared loop, Gladia knobs."""
+        spec = PollSpec(
+            url=result_url,
+            headers=self._headers,
+            provider=self.display_name,
+            interval_s=_POLL_INTERVAL_S,
+            extract_status=lambda p: p.get("status"),
+            done_statuses=frozenset({"done"}),
+            error_statuses=frozenset({"error"}),
+            extract_error=lambda p: (
+                p.get("error_code") or p.get("error") or "<no detail>"
+            ),
+            pretty={
+                "queued": "В очереди Gladia...",
+                "processing": "Обработка на серверах Gladia...",
+            },
+        )
+        return poll(spec, on_status=on_status, cancel_event=cancel_event)
 
 
 # ---------------------------- helpers ---------------------------------

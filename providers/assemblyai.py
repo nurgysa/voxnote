@@ -20,11 +20,18 @@ when the user picked auto.
 from __future__ import annotations
 
 import os
-import time
 
-import requests
-
-from ._common import cancel_remote, check_cancel, file_stream, require_key, validate_via_get
+from ._common import (
+    PollSpec,
+    cancel_remote,
+    check_cancel,
+    extract_json_key,
+    file_stream,
+    poll,
+    request,
+    require_key,
+    validate_via_get,
+)
 from .base import (
     ProviderError,
     TranscriptionOptions,
@@ -37,9 +44,6 @@ _API_BASE = "https://api.assemblyai.com/v2"
 # audio at 5-15× realtime; 3 s keeps wall-time-to-final-status low without
 # burning quota on excessive GETs.
 _POLL_INTERVAL_S = 3.0
-# Hard cap on total wait time. Even a 6-hour file shouldn't take more than
-# ~30 min on AssemblyAI's side; 90 min is a generous safety net.
-_MAX_WAIT_S = 90 * 60
 
 
 class AssemblyAIProvider(TranscriptionProvider):
@@ -112,41 +116,25 @@ class AssemblyAIProvider(TranscriptionProvider):
     def _upload(self, audio_path: str, on_progress, cancel_event) -> str:
         """Stream-upload the file. AssemblyAI accepts raw bytes (no multipart).
 
-        We chunk only to give the cancel poll a chance and to feed an
-        approximate progress bar (0..70% slice — leaves 70..100 for the
-        remote processing phase, mirroring the local progress contract).
+        Chunked via file_stream to give the cancel poll a chance and to
+        feed the 0..70 % progress band (70..100 belongs to the remote
+        processing phase, mirroring the local progress contract).
         """
-        try:
-            r = requests.post(
-                f"{_API_BASE}/upload",
-                headers=self._headers,
-                data=file_stream(
-                    audio_path, cancel_event=cancel_event,
-                    on_progress=on_progress,
-                ),
-                timeout=60 * 30,  # 30 min absolute upload cap
-            )
-        except requests.RequestException as e:
-            raise ProviderError(
-                f"Сеть не отвечает при загрузке аудио: {e}"
-            ) from e
-
-        if r.status_code == 401:
-            raise ProviderError(
-                "AssemblyAI отклонил ключ (401). Проверь API-ключ в "
-                "Настройках → Облако."
-            )
-        if not r.ok:
-            raise ProviderError(
-                f"AssemblyAI upload failed ({r.status_code}): "
-                f"{r.text[:300]}"
-            )
-        try:
-            return r.json()["upload_url"]
-        except (ValueError, KeyError) as e:
-            raise ProviderError(
-                f"Неожиданный ответ AssemblyAI на upload: {r.text[:300]}"
-            ) from e
+        r = request(
+            "post",
+            f"{_API_BASE}/upload",
+            provider=self.display_name,
+            action_ru="загрузке аудио",
+            action_en="upload",
+            timeout=60 * 30,  # 30 min absolute upload cap
+            headers=self._headers,
+            data=file_stream(
+                audio_path, cancel_event=cancel_event, on_progress=on_progress,
+            ),
+        )
+        return extract_json_key(
+            r, "upload_url", provider=self.display_name, context="upload",
+        )
 
     def _submit(self, audio_url: str, options: TranscriptionOptions) -> str:
         """POST /v2/transcript — kick off the job, return its id.
@@ -201,92 +189,37 @@ class AssemblyAIProvider(TranscriptionProvider):
         if hint is not None:
             body["speakers_expected"] = int(hint)
 
-        try:
-            r = requests.post(
-                f"{_API_BASE}/transcript",
-                headers={**self._headers, "content-type": "application/json"},
-                json=body,
-                timeout=30,
-            )
-        except requests.RequestException as e:
-            raise ProviderError(
-                f"Сеть не отвечает при постановке задачи: {e}"
-            ) from e
-
-        if r.status_code == 401:
-            raise ProviderError("AssemblyAI отклонил ключ (401).")
-        if not r.ok:
-            raise ProviderError(
-                f"AssemblyAI submit failed ({r.status_code}): "
-                f"{r.text[:300]}"
-            )
-        try:
-            return r.json()["id"]
-        except (ValueError, KeyError) as e:
-            raise ProviderError(
-                f"Неожиданный ответ AssemblyAI на submit: {r.text[:300]}"
-            ) from e
+        r = request(
+            "post",
+            f"{_API_BASE}/transcript",
+            provider=self.display_name,
+            action_ru="постановке задачи",
+            action_en="submit",
+            timeout=30,
+            headers={**self._headers, "content-type": "application/json"},
+            json=body,
+        )
+        return extract_json_key(
+            r, "id", provider=self.display_name, context="submit",
+        )
 
     def _poll(self, transcript_id: str, on_status, cancel_event) -> dict:
-        """Block until job finishes. Cancel-aware, capped by _MAX_WAIT_S."""
-        start = time.monotonic()
-        last_status = ""
-        while True:
-            check_cancel(cancel_event)
-            elapsed = time.monotonic() - start
-            if elapsed > _MAX_WAIT_S:
-                raise ProviderError(
-                    f"AssemblyAI не вернул результат за {int(_MAX_WAIT_S/60)} "
-                    f"минут. Возможно, сервис перегружен — попробуй позже."
-                )
-
-            try:
-                r = requests.get(
-                    f"{_API_BASE}/transcript/{transcript_id}",
-                    headers=self._headers,
-                    timeout=30,
-                )
-            except requests.RequestException as e:
-                raise ProviderError(f"Сеть не отвечает при опросе: {e}") from e
-            if not r.ok:
-                raise ProviderError(
-                    f"AssemblyAI poll failed ({r.status_code}): "
-                    f"{r.text[:300]}"
-                )
-
-            try:
-                payload = r.json()
-            except ValueError as e:
-                raise ProviderError(
-                    f"AssemblyAI вернул не-JSON ответ при опросе "
-                    f"({r.status_code}): {r.text[:300]}"
-                ) from e
-            status = payload.get("status")
-
-            if status != last_status and on_status is not None:
-                # Surface the AssemblyAI lifecycle so the user sees what's
-                # happening during the long-tail processing wait.
-                pretty = {
-                    "queued": "В очереди AssemblyAI...",
-                    "processing": "Обработка на серверах AssemblyAI...",
-                }.get(status, f"AssemblyAI: {status}")
-                on_status(pretty)
-                last_status = status
-
-            if status == "completed":
-                return payload
-            if status == "error":
-                raise ProviderError(
-                    f"AssemblyAI вернул ошибку: "
-                    f"{payload.get('error', '<no detail>')}"
-                )
-
-            # 0.25 s slice for cancel responsiveness (vs. one big sleep).
-            slept = 0.0
-            while slept < _POLL_INTERVAL_S:
-                check_cancel(cancel_event)
-                time.sleep(0.25)
-                slept += 0.25
+        """Block until job finishes — shared loop, AssemblyAI knobs."""
+        spec = PollSpec(
+            url=f"{_API_BASE}/transcript/{transcript_id}",
+            headers=self._headers,
+            provider=self.display_name,
+            interval_s=_POLL_INTERVAL_S,
+            extract_status=lambda p: p.get("status"),
+            done_statuses=frozenset({"completed"}),
+            error_statuses=frozenset({"error"}),
+            extract_error=lambda p: p.get("error", "<no detail>"),
+            pretty={
+                "queued": "В очереди AssemblyAI...",
+                "processing": "Обработка на серверах AssemblyAI...",
+            },
+        )
+        return poll(spec, on_status=on_status, cancel_event=cancel_event)
 
     def _cancel_remote(self, transcript_id: str) -> None:
         """Best-effort server-side cancel so the user isn't billed for a

@@ -165,7 +165,7 @@ def test_upload_401_returns_friendly_russian_error(tmp_path):
     p = AssemblyAIProvider("bad-key")
 
     mock_resp = MagicMock(status_code=401, ok=False, text="auth failed")
-    with patch("providers.assemblyai.requests.post", return_value=mock_resp):
+    with patch("providers._common.requests.post", return_value=mock_resp):
         with pytest.raises(ProviderError, match="отклонил ключ"):
             p._upload(str(audio), on_progress=None, cancel_event=None)
 
@@ -177,7 +177,7 @@ def test_upload_network_error_wrapped_in_provider_error(tmp_path):
 
     import requests
     with patch(
-        "providers.assemblyai.requests.post",
+        "providers._common.requests.post",
         side_effect=requests.ConnectionError("dns fail"),
     ):
         with pytest.raises(ProviderError, match="Сеть не отвечает"):
@@ -191,7 +191,7 @@ def test_upload_returns_url_on_success(tmp_path):
 
     mock_resp = MagicMock(status_code=200, ok=True)
     mock_resp.json.return_value = {"upload_url": "https://cdn.aai/abc"}
-    with patch("providers.assemblyai.requests.post", return_value=mock_resp):
+    with patch("providers._common.requests.post", return_value=mock_resp):
         url = p._upload(str(audio), on_progress=None, cancel_event=None)
     assert url == "https://cdn.aai/abc"
 
@@ -204,7 +204,7 @@ def test_submit_passes_diarize_and_language_to_payload():
         captured["body"] = json
         return MagicMock(status_code=200, ok=True, json=lambda: {"id": "tr-1"})
 
-    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+    with patch("providers._common.requests.post", side_effect=fake_post):
         tid = p._submit(
             "https://cdn.aai/abc",
             TranscriptionOptions(language="ru", diarize=True, hotwords=["Эппл"]),
@@ -226,7 +226,7 @@ def test_submit_auto_language_sets_language_detection():
         captured["body"] = json
         return MagicMock(status_code=200, ok=True, json=lambda: {"id": "tr-2"})
 
-    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+    with patch("providers._common.requests.post", side_effect=fake_post):
         p._submit("https://cdn.aai/abc", TranscriptionOptions(language=None))
     assert captured["body"]["language_detection"] is True
     assert "language_code" not in captured["body"]
@@ -240,7 +240,7 @@ def test_submit_speaker_count_hint_uses_num_then_min():
         captured.append(json)
         return MagicMock(status_code=200, ok=True, json=lambda: {"id": "x"})
 
-    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+    with patch("providers._common.requests.post", side_effect=fake_post):
         p._submit("u", TranscriptionOptions(num_speakers=3, min_speakers=5))
         p._submit("u", TranscriptionOptions(min_speakers=2))
         p._submit("u", TranscriptionOptions())  # neither
@@ -258,7 +258,7 @@ def test_poll_returns_completed_payload_immediately():
     mock_resp = MagicMock(ok=True, status_code=200)
     mock_resp.json.return_value = completed_payload
 
-    with patch("providers.assemblyai.requests.get", return_value=mock_resp):
+    with patch("providers._common.requests.get", return_value=mock_resp):
         result = p._poll("tr-1", on_status=None, cancel_event=None)
     assert result is completed_payload
 
@@ -268,7 +268,7 @@ def test_poll_raises_on_error_status():
     mock_resp = MagicMock(ok=True, status_code=200)
     mock_resp.json.return_value = {"status": "error", "error": "audio truncated"}
 
-    with patch("providers.assemblyai.requests.get", return_value=mock_resp):
+    with patch("providers._common.requests.get", return_value=mock_resp):
         with pytest.raises(ProviderError, match="audio truncated"):
             p._poll("tr-1", on_status=None, cancel_event=None)
 
@@ -297,8 +297,8 @@ def test_poll_status_callback_fires_on_change_only():
     ]
     seen: list[str] = []
 
-    with patch("providers.assemblyai.requests.get", side_effect=responses), \
-         patch("providers.assemblyai.time.sleep"):
+    with patch("providers._common.requests.get", side_effect=responses), \
+         patch("providers._common.time.sleep"):
         p._poll("tr-1", on_status=seen.append, cancel_event=None)
 
     # Only the transitions queued → processing → completed should fire.
@@ -343,7 +343,7 @@ def test_submit_mixed_uses_multilingual_config():
             submitted_body.update(json)
         return MagicMock(status_code=200, ok=True, json=lambda: {"id": "tr-mixed"})
 
-    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+    with patch("providers._common.requests.post", side_effect=fake_post):
         p._submit("https://cdn.aai/mixed.wav", TranscriptionOptions(language="mixed"))
 
     assert submitted_body.get("language_detection") is True
@@ -377,7 +377,7 @@ def test_submit_single_language_includes_required_speech_models():
             submitted_body.update(json)
         return MagicMock(status_code=200, ok=True, json=lambda: {"id": "tr-ru"})
 
-    with patch("providers.assemblyai.requests.post", side_effect=fake_post):
+    with patch("providers._common.requests.post", side_effect=fake_post):
         p._submit("https://cdn.aai/ru.wav", TranscriptionOptions(language="ru"))
 
     assert submitted_body.get("language_code") == "ru"

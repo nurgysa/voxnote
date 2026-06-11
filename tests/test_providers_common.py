@@ -16,8 +16,12 @@ import requests
 from providers._common import (
     cancel_remote,
     check_cancel,
+    extract_json_key,
     file_stream,
     guess_content_type,
+    parse_json,
+    poll,
+    request,
     require_key,
     validate_via_get,
 )
@@ -214,3 +218,186 @@ def test_file_stream_empty_file_yields_nothing_no_progress(tmp_path):
     )
     assert chunks == []
     assert calls == []  # size == 0 guard: no div-by-zero, no bogus 0%
+
+
+# ── request ───────────────────────────────────────────────────────────
+
+
+def test_request_dispatches_via_named_verb_for_patchability():
+    r = MagicMock(ok=True, status_code=200)
+    with patch("providers._common.requests.post", return_value=r) as p:
+        out = request(
+            "post", "https://api.example/u", provider="X",
+            action_ru="загрузке аудио", action_en="upload",
+            timeout=30, json={"a": 1},
+        )
+    assert out is r
+    assert p.call_args.kwargs["timeout"] == 30
+    assert p.call_args.kwargs["json"] == {"a": 1}
+
+
+def test_request_network_error_uses_action_ru():
+    with patch(
+        "providers._common.requests.get",
+        side_effect=requests.RequestException("boom"),
+    ):
+        with pytest.raises(
+            ProviderError, match="Сеть не отвечает при опросе"
+        ):
+            request("get", "u", provider="X", action_ru="опросе",
+                    action_en="poll", timeout=30)
+
+
+@pytest.mark.parametrize("code", [401, 403])
+def test_request_key_rejection_is_russian(code):
+    r = MagicMock(ok=False, status_code=code, text="no")
+    with patch("providers._common.requests.get", return_value=r):
+        with pytest.raises(
+            ProviderError, match=r"X отклонил ключ \(401\)"
+        ):
+            request("get", "u", provider="X", action_ru="опросе",
+                    action_en="poll", timeout=30)
+
+
+def test_request_non_ok_uses_action_en_and_truncates():
+    r = MagicMock(ok=False, status_code=500, text="z" * 1000)
+    with patch("providers._common.requests.post", return_value=r):
+        with pytest.raises(
+            ProviderError, match=r"X upload failed \(500\)"
+        ) as ei:
+            request("post", "u", provider="X", action_ru="загрузке аудио",
+                    action_en="upload", timeout=30)
+    assert "z" * 300 in str(ei.value)
+    assert "z" * 301 not in str(ei.value)
+
+
+# ── parse_json / extract_json_key ─────────────────────────────────────
+
+
+def test_parse_json_ok():
+    r = MagicMock()
+    r.json.return_value = {"a": 1}
+    assert parse_json(r, provider="X") == {"a": 1}
+
+
+def test_parse_json_invalid_with_context():
+    r = MagicMock(text="<html>oops</html>")
+    r.json.side_effect = ValueError("no json")
+    with pytest.raises(
+        ProviderError, match="Неожиданный ответ X на upload: <html>oops"
+    ):
+        parse_json(r, provider="X", context="upload")
+
+
+def test_parse_json_invalid_without_context():
+    r = MagicMock(text="<html>oops</html>")
+    r.json.side_effect = ValueError("no json")
+    with pytest.raises(ProviderError, match="Неожиданный ответ X: <html>oops"):
+        parse_json(r, provider="X")
+
+
+def test_extract_json_key_ok():
+    r = MagicMock()
+    r.json.return_value = {"upload_url": "https://cdn/u1"}
+    assert extract_json_key(
+        r, "upload_url", provider="X", context="upload"
+    ) == "https://cdn/u1"
+
+
+def test_extract_json_key_missing_key():
+    r = MagicMock(text='{"other": 1}')
+    r.json.return_value = {"other": 1}
+    with pytest.raises(ProviderError, match="Неожиданный ответ X на submit"):
+        extract_json_key(r, "id", provider="X", context="submit")
+
+
+# ── poll ──────────────────────────────────────────────────────────────
+
+
+def _json_resp(payload):
+    r = MagicMock(ok=True, status_code=200, text="")
+    r.json.return_value = payload
+    return r
+
+
+def _spec(**over):
+    from providers._common import PollSpec
+
+    kw = dict(
+        url="https://api.example/job/1",
+        headers={"h": "1"},
+        provider="X",
+        interval_s=3.0,
+        extract_status=lambda p: p.get("status"),
+        done_statuses=frozenset({"completed"}),
+        error_statuses=frozenset({"error"}),
+        extract_error=lambda p: p.get("error", "<no detail>"),
+        pretty={"queued": "В очереди X...", "processing": "Обработка X..."},
+    )
+    kw.update(over)
+    return PollSpec(**kw)
+
+
+def test_poll_returns_payload_on_done():
+    done = {"status": "completed", "text": "hi"}
+    with patch("providers._common.requests.get", return_value=_json_resp(done)):
+        assert poll(_spec(), None, None) == done
+
+
+def test_poll_error_status_raises_with_detail():
+    bad = {"status": "error", "error": "quota exceeded"}
+    with patch("providers._common.requests.get", return_value=_json_resp(bad)):
+        with pytest.raises(
+            ProviderError, match="X вернул ошибку: quota exceeded"
+        ):
+            poll(_spec(), None, None)
+
+
+def test_poll_pretty_status_dedup_and_fallback():
+    seq = [
+        _json_resp({"status": "queued"}),
+        _json_resp({"status": "queued"}),
+        _json_resp({"status": "processing"}),
+        _json_resp({"status": "completed"}),
+    ]
+    seen: list[str] = []
+    with patch("providers._common.requests.get", side_effect=seq), \
+         patch("providers._common.time.sleep"):
+        poll(_spec(), seen.append, None)
+    # one line per DISTINCT status; unmapped statuses fall back to "X: <s>"
+    assert seen == ["В очереди X...", "Обработка X...", "X: completed"]
+
+
+def test_poll_deadline_raises_before_get():
+    with patch(
+        "providers._common.time.monotonic", side_effect=[0.0, 90 * 60 + 1.0]
+    ), patch("providers._common.requests.get") as g:
+        with pytest.raises(
+            ProviderError, match="X не вернул результат за 90 минут"
+        ):
+            poll(_spec(), None, None)
+    g.assert_not_called()
+
+
+def test_poll_non_json_raises_providererror():
+    r = MagicMock(ok=True, status_code=200, text="<html>502 Bad Gateway</html>")
+    r.json.side_effect = ValueError("no json")
+    with patch("providers._common.requests.get", return_value=r):
+        with pytest.raises(
+            ProviderError, match="X вернул не-JSON ответ при опросе"
+        ):
+            poll(_spec(), None, None)
+
+
+def test_poll_cancel_between_polls_raises():
+    from transcriber import TranscriptionCancelled
+
+    ev = threading.Event()
+    with patch(
+        "providers._common.requests.get",
+        return_value=_json_resp({"status": "queued"}),
+    ), patch(
+        "providers._common.time.sleep", side_effect=lambda _s: ev.set()
+    ):
+        with pytest.raises(TranscriptionCancelled):
+            poll(_spec(), None, ev)
