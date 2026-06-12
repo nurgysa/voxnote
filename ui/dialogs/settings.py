@@ -301,6 +301,20 @@ class SettingsDialog(ctk.CTkToplevel):
         if menu is not None:
             menu.focus_set()
 
+    def _post_to_ui(self, callback, *args) -> None:
+        """Marshal a worker-thread result onto the Tk thread.
+
+        Drops the callback if the dialog was destroyed while the worker
+        was still running: self.after() raises TclError from a dead
+        widget, which would otherwise kill the worker thread — or, for
+        an after() inside a worker's ``except Exception``, get mis-routed
+        into its failure handler whose own after() then dies uncaught.
+        """
+        try:
+            self.after(0, callback, *args)
+        except tk.TclError:
+            pass  # dialog destroyed while the worker was running
+
     def _refresh_meetings_stats(self) -> None:
         """Update «В этой папке: N встреч • X GB» without blocking Tk.
 
@@ -329,10 +343,7 @@ class SettingsDialog(ctk.CTkToplevel):
                     text=f"В этой папке: {n} {word} • {_fmt_size(size)}",
                 )
 
-            try:
-                self.after(0, apply)
-            except tk.TclError:
-                pass  # dialog destroyed while the walk was running
+            self._post_to_ui(apply)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -437,14 +448,14 @@ class SettingsDialog(ctk.CTkToplevel):
         def worker():
             try:
                 self._parent._gdrive_auth.sign_in()
-                self.after(0, self._on_gdrive_signin_success)
+                self._post_to_ui(self._on_gdrive_signin_success)
             except Exception as e:   # any OAuth failure: network, user cancel, GCP misconfig
                 _logger.exception("GDrive sign-in failed: %s", e)
                 # Hoist str(e) into a plain local before the lambda — `e`
                 # is del'd at except-block exit (Python scoping rule), so
                 # `lambda: ...str(e)...` would NameError on the main thread.
                 error_msg = str(e)
-                self.after(0, lambda: self._on_gdrive_signin_failure(error_msg))
+                self._post_to_ui(lambda: self._on_gdrive_signin_failure(error_msg))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -491,7 +502,7 @@ class SettingsDialog(ctk.CTkToplevel):
                 # Status callback marshals each status string back to
                 # the Tk main thread (CTk widgets are not thread-safe).
                 def _status(msg: str) -> None:
-                    self.after(0, self._gdrive_backup_status.configure, {
+                    self._post_to_ui(self._gdrive_backup_status.configure, {
                         "text": msg, "text_color": TEXT_SECONDARY,
                     })
 
@@ -503,13 +514,13 @@ class SettingsDialog(ctk.CTkToplevel):
                     work_dir=work_dir,
                     on_status=_status,
                 )
-                self.after(0, lambda: self._on_gdrive_backup_success(result))
+                self._post_to_ui(lambda: self._on_gdrive_backup_success(result))
             except Exception as e:   # network, quota, RefreshError, disk full — all surface here
                 _logger.exception("GDrive backup failed: %s", e)
                 # Hoist str(e) before lambda — Python except-scope rule
                 # (same gotcha as _handle_gdrive_signin in Phase 7.0).
                 error_msg = str(e)
-                self.after(0, lambda: self._on_gdrive_backup_failure(error_msg))
+                self._post_to_ui(lambda: self._on_gdrive_backup_failure(error_msg))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -590,11 +601,11 @@ class SettingsDialog(ctk.CTkToplevel):
             try:
                 from support_bundle import build_log_bundle
                 summary = build_log_bundle(self._parent._config, dest)
-                self.after(0, lambda: self._on_send_log_success(summary))
+                self._post_to_ui(lambda: self._on_send_log_success(summary))
             except Exception as e:   # disk full, permission, bad path — all surface here
                 _logger.exception("Log bundle failed: %s", e)
                 error_msg = str(e)
-                self.after(0, lambda: self._on_send_log_failure(error_msg))
+                self._post_to_ui(lambda: self._on_send_log_failure(error_msg))
 
         threading.Thread(target=worker, daemon=True).start()
 

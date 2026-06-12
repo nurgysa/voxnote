@@ -33,4 +33,6 @@ def test_stats_guarded_by_generation_counter():
 
 def test_stats_apply_guarded_against_dead_dialog():
     # self.after() from the worker raises TclError if the dialog is gone.
-    assert "tk.TclError" in _stats_block()
+    # The guard lives in the shared _post_to_ui helper (its TclError catch
+    # is locked by test_settings_worker_ui_guards.py).
+    assert "_post_to_ui" in _stats_block()
