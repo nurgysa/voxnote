@@ -17,6 +17,19 @@ import sys
 from cli import config, core
 from cli._paths import ensure_outside_secret_store
 
+
+# ── Hermes webhook best-effort emitter ───────────────────────────────
+
+def _emit_hermes_event(cfg: dict, **fields) -> None:
+    """Best-effort Hermes notification — must never affect CLI output/exit."""
+    from integrations.hermes.client import emit_audio_transcribed_event, get_hermes_webhook_config
+    hermes_cfg = get_hermes_webhook_config(cfg)
+    if not hermes_cfg.enabled:
+        return
+    result = emit_audio_transcribed_event(config=hermes_cfg, **fields)
+    if not result.sent:
+        print(f"Hermes webhook не доставлен: {result.error}", file=sys.stderr)
+
 # ── Exit codes (contract with the calling agent) ──────────────────────
 EXIT_OK = 0
 EXIT_GENERIC = 1
@@ -168,6 +181,7 @@ def _cmd_transcribe(args) -> int:
         denoise=args.denoise,
         on_status=_status_printer(args),
     )
+    folder = None
     if args.save:
         import utils
 
@@ -181,6 +195,16 @@ def _cmd_transcribe(args) -> int:
         print(json.dumps(out.to_dict(), ensure_ascii=False))
     else:
         print(out.text)
+
+    _emit_hermes_event(
+        cfg,
+        transcript_text=out.text,
+        audio_path=args.audio,
+        history_folder=folder if args.save else None,
+        provider=provider,
+        language=out.language,
+        segments=[],
+    )
     return EXIT_OK
 
 
@@ -327,6 +351,16 @@ def _cmd_pipeline(args) -> int:
         )
         out["sent"] = [r.to_dict() for r in send_results]
     print(json.dumps(out, ensure_ascii=False))
+
+    _emit_hermes_event(
+        cfg,
+        transcript_text=transcript.text,
+        audio_path=args.audio,
+        history_folder=None,
+        provider=provider,
+        language=transcript.language,
+        segments=[],
+    )
     return EXIT_OK
 
 
