@@ -53,7 +53,12 @@ from .constants import (
     _REQUIRED_KEYS_BY_BACKEND,
     _TEAMS_CACHE_KEY,
 )
-from .pricing import estimate_cost_hint, format_real_cost
+from .pricing import (
+    MIN_FORECAST_CHARS,
+    estimate_cost,
+    estimate_cost_hint,
+    format_real_cost,
+)
 from .task_row import _TaskRow
 
 
@@ -329,17 +334,21 @@ class ExtractTasksDialog(ctk.CTkToplevel):
                 self._speaker_row_vars[raw].set(person.full_name)
 
     def _update_cost_hint(self) -> None:
-        """Initial status line — cost-of-extract heuristic or adaptive welcome.
+        """Initial status line — per-model cost forecast or adaptive welcome.
 
-        Phase 6.5 D — adaptive welcome. When the dialog is opened with no
-        transcript (e.g., user wants to add tasks by hand or via Söyle
-        dictation), the old «Стоимость ≈ $0.00 (≈ 1 токенов)» line was both
-        wrong and confusing. The pure heuristic now lives in
-        pricing.estimate_cost_hint; this wrapper only pushes its result onto
-        the status label.
+        Phase 6.5 D — adaptive welcome (no transcript → no cost line).
+        Spec 2026-06-11 — the forecast uses the SELECTED model's rates
+        (re-run via the _model_var trace registered in builder.build_ui)
+        and is remembered in _last_cost_forecast so _on_extract_success
+        can show forecast-vs-actual.
         """
+        chars = len(self._transcript or "")
+        model = self._model_var.get().strip()
+        self._last_cost_forecast = (
+            estimate_cost(chars, model) if chars >= MIN_FORECAST_CHARS else None
+        )
         self._status_label.configure(
-            text=estimate_cost_hint(len(self._transcript or "")),
+            text=estimate_cost_hint(chars, model),
             text_color=TEXT_SECONDARY,
         )
 
@@ -781,6 +790,11 @@ class ExtractTasksDialog(ctk.CTkToplevel):
         if corr:
             parts.append(f"({corr} полей скорректированы)")
         if cost_str:
+            forecast = getattr(self, "_last_cost_forecast", None)
+            if forecast is not None:
+                # Spec 2026-06-11: close the trust loop — the actual next
+                # to the upfront forecast the user saw before clicking.
+                cost_str = f"{cost_str} (прогноз ${forecast:.4f})"
             parts.append(f"·  {cost_str}")
         self._status_label.configure(text="  ".join(parts), text_color=GREEN)
 

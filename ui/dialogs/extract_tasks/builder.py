@@ -204,6 +204,11 @@ def build_ui(dialog) -> None:
     dialog._status_label = label(dialog, "", anchor="w")
     dialog._status_label.grid(row=1, column=0, padx=18, pady=(2, 4), sticky="ew")
     dialog._update_cost_hint()
+    # Re-estimate when the model changes (picked or typed) — rates differ
+    # per model (spec 2026-06-11). Registered AFTER the initial hint call
+    # so the trace can never fire before _status_label exists. String
+    # math only — cheap enough to run per keystroke in the ComboBox.
+    dialog._model_var.trace_add("write", lambda *_: dialog._update_cost_hint())
 
     # --- Editor: master-detail layout ---
     editor = ctk.CTkFrame(dialog, fg_color="transparent")
