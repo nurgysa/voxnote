@@ -92,3 +92,24 @@ python -m cli list-containers --backend trello --json
   the CLI exits 0 with parseable JSON.
 - Failure: a non-zero CLI exit code (see Pitfalls) or an error object — surface the
   message to the user and re-check the relevant key/argument.
+
+## Event mode (outbound webhook)
+
+Beyond MCP-pull, the app can **push** events to Hermes. After each successful
+transcription the app POSTs an `audio.transcribed` event to:
+
+```text
+http://localhost:8644/webhooks/audio-transcribed
+```
+
+The event carries the full transcript text, speaker segments, provider / language
+metadata, and the local history-folder path. It is HMAC-SHA256 signed via the
+`X-Webhook-Signature` header. Delivery is best-effort — transcription always
+succeeds even if Hermes is unreachable.
+
+Enable by setting `hermes_webhook_enabled: true` (and a shared secret) in
+`~/.audio-transcriber/config.json` or via the
+`AUDIO_TRANSCRIBER_HERMES_WEBHOOK_*` env vars.
+
+For Hermes-side setup (gateway config, `hermes webhook subscribe`, health check,
+and the full config/env reference) see **`AGENTS.md §4`** in the repo.

@@ -284,11 +284,69 @@ class TranscriptionMixin:
                 except OSError as e:
                     logger.warning("could not delete recording %s: %s", self._audio_path, e)
 
+        # Best-effort Hermes Agent notification (spec 2026-06-11). Runs in
+        # a daemon thread: requests.post may block up to the configured
+        # timeout and must not freeze Tk. No UI feedback on failure by
+        # design — log-only (the transcription itself already succeeded).
+        # Tk vars are read here (Tk main thread) and passed as plain str
+        # args — reading them from the worker thread would violate Tk's
+        # single-thread contract.
+        _provider = self._cloud_provider_var.get() or None
+        _language = LANGUAGES.get(self._lang_var.get())
+        threading.Thread(
+            target=self._emit_hermes_event,
+            # _audio_path snapshotted too: the worker must not read live
+            # attrs that the next run may overwrite before it executes.
+            args=(
+                text, self._last_history_folder, _provider, _language,
+                self._audio_path,
+            ),
+            daemon=True,
+        ).start()
+
         # Enable extract button only when we actually have a target folder.
         # Mirrors the conditional enable in _load_history_into_main.
         self._btn_extract_tasks.configure(
             state="normal" if self._last_history_folder else "disabled",
         )
+
+    def _emit_hermes_event(
+        self,
+        text: str,
+        history_folder: str | None,
+        provider: str | None,
+        language: str | None,
+        audio_path: str | None,
+    ) -> None:
+        """Worker: best-effort audio.transcribed webhook to Hermes Agent.
+
+        Runs in a daemon thread spawned by _on_complete. All Tk StringVar
+        values are pre-read in the Tk main thread and passed as plain args
+        so this method never touches any Tk object.
+        """
+        try:
+            from integrations.hermes.client import (
+                emit_audio_transcribed_event,
+                get_hermes_webhook_config,
+            )
+            hermes_cfg = get_hermes_webhook_config(self._config)
+            if not hermes_cfg.enabled:
+                return
+            result = emit_audio_transcribed_event(
+                config=hermes_cfg,
+                transcript_text=text,
+                audio_path=audio_path,
+                history_folder=history_folder,
+                provider=provider,
+                language=language,
+            )
+            if not result.sent:
+                logger.warning("hermes webhook not delivered: %s", result.error)
+        # Worker-thread boundary (spec §9.5: webhook failure must NEVER
+        # surface as a transcription failure) — any unexpected class is
+        # logged and swallowed; the daemon thread just ends.
+        except Exception:
+            logger.exception("hermes webhook emit failed (ignored)")
 
     def _on_error(self, error_msg: str):
         self._lbl_status.configure(text="Ошибка", text_color=RED)

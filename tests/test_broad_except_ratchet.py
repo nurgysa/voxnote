@@ -43,7 +43,7 @@ BASELINE = {
     "tasks/sender.py": 1,                          # belt-and-braces -> FAILED status
     "ui/app/main_entry.py": 2,                     # last-resort crash handler
     "ui/app/recorder_mixin.py": 1,                 # mic-open failures -> dialog
-    "ui/app/transcription_mixin.py": 2,            # worker boundary + crash dump
+    "ui/app/transcription_mixin.py": 3,            # worker boundary + crash dump + hermes daemon
     "ui/dialogs/extract_tasks/__init__.py": 4,     # worker-thread boundaries
     "ui/dialogs/settings.py": 3,                   # OAuth/backup/bundle workers
     "ui/widgets.py": 1,                            # validate-callback boundary
