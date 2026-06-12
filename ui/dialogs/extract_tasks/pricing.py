@@ -7,10 +7,20 @@ carry inline (`_format_real_cost` and the pure part of `_update_cost_hint`).
 """
 from __future__ import annotations
 
-# Default input price per 1M tokens. Used for the upfront cost-estimate
-# hint (before the user runs Извлечь — we don't know which model yet, so we
-# approximate with the default).
+# Flat fallback rate per 1M tokens for models missing from the table —
+# custom OpenRouter slugs still get a ballpark forecast.
 _COST_PER_1M_INPUT_TOKENS_USD = 3.0
+
+# Assumed completion-to-prompt ratio for the upfront forecast.
+# Calibration: a typical 1-hour meeting ≈ 50k chars ≈ 12.5k input tokens
+# yields ~1.5k tokens of task-JSON (10–20 tasks) → ≈ 0.12. Replaces the
+# old flat ×1.3 input-rate fudge with an honest output term.
+_EST_OUTPUT_RATIO = 0.12
+
+# Below this transcript length the dialog is in the manual/dictation
+# flow — no forecast is shown (and none is remembered for the
+# forecast-vs-actual tail).
+MIN_FORECAST_CHARS = 50
 
 # Per-model pricing for the post-call **real** cost display in
 # _on_extract_success — uses response.usage tokens × these rates.
@@ -34,20 +44,34 @@ _MODEL_PRICING_USD_PER_M = {
 }
 
 
-def estimate_cost_hint(char_count: int) -> str:
-    """Upfront status line: cost-of-extract heuristic, or an adaptive welcome.
+def estimate_cost(char_count: int, model: str) -> float:
+    """Forecast extraction cost in USD using the SELECTED model's rates.
+
+    Input tokens ≈ chars/4; output ≈ _EST_OUTPUT_RATIO × input. Unknown
+    models fall back to the flat default rate for both directions.
+    """
+    approx_in = max(char_count // 4, 1)
+    approx_out = int(approx_in * _EST_OUTPUT_RATIO)
+    rates = _MODEL_PRICING_USD_PER_M.get(model)
+    if rates is None:
+        in_rate = out_rate = _COST_PER_1M_INPUT_TOKENS_USD
+    else:
+        in_rate, out_rate = rates
+    return (approx_in * in_rate + approx_out * out_rate) / 1_000_000.0
+
+
+def estimate_cost_hint(char_count: int, model: str) -> str:
+    """Upfront status line: per-model forecast, or an adaptive welcome.
 
     Returns the welcome one-liner when there is effectively no transcript
-    (< 50 chars → the dialog was opened for the manual / dictation flow),
-    otherwise a "Стоимость ≈ $X.XX" estimate. Token count ≈ chars / 4; the
-    *1.3 fudge pads the input-only rate toward the real prompt+completion
-    cost so the upfront number doesn't undersell the post-call total.
+    (< MIN_FORECAST_CHARS → manual / dictation flow), otherwise a
+    «Стоимость ≈ $X.XX» forecast from estimate_cost.
     """
-    if char_count < 50:
+    if char_count < MIN_FORECAST_CHARS:
         # No transcript → manual-only flow; skip the cost line.
         return "Готов к работе. Извлеките из транскрипта или добавьте задачу вручную."
     approx_tokens = max(char_count // 4, 1)
-    cost = approx_tokens / 1_000_000 * _COST_PER_1M_INPUT_TOKENS_USD * 1.3
+    cost = estimate_cost(char_count, model)
     return f"Стоимость ≈ ${cost:.2f} (≈ {approx_tokens:,} токенов)"
 
 
