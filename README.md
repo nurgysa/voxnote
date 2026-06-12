@@ -151,6 +151,45 @@ GPLv3-лицензии ffmpeg, целостность архива. См. [`docs
 
 Полный гид для конечных пользователей — [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
 
+## Hermes Agent integration
+
+Приложение поддерживает **два режима** работы с [Hermes Agent](https://github.com/nurgisa/hermes):
+
+| Режим | Направление | Описание |
+|---|---|---|
+| **MCP (inbound)** | Hermes → App | Hermes вызывает MCP-сервер: `transcribe_audio`, `extract_tasks` и др. |
+| **Webhook (outbound)** | App → Hermes | Приложение отправляет событие `audio.transcribed` в Hermes после успешной транскрипции |
+
+### Outbound webhook (по умолчанию отключён)
+
+После завершения транскрипции приложение отправляет POST-запрос на адрес Hermes
+с JSON-пейлоадом `audio.transcribed` (текст транскрипта, провайдер, язык,
+speaker-сегменты, путь к истории встречи). Запрос подписан HMAC-SHA256
+(`X-Webhook-Signature`); Hermes валидирует подпись на своей стороне.
+
+Доставка — **best-effort**: если Hermes недоступен, транскрипция всё равно
+считается успешной.
+
+**Конфигурация** (`~/.audio-transcriber/config.json` или переменные окружения):
+
+| Ключ config.json | Переменная окружения | По умолчанию | Описание |
+|---|---|---|---|
+| `hermes_webhook_enabled` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED` | `false` | Включить отправку |
+| `hermes_webhook_url` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | URL endpoint Hermes |
+| `hermes_webhook_secret` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET` | `""` | Shared secret для HMAC |
+| `hermes_webhook_timeout_seconds` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Таймаут запроса (сек) |
+| `hermes_webhook_routing_hint` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Хинт маршрутизации |
+
+> Переменная окружения с пустым значением (`=""`) игнорируется — берётся
+> значение из config.json. Env-переменные с непустым значением перекрывают
+> config.json.
+
+Шаблон ключей — [`config.example.json`](config.example.json). Не коммитьте
+реальный секрет — используйте переменные окружения.
+
+Для настройки Hermes-стороны (маршрут `audio-transcribed`, HMAC-ключ,
+`hermes webhook subscribe`) — см. [`AGENTS.md`](AGENTS.md).
+
 ## Архитектура
 
 Карта модулей, runtime-модель и JSON-контракты — в

@@ -144,3 +144,163 @@ The agent host often has no `config.json`, so pass secrets via env:
 
 The MCP server speaks JSON-RPC on stdout — never print to it. Transcription
 progress is discarded; diagnostics go to `logs/faulthandler-mcp.log`.
+
+## 4. Outbound webhook — `audio.transcribed` event
+
+In addition to the MCP-pull mode above, the app can **push** a signed
+`audio.transcribed` event to Hermes after every successful transcription.
+This is the second integration direction:
+
+```text
+Audio Transcriber  →  POST /webhooks/audio-transcribed  →  Hermes Agent
+```
+
+### 4.1 Event payload shape
+
+```json
+{
+  "event_type": "audio.transcribed",
+  "version": "1.0",
+  "source": "audio-transcriber",
+  "routing_hint": "obsidian_inbox",
+  "audio": {
+    "filename": "meeting.m4a",
+    "path": "C:/Users/.../meeting.m4a",
+    "history_folder": "C:/Users/.../<meeting-folder>"
+  },
+  "transcript": {
+    "raw": "<full transcript text>",
+    "segments": []
+  },
+  "analysis": {
+    "summary": null,
+    "tasks": [],
+    "ideas": [],
+    "decisions": [],
+    "protocol": null
+  },
+  "meta": {
+    "provider": "AssemblyAI",
+    "language": "ru",
+    "created_at": "2026-06-11T12:00:00Z"
+  }
+}
+```
+
+Key fields for Hermes routing: `event_type`, `routing_hint`,
+`transcript.raw`, `meta.provider`, `meta.language`, `audio.history_folder`.
+
+### 4.2 Config / env reference
+
+| config.json key | Env var | Default | Notes |
+|---|---|---|---|
+| `hermes_webhook_enabled` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED` | `false` | Enable sending |
+| `hermes_webhook_url` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | Hermes endpoint |
+| `hermes_webhook_secret` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET` | `""` | HMAC shared secret |
+| `hermes_webhook_timeout_seconds` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Request timeout |
+| `hermes_webhook_routing_hint` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Routing target hint |
+
+**Empty-env-string semantics:** an env var set to an empty string (`=""`) is
+treated as *unset* and the config.json value is used instead. This matches
+the behaviour of the other `AUDIO_TRANSCRIBER_*` vars throughout the project.
+
+Boolean env vars accept (case-insensitive): `true`, `1`, `yes`, `on` → enabled.
+Everything else is false. The secret is consumed only for HMAC signing and
+is never logged or included in error messages.
+
+### 4.3 Delivery contract
+
+- **Best-effort:** if Hermes is unreachable or returns non-2xx, the
+  transcription still succeeds — webhook failure is logged as a WARNING only.
+- **HMAC signing:** `X-Webhook-Signature: <hex HMAC-SHA256 over exact body bytes>`
+  The body bytes are built once and the same bytes are used for both signing
+  and the POST body (deterministic JSON: sorted keys, compact separators,
+  UTF-8).
+- **Idempotency:** `X-Request-ID: audio-transcriber:<sha256(body)[:24]>` —
+  deterministic per unique payload, safe for Hermes to deduplicate retries.
+- **No audio bytes** are sent — only metadata, transcript text, and paths.
+
+### 4.4 Hermes-side setup
+
+**Step 1 — Enable the Hermes webhook platform:**
+
+```bash
+hermes gateway setup
+```
+
+Or add manually to `~/.hermes/config.yaml`:
+
+```yaml
+platforms:
+  webhook:
+    enabled: true
+    extra:
+      host: "127.0.0.1"
+      port: 8644
+      secret: "[REDACTED]"
+```
+
+Then restart:
+
+```bash
+hermes gateway restart
+```
+
+Health check:
+
+```bash
+curl http://localhost:8644/health
+```
+
+**Step 2 — Subscribe the route:**
+
+```bash
+hermes webhook subscribe audio-transcribed \
+  --events "audio.transcribed" \
+  --skills "personal-ai-brain-stack" \
+  --deliver telegram \
+  --prompt "Audio Transcriber event received.
+
+Source: {source}
+File: {audio.filename}
+Provider: {meta.provider}
+Language: {meta.language}
+
+Transcript:
+{transcript.raw}
+
+Route into Nurgisa Brain Stack:
+1. classify as task/idea/note/meeting,
+2. save useful content to Obsidian Inbox or the relevant project note,
+3. prepare concise next actions,
+4. queue or trigger GBrain sync if useful."
+```
+
+The app sends to: `http://localhost:8644/webhooks/audio-transcribed`
+
+Use the **same secret** in `hermes_webhook_secret` (config or env) and in the
+Hermes webhook platform config — never commit it.
+
+### 4.5 Docs-only curl smoke example
+
+Manually verify Hermes accepts the event shape (substitute `[REDACTED]`
+with your actual secret, never commit it):
+
+```bash
+BODY='{"analysis":{"decisions":[],"ideas":[],"protocol":null,"summary":null,"tasks":[]},"audio":{"filename":"test.m4a","history_folder":null,"path":null},"event_type":"audio.transcribed","meta":{"created_at":"2026-06-11T12:00:00Z","language":"ru","provider":"test"},"routing_hint":"obsidian_inbox","source":"audio-transcriber","transcript":{"raw":"test","segments":[]},"version":"1.0"}'
+SIG=$(BODY="$BODY" SECRET="[REDACTED]" python - <<'PY'
+import hmac, hashlib, os
+body = os.environ["BODY"].encode("utf-8")
+secret = os.environ["SECRET"].encode("utf-8")
+print(hmac.new(secret, body, hashlib.sha256).hexdigest())
+PY
+)
+curl -X POST http://localhost:8644/webhooks/audio-transcribed \
+  -H "Content-Type: application/json" \
+  -H "X-Webhook-Signature: $SIG" \
+  -H "X-Request-ID: manual-test-1" \
+  --data "$BODY"
+```
+
+Note: the JSON body must use **sorted keys** (the app uses `sort_keys=True`).
+The `BODY` above is pre-sorted for the smoke test.
