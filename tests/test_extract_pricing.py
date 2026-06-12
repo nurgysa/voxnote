@@ -8,7 +8,13 @@ move stays behaviour-preserving.
 """
 from __future__ import annotations
 
-from ui.dialogs.extract_tasks.pricing import estimate_cost_hint, format_real_cost
+import pytest
+
+from ui.dialogs.extract_tasks.pricing import (
+    estimate_cost,
+    estimate_cost_hint,
+    format_real_cost,
+)
 
 # ── format_real_cost (post-call real cost from response.usage) ──────
 
@@ -55,16 +61,37 @@ def test_format_real_cost_ignores_non_numeric_cost_and_falls_back_to_rates():
 
 def test_estimate_cost_hint_below_50_chars_is_welcome():
     welcome = "Готов к работе. Извлеките из транскрипта или добавьте задачу вручную."
-    assert estimate_cost_hint(0) == welcome
-    assert estimate_cost_hint(49) == welcome
+    assert estimate_cost_hint(0, "google/gemini-3.5-flash") == welcome
+    assert estimate_cost_hint(49, "google/gemini-3.5-flash") == welcome
 
 
-def test_estimate_cost_hint_applies_1_3_fudge_factor():
-    # 4_000_000 chars → approx_tokens = 1_000_000 → cost = 1.0 * 3.0 * 1.3 = 3.90.
-    # Without the *1.3 fudge this would read "$3.00" — the assert locks the fudge.
-    assert estimate_cost_hint(4_000_000) == "Стоимость ≈ $3.90 (≈ 1,000,000 токенов)"
+def test_estimate_cost_uses_selected_model_rates():
+    # 4M chars → exactly 1M input tokens; gemini-3.5-flash = $1.50/$9.00.
+    # Output ≈ 12% of input → 120k tokens. 1.50 + 0.12·9.00 = $2.58.
+    cost = estimate_cost(4_000_000, "google/gemini-3.5-flash")
+    assert cost == pytest.approx(1.50 + 0.12 * 9.00)
+
+
+def test_estimate_cost_unknown_model_falls_back_to_flat_rate():
+    # Custom OpenRouter slugs still get a ballpark: flat $3/1M both ways.
+    cost = estimate_cost(4_000_000, "custom/who-dis")
+    assert cost == pytest.approx(3.0 + 0.12 * 3.0)
+
+
+def test_estimate_cost_empty_slug_degrades_to_flat_rate():
+    # The hint re-estimates per keystroke while the user types a custom
+    # slug into the ComboBox — an empty/partial model must not error.
+    cost = estimate_cost(4_000_000, "")
+    assert cost == pytest.approx(3.0 + 0.12 * 3.0)
+
+
+def test_estimate_cost_hint_formats_model_rate():
+    assert estimate_cost_hint(4_000_000, "google/gemini-3.5-flash") == (
+        "Стоимость ≈ $2.58 (≈ 1,000,000 токенов)"
+    )
 
 
 def test_estimate_cost_hint_at_50_chars_shows_cost_not_welcome():
-    # 50 is NOT < 50 → cost branch. approx_tokens = max(50 // 4, 1) = 12.
-    assert estimate_cost_hint(50) == "Стоимость ≈ $0.00 (≈ 12 токенов)"
+    assert estimate_cost_hint(50, "google/gemini-3.5-flash") == (
+        "Стоимость ≈ $0.00 (≈ 12 токенов)"
+    )
