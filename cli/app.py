@@ -351,6 +351,9 @@ def _cmd_pipeline(args) -> int:
         out["sent"] = [r.to_dict() for r in send_results]
     print(json.dumps(out, ensure_ascii=False))
 
+    # V1 keeps the event transcript-level on purpose: tasks/protocol are in
+    # scope here (`out` carries them) but payload enrichment is a deliberate
+    # follow-up, not an accident (spec §5 allows the analysis fields).
     _emit_hermes_event(
         cfg,
         transcript_text=transcript.text,

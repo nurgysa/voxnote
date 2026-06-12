@@ -295,7 +295,12 @@ class TranscriptionMixin:
         _language = LANGUAGES.get(self._lang_var.get())
         threading.Thread(
             target=self._emit_hermes_event,
-            args=(text, self._last_history_folder, _provider, _language),
+            # _audio_path snapshotted too: the worker must not read live
+            # attrs that the next run may overwrite before it executes.
+            args=(
+                text, self._last_history_folder, _provider, _language,
+                self._audio_path,
+            ),
             daemon=True,
         ).start()
 
@@ -311,6 +316,7 @@ class TranscriptionMixin:
         history_folder: str | None,
         provider: str | None,
         language: str | None,
+        audio_path: str | None,
     ) -> None:
         """Worker: best-effort audio.transcribed webhook to Hermes Agent.
 
@@ -329,7 +335,7 @@ class TranscriptionMixin:
             result = emit_audio_transcribed_event(
                 config=hermes_cfg,
                 transcript_text=text,
-                audio_path=self._audio_path,
+                audio_path=audio_path,
                 history_folder=history_folder,
                 provider=provider,
                 language=language,

@@ -111,6 +111,11 @@ a = Analysis(
         "googleapiclient.discovery_cache",
         "googleapiclient.discovery_cache.file_cache",
         "google_auth_oauthlib.flow",
+        # Hermes outbound webhook (spec 2026-06-11) — imported only at
+        # function level inside transcription_mixin._emit_hermes_event;
+        # listed explicitly so a frozen build can never miss the package.
+        "integrations.hermes.client",
+        "integrations.hermes.schema",
     ] + _md_hidden,
     hookspath=[],
     runtime_hooks=[str(PROJECT_ROOT / "runtime_hook_imports.py")],
