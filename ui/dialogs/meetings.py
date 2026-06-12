@@ -1,9 +1,9 @@
 """Meetings browser + read-only transcript viewer.
 
-Renamed from history.py on 2026-05-28 — UI consistency with the new
-«Митинги» button + Settings folder picker. Files on disk are
-unchanged; the underlying utils.list_history_entries / delete_history_entry
-helpers keep their internal names (rename was UI-only).
+Renamed from history.py on 2026-05-28; UI terminology unified to
+«Встречи» on 2026-06-11. Files on disk are unchanged;
+the underlying utils.list_history_entries / delete_history_entry
+helpers keep their internal names (renames were UI-only).
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ class MeetingsDialog(ctk.CTkToplevel):
 
     def __init__(self, parent, on_load_to_main):
         super().__init__(parent)
-        self.title("Митинги")
+        self.title("Встречи")
         self.geometry("760x600")
         self.configure(fg_color=BG)
         self.transient(parent)
@@ -183,7 +183,7 @@ class MeetingsDialog(ctk.CTkToplevel):
         header.grid(row=0, column=0, sticky="ew")
         header.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            header, text="Митинги",
+            header, text="Встречи",
             font=ctk.CTkFont(family=FONT, size=16, weight="bold"),
             text_color=TEXT_PRIMARY,
         ).grid(row=0, column=0, padx=20, pady=12, sticky="w")
@@ -255,10 +255,10 @@ class MeetingsDialog(ctk.CTkToplevel):
         query = self._search_var.get().strip()
         entries = [e for e in self._all_entries if self._matches_query(e, query)]
         suffix = f" / {len(self._all_entries)}" if query else ""
-        self._lbl_count.configure(text=f"Митингов: {len(entries)}{suffix}")
+        self._lbl_count.configure(text=f"Встреч: {len(entries)}{suffix}")
 
         if not entries:
-            msg = "Ничего не найдено" if query else "Нет митингов"
+            msg = "Ничего не найдено" if query else "Нет встреч"
             ctk.CTkLabel(
                 self._entry_list, text=msg,
                 font=ctk.CTkFont(family=FONT, size=13),

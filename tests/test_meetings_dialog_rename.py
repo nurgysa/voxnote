@@ -33,35 +33,35 @@ def test_meetings_module_defines_meetings_dialog_class():
 
 
 def test_meetings_dialog_title_is_meetings():
-    """Window title must be «Митинги», not «История транскрипций»."""
+    """Window title must be «Встречи» (terminology unified 2026-06-11)."""
     src = (REPO / "ui" / "dialogs" / "meetings.py").read_text(encoding="utf-8")
     assert "История транскрипций" not in src, (
         "Old window title must be gone"
     )
-    assert '"Митинги"' in src or "'Митинги'" in src, (
-        "Window title must be «Митинги»"
+    assert '"Встречи"' in src or "'Встречи'" in src, (
+        "Window title must be «Встречи»"
     )
 
 
 def test_meetings_footer_label_renamed():
-    """«Записей: N» → «Митингов: N»."""
+    """«Записей: N» → «Встреч: N» (fixed genitive — declension-safe)."""
     src = (REPO / "ui" / "dialogs" / "meetings.py").read_text(encoding="utf-8")
     assert "Записей:" not in src, "Old «Записей:» label must be gone"
-    assert "Митингов:" in src, "New «Митингов:» label required"
+    assert "Встреч:" in src, "New «Встреч:» label required"
 
 
 def test_meetings_empty_state_renamed():
-    """«Нет транскрипций» → «Нет митингов»."""
+    """«Нет транскрипций» → «Нет встреч»."""
     src = (REPO / "ui" / "dialogs" / "meetings.py").read_text(encoding="utf-8")
     assert "Нет транскрипций" not in src
-    assert "Нет митингов" in src
+    assert "Нет встреч" in src
 
 
 def test_builder_uses_meetings_button_text():
-    """Main-window button text is «Митинги»."""
+    """Main-window button text is «Встречи»."""
     builder = (REPO / "ui" / "app" / "builder.py").read_text(encoding="utf-8")
-    assert '"Митинги"' in builder or "'Митинги'" in builder, (
-        "Main window button must read «Митинги»"
+    assert '"Встречи"' in builder or "'Встречи'" in builder, (
+        "Main window button must read «Встречи»"
     )
     # The OLD «История» text must be gone (the underscore name
     # _btn_history is a stable Python identifier — only label text changes).
@@ -98,3 +98,16 @@ def test_app_init_schedules_migration_check():
     assert "MigrationPromptDialog" in src, (
         "App.__init__ must reference MigrationPromptDialog for first-launch flow"
     )
+
+
+def test_no_miting_terminology_left_in_ui():
+    """Terminology unified to «встречи» (2026-06-11) — no «митинг» strings
+    remain anywhere under ui/ (titles, labels, docstrings)."""
+    import re
+
+    offenders = []
+    for path in sorted((REPO / "ui").rglob("*.py")):
+        src = path.read_text(encoding="utf-8")
+        if re.search(r"[Мм]итинг", src):
+            offenders.append(str(path.relative_to(REPO)))
+    assert not offenders, f"«митинг» terminology found in: {offenders}"

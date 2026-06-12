@@ -44,7 +44,7 @@ from ui.dialogs.settings_helpers import compute_banner_state
 from ui.widgets import (
     tonal_button,
 )
-from utils import get_meetings_dir, save_config
+from utils import get_meetings_dir, plural_ru, save_config
 
 _logger = logging.getLogger(__name__)
 
@@ -298,20 +298,21 @@ class SettingsDialog(ctk.CTkToplevel):
             menu.focus_set()
 
     def _refresh_meetings_stats(self) -> None:
-        """Compute «В этой папке: N митингов • X GB» and update the label."""
+        """Compute «В этой папке: N встреч • X GB» and update the label."""
         from meetings_migration import count_meetings
         from ui.dialogs.migration import _fmt_size, _folder_size_bytes
         path = self._meetings_path_var.get()
         n = count_meetings(path)
         size = _folder_size_bytes(path)
+        word = plural_ru(n, "встреча", "встречи", "встреч")
         self._meetings_stats_label.configure(
-            text=f"В этой папке: {n} митингов • {_fmt_size(size)}",
+            text=f"В этой папке: {n} {word} • {_fmt_size(size)}",
         )
 
     def _on_pick_meetings_folder(self) -> None:
         """User clicked «Выбрать» — open native dir picker, maybe migrate."""
         chosen = filedialog.askdirectory(
-            title="Папка для хранения митингов",
+            title="Папка для хранения встреч",
             initialdir=self._meetings_path_var.get(),
             parent=self,
         )

@@ -33,6 +33,7 @@ from theme import (
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
+from utils import plural_ru
 
 
 def _folder_size_bytes(path: str) -> int:
@@ -81,7 +82,7 @@ class MigrationPromptDialog(ctk.CTkToplevel):
         on_choice: Callable[[str], None],
     ):
         super().__init__(parent)
-        self.title("Перенос митингов")
+        self.title("Перенос встреч")
         self.geometry("560x340")
         self.configure(fg_color=BG)
         self.transient(parent)
@@ -95,8 +96,8 @@ class MigrationPromptDialog(ctk.CTkToplevel):
         header = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0, height=48)
         header.grid(row=0, column=0, sticky="ew")
         title_text = (
-            "Перенос митингов" if mode == "first_launch"
-            else "Перенести существующие митинги?"
+            "Перенос встреч" if mode == "first_launch"
+            else "Перенести существующие встречи?"
         )
         ctk.CTkLabel(
             header, text=title_text,
@@ -114,10 +115,11 @@ class MigrationPromptDialog(ctk.CTkToplevel):
         n_src = count_meetings(src)
         size_src = _fmt_size(_folder_size_bytes(src))
 
+        word = plural_ru(n_src, "встреча", "встречи", "встреч")
         if mode == "first_launch":
-            label1 = f"Найдено {n_src} митингов в старой папке:"
+            label1 = f"Найдено {n_src} {word} в старой папке:"
         else:
-            label1 = f"В текущей папке {n_src} митингов:"
+            label1 = f"В текущей папке {n_src} {word}:"
 
         ctk.CTkLabel(
             body, text=label1,
@@ -212,7 +214,7 @@ class MigrationProgressDialog(ctk.CTkToplevel):
         on_done: Callable[[dict], None],
     ):
         super().__init__(parent)
-        self.title("Перенос митингов")
+        self.title("Перенос встреч")
         self.geometry("500x200")
         self.configure(fg_color=BG)
         self.transient(parent)
@@ -276,7 +278,7 @@ class MigrationProgressDialog(ctk.CTkToplevel):
     def _on_progress(self, done: int, total: int, name: str) -> None:
         # Called from worker thread — marshal to main
         ratio = done / total if total else 0.0
-        text_main = f"Переношу митинг {done} / {total}:"
+        text_main = f"Переношу встречу {done} / {total}:"
         self.after(0, lambda: self._status.configure(text=text_main))
         self.after(0, lambda n=name: self._current.configure(text=n))
         self.after(0, lambda r=ratio: self._progress.set(r))

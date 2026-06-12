@@ -354,7 +354,7 @@ def build_ui(app):
     app._btn_extract_tasks.grid(row=0, column=2, padx=8, pady=4)
 
     app._btn_history = tonal_button(
-        btn_frame, text="Митинги", command=app._open_meetings_dialog,
+        btn_frame, text="Встречи", command=app._open_meetings_dialog,
         width=130,
     )
     app._btn_history.grid(row=0, column=3, padx=8, pady=4)

@@ -132,7 +132,7 @@ def build_meetings_section(dialog, parent) -> None:
     On path change: triggers MigrationPromptDialog if the current
     folder has entries (mode="settings"). Otherwise silent save.
     """
-    section = section_card(dialog, parent, "Митинги", row=4)
+    section = section_card(dialog, parent, "Встречи", row=4)
 
     label(section, "Папка хранения").grid(
         row=0, column=0, padx=(4, 8), pady=6, sticky="w",

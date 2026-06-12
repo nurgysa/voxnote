@@ -1,4 +1,4 @@
-"""Source-text checks for the Митинги section in Settings."""
+"""Source-text checks for the Встречи section in Settings."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,10 +12,10 @@ BUILDER_PATH = (
 
 
 def test_settings_has_meetings_section_card():
-    """A section card titled «Митинги» exists in settings_builder.py."""
+    """A section card titled «Встречи» exists in settings_builder.py."""
     src = BUILDER_PATH.read_text(encoding="utf-8")
-    assert '"Митинги"' in src or "'Митинги'" in src, (
-        "Settings builder must declare a section card with title «Митинги»"
+    assert '"Встречи"' in src or "'Встречи'" in src, (
+        "Settings builder must declare a section card with title «Встречи»"
     )
     assert "section_card" in src
 
