@@ -253,3 +253,87 @@ def test_process_item_halts_after_failed_stage(tmp_path, monkeypatch):
     assert live.transcript == StageStatus.ERROR
     assert live.protocol == StageStatus.PENDING
     assert called == []
+
+
+def test_retry_resets_errored_stage_to_pending(tmp_path):
+    from processing.model import StageStatus
+
+    q = _queue(tmp_path)
+    item_id = q.enqueue("/audio/a.m4a", {})
+    it = q._items[0]
+    it.transcript = StageStatus.DONE
+    it.protocol = StageStatus.ERROR
+    it.error_stage = "protocol"
+    it.error_message = "boom"
+
+    q.retry(item_id)
+
+    live = q.snapshot()[0]
+    assert live.transcript == StageStatus.DONE
+    assert live.protocol == StageStatus.PENDING
+    assert live.error_stage is None
+    assert live.error_message is None
+    assert live.auto is True
+
+
+def test_retry_unknown_id_is_noop(tmp_path):
+    q = _queue(tmp_path)
+    q.enqueue("/audio/a.m4a", {})
+    q.retry("nope")
+    assert len(q.snapshot()) == 1
+
+
+def test_next_auto_item_skips_auto_false(tmp_path):
+    q = _queue(tmp_path)
+    q.enqueue("/audio/a.m4a", {})
+    q._items[0].auto = False
+    assert q._next_auto_item() is None
+
+
+def test_next_auto_item_skips_fully_settled(tmp_path):
+    from processing.model import StageStatus
+
+    q = _queue(tmp_path)
+    q.enqueue("/audio/a.m4a", {})
+    it = q._items[0]
+    it.transcript = StageStatus.DONE
+    it.protocol = StageStatus.DONE
+    it.tasks = StageStatus.AWAITING_REVIEW
+    assert q._next_auto_item() is None
+
+
+def test_started_thread_drains_to_awaiting_review(tmp_path, monkeypatch):
+    import time
+
+    from processing.model import StageStatus
+    from tasks.schema import Task
+
+    meetings = tmp_path / "meetings"
+    meetings.mkdir()
+    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
+    monkeypatch.setattr("cli.core.run_transcribe", lambda *a, **k: _fake_transcribe_output())
+
+    class _Proto:
+        markdown = "# P"
+    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
+    monkeypatch.setattr(
+        "cli.core.run_extract_tasks",
+        lambda *a, **k: {"tasks": [Task(title="T")], "corrections": 0, "model": "m"},
+    )
+    audio = tmp_path / "r.m4a"
+    audio.write_bytes(b"\x00")
+    q = _queue(
+        tmp_path, meetings_dir=str(meetings),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "openrouter_api_key": "or",
+        },
+    )
+    q.start()
+    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
+    deadline = time.monotonic() + 5.0
+    while time.monotonic() < deadline:
+        if q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW:
+            break
+        time.sleep(0.02)
+    q.stop()
+    assert q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW

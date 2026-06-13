@@ -121,7 +121,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Google Drive backup orchestrator (Phase 7.1) | `gdrive/backup.py` (`run_backup` — composes `redact_config` + `zip_history` + `build_manifest` + `DriveClient`) |
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
 | Headless CLI + MCP server | `cli/` (`core` — pipeline glue reused by both surfaces; `app` — argparse CLI; `mcp_server` — MCP stdio server for agent CLIs, see `AGENTS.md`) |
-| Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout` — meetings organized by project on disk + auto-pipeline foundation) |
+| Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout`, `worker` — meetings organized by project on disk + the serial auto-pipeline worker over `cli.core`; UI wiring lands in PR-2b) |
 | Diagnostics log bundle | `support_bundle.py` (`build_log_bundle` — zips `logs/` + key-redacted config; wired to «Сохранить лог для отправки» in Settings) |
 | Build + release packaging | `scripts/build_exe.ps1` (PyInstaller onedir + size guard) → `scripts/package_release.py` (zips via Python `zipfile` with forward-slash arcnames; guards abort on: secrets/state in bundle, missing markitdown, missing ffmpeg GPL license, scipy / pandas-tests bloat, backslash entries) |
 
