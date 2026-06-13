@@ -49,3 +49,26 @@ def move_into(folder: str, dest_dir: str) -> str:
         n += 1
     shutil.move(folder, target)
     return target
+
+
+def assign_project(meeting_folder: str, project: Project | None, meetings_dir: str) -> str:
+    """Set the meeting's project (write speakers.json) and move its folder into
+    the project dir (or the root when project is None). The single placement seam
+    used by the worker's transcribe stage and (PR-3) by reassignment.
+
+    Writes metadata FIRST, then moves: a failed move leaves a consistent (if
+    mislocated) state recoverable on the next assign (spec failure-handling).
+    Only project_id changes — participants/speakers are preserved (load-merge-save).
+    Returns the folder's new path.
+    """
+    from utils import load_speakers, save_speakers
+
+    existing = load_speakers(meeting_folder)
+    project_id = project.id if project is not None else None
+    save_speakers(
+        meeting_folder,
+        project_id,
+        list(existing.get("participants") or []),
+        existing.get("speakers") or {},
+    )
+    return move_into(meeting_folder, target_dir(meetings_dir, project))
