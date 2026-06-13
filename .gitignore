@@ -24,6 +24,7 @@ venv/
 *.swp
 .claude/
 .superpowers/
+.cache/
 
 # PyInstaller bundle outputs (Task 4 of v5 plan)
 build/

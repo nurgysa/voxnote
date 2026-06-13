@@ -77,7 +77,7 @@ preserves the rationale if anyone needs it.)
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline ≈ 748 tests (regenerate: pytest --collect-only -q)
+pytest                       # must show green; baseline ≈ 939 tests (regenerate: pytest --collect-only -q)
 python -m ruff check .       # must be clean
 ```
 
@@ -105,7 +105,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 |---|---|
 | Entry point + faulthandler bootstrap | `app.py` |
 | Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
-| All dialogs | `ui/dialogs/` (`extract_tasks/` package + `settings.py`, `history.py`, `terms.py`) — `voices.py` and `system_monitor.py` removed in the 2026-05-28 rip-out (latter was CUDA-era GPU/CPU/RAM diagnostics; useless in cloud-only mode) |
+| All dialogs | `ui/dialogs/` — `extract_tasks/` package (`__init__.py` dialog-class shell + `builder.py` free-function widget tree + `constants.py`) + `settings.py` (class shell) + `settings_builder.py` (free-function sections) + `history.py` + `terms.py`. Both dialog god-objects were tree-split into builder modules in improvement-audit Variant 2 (PRs #134–#136), mirroring `ui/app/builder.py`. `voices.py` and `system_monitor.py` removed in the 2026-05-28 rip-out (latter was CUDA-era GPU/CPU/RAM diagnostics; useless in cloud-only mode) |
 | Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~240 LOC). Providers upload files whole — `cloud_chunker` was deleted as unreachable in #103, and the old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules died in the 2026-05-28 rip-out. |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
@@ -142,7 +142,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 
 ## Current status & queued work
 
-Snapshot as of 2026-06-10. This section is deliberately a snapshot, not a
+Snapshot as of 2026-06-13. This section is deliberately a snapshot, not a
 chronicle — the phase-by-phase history lives in the dated specs/plans
 under `docs/superpowers/` and in git history.
 
@@ -160,6 +160,16 @@ under `docs/superpowers/` and in git history.
   `~/.audio-transcriber`), PyInstaller de-bloat (568 → 355 MB) with
   packaging guards. Roadmap spec:
   `docs/superpowers/specs/2026-06-04-audit-remediation-design.md`.
+- **Improvement audit complete** (2026-06-10 → 06-13, PRs #130–#147):
+  post-open-source hardening pass — requests CVE bump + community files
+  (#130/#131), extract close-data-loss guard + STT-key «Проверить»
+  (#132/#133), the widget-tree split of both dialog god-objects into
+  builder modules (#134–#136), provider transport dedup into
+  `providers/_common.py` (#137/#138), scipy ghost-pin removal + bare-
+  `except` ratchet guard (#139/#140), UX polish (terminology → «Встречи»,
+  async Settings stats, dedup checkbox, per-model cost forecast —
+  #141–#144), and the outbound Hermes `audio.transcribed` webhook +
+  Settings toggle (#146/#147).
 - **Mixed-language is live behavior** (not history): Settings'
   `"Смешанный (KZ+RU+EN)"` maps to the `"mixed"` language sentinel and
   cloud providers branch on `options.language == "mixed"` — Gladia
@@ -174,11 +184,6 @@ under `docs/superpowers/` and in git history.
   own GCP OAuth desktop client (`drive.file` scope, non-sensitive).
   Restore (7.2), auto-schedule (7.3), audio opt-in (7.4) unstarted.
 - **Queued / deferred:**
-  - Widget-tree → free-function refactor (`builder.py` style) of the two
-    remaining god-objects: `ui/dialogs/extract_tasks/__init__.py`
-    (~1820 LOC) and `ui/dialogs/settings.py` (~900 LOC). Deliberately
-    deferred as its own workstream: UI-risky, needs design-first and a
-    heavy manual GUI smoke.
   - Processing-queue worker + UI on top of `cli.core` (the `processing/`
     foundation is merged; the auto-pipeline wiring is not).
   - Voice-ID Phase B (local speaker identification; blocked on model
