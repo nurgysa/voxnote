@@ -191,3 +191,65 @@ def test_tasks_stage_error_halts(tmp_path, monkeypatch):
     assert ok is False
     assert q.snapshot()[0].tasks == StageStatus.ERROR
     assert q.snapshot()[0].error_stage == "tasks"
+
+
+def test_process_item_walks_all_stages(tmp_path, monkeypatch):
+    import os
+
+    from processing.model import StageStatus
+    from tasks.schema import Task
+
+    meetings = tmp_path / "meetings"
+    meetings.mkdir()
+    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
+    monkeypatch.setattr("cli.core.run_transcribe", lambda *a, **k: _fake_transcribe_output())
+
+    class _Proto:
+        markdown = "# P"
+    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
+    monkeypatch.setattr(
+        "cli.core.run_extract_tasks",
+        lambda *a, **k: {"tasks": [Task(title="T")], "corrections": 0, "model": "m"},
+    )
+    audio = tmp_path / "r.m4a"
+    audio.write_bytes(b"\x00")
+    q = _queue(
+        tmp_path, meetings_dir=str(meetings),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "openrouter_api_key": "or",
+        },
+    )
+    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
+    q._process_item(q._items[0])
+
+    live = q.snapshot()[0]
+    assert live.transcript == StageStatus.DONE
+    assert live.protocol == StageStatus.DONE
+    assert live.tasks == StageStatus.AWAITING_REVIEW
+
+
+def test_process_item_halts_after_failed_stage(tmp_path, monkeypatch):
+    from processing.model import StageStatus
+
+    meetings = tmp_path / "meetings"
+    meetings.mkdir()
+    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
+
+    def _boom(*a, **k):
+        raise RuntimeError("AssemblyAI вернул 401")
+    monkeypatch.setattr("cli.core.run_transcribe", _boom)
+    called = []
+    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: called.append("p"))
+    audio = tmp_path / "r.m4a"
+    audio.write_bytes(b"\x00")
+    q = _queue(
+        tmp_path, meetings_dir=str(meetings),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(str(audio), {"provider": "AssemblyAI"})
+    q._process_item(q._items[0])
+
+    live = q.snapshot()[0]
+    assert live.transcript == StageStatus.ERROR
+    assert live.protocol == StageStatus.PENDING
+    assert called == []

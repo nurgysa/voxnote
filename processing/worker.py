@@ -253,8 +253,30 @@ class ProcessingQueue:
             )
             return False
 
+    def _next_auto_item(self) -> QueueItem | None:
+        with self._lock:
+            for it in self._items:
+                if it.auto and (
+                    it.transcript == StageStatus.PENDING
+                    or it.protocol == StageStatus.PENDING
+                    or it.tasks == StageStatus.PENDING
+                ):
+                    return it
+        return None
+
+    def _process_item(self, item: QueueItem) -> None:
+        if item.transcript == StageStatus.PENDING and not self._stage_transcribe(item):
+            return
+        if item.protocol == StageStatus.PENDING and not self._stage_protocol(item):
+            return
+        if item.tasks == StageStatus.PENDING:
+            self._stage_tasks(item)
+
     def _run(self) -> None:
-        # Pipeline stages (transcribe / protocol / tasks) are wired in later tasks.
         while not self._stop:
-            self._wake.wait(timeout=_IDLE_WAIT_S)
-            self._wake.clear()
+            item = self._next_auto_item()
+            if item is None:
+                self._wake.wait(timeout=_IDLE_WAIT_S)
+                self._wake.clear()
+                continue
+            self._process_item(item)

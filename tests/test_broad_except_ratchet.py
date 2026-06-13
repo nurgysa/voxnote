@@ -37,6 +37,7 @@ BASELINE = {
     "cli/app.py": 1,                               # CLI boundary -> exit codes
     "cli/core.py": 1,                              # _safe_close in finally
     "gdrive/backup.py": 1,                         # UI callback isolation
+    "processing/worker.py": 3,                     # worker-thread stage boundaries
     "providers/assemblyai.py": 1,                  # cancel-then-reraise
     "providers/speechmatics.py": 1,                # cancel-then-reraise
     "tasks/doc_context.py": 1,                     # per-file markitdown isolation
