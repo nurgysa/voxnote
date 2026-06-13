@@ -42,6 +42,7 @@ from ui.widgets import (
     label,
     option_menu,
     primary_button,
+    text_entry,
     tonal_button,
 )
 from utils import get_meetings_dir, save_config
@@ -544,3 +545,113 @@ def build_diagnostics_section(dialog, parent) -> None:
     dialog._send_log_status.grid(
         row=0, column=2, padx=(8, 4), pady=6, sticky="ew",
     )
+
+
+def build_hermes_section(dialog, parent) -> None:
+    """Hermes Agent webhook: enable + URL + secret + test delivery (spec 2026-06-13).
+
+    GUI surface for the #146 webhook (integrations/hermes/). The capability
+    (client + emit-after-transcription) already ships; this section just lets
+    the user enable and configure it from the GUI instead of editing
+    config.json. timeout_seconds / routing_hint stay config-only expert knobs.
+
+    Persistence mirrors build_dedup_section: dialog-local vars, immediate
+    save_config to dialog._parent._config (the live object _emit_hermes_event
+    reads via get_hermes_webhook_config). Saved on toggle, on field FocusOut,
+    and on a successful «Проверить». Webhook is opt-in — default OFF.
+    """
+    section = section_card(dialog, parent, "Hermes Agent (вебхук)", row=5)
+
+    cfg = dialog._parent._config
+    dialog._hermes_webhook_enabled_var = ctk.BooleanVar(
+        value=bool(cfg.get("hermes_webhook_enabled", False)),
+    )
+    dialog._hermes_webhook_url_var = ctk.StringVar(
+        value=cfg.get("hermes_webhook_url")
+        or "http://localhost:8644/webhooks/audio-transcribed",
+    )
+    dialog._hermes_webhook_secret_var = ctk.StringVar(
+        value=cfg.get("hermes_webhook_secret", ""),
+    )
+
+    def _persist_hermes(*_event) -> None:
+        # *_event swallows the Tk event object passed by <FocusOut> binds;
+        # the checkbox command and validate callback pass nothing.
+        c = dialog._parent._config
+        c["hermes_webhook_enabled"] = bool(dialog._hermes_webhook_enabled_var.get())
+        c["hermes_webhook_url"] = dialog._hermes_webhook_url_var.get().strip()
+        c["hermes_webhook_secret"] = dialog._hermes_webhook_secret_var.get()
+        save_config(c)
+
+    # row 0 — enable checkbox (persists immediately, like dedup)
+    ctk.CTkCheckBox(
+        section,
+        text="Отправлять расшифровки в Hermes",
+        variable=dialog._hermes_webhook_enabled_var,
+        command=_persist_hermes,
+        font=ctk.CTkFont(family=FONT, size=13),
+        text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
+        border_color=BORDER, corner_radius=4,
+        checkbox_height=20, checkbox_width=20,
+    ).grid(row=0, column=0, columnspan=4, padx=4, pady=(2, 8), sticky="w")
+
+    # row 1 — URL (plain, non-secret). Labelled (not placeholder-only:
+    # CTkEntry hides placeholder_text once a textvariable is set).
+    label(section, "URL вебхука").grid(
+        row=1, column=0, padx=(4, 8), pady=6, sticky="w",
+    )
+    url_entry = text_entry(
+        section,
+        textvariable=dialog._hermes_webhook_url_var,
+        placeholder="http://localhost:8644/webhooks/audio-transcribed",
+    )
+    url_entry.grid(row=1, column=1, columnspan=3, padx=4, pady=6, sticky="ew")
+    url_entry.bind("<FocusOut>", _persist_hermes)
+
+    # rows 2-3 — secret (masked) + eye-toggle + «Проверить» + status.
+    def _test(secret: str) -> dict:
+        # Build an enabled config from the live URL + the entered secret and
+        # POST one marked test event through the shipped client. Runs on
+        # api_key_row's worker thread; api_key_row marshals UI updates.
+        from integrations.hermes.client import (
+            HermesWebhookConfig,
+            emit_audio_transcribed_event,
+        )
+        c = dialog._parent._config
+        hermes_cfg = HermesWebhookConfig(
+            enabled=True,
+            url=dialog._hermes_webhook_url_var.get().strip(),
+            secret=secret,
+            timeout_seconds=float(c.get("hermes_webhook_timeout_seconds", 10) or 10),
+            routing_hint=c.get("hermes_webhook_routing_hint") or "obsidian_inbox",
+        )
+        result = emit_audio_transcribed_event(
+            config=hermes_cfg,
+            transcript_text="[ТЕСТ] Проверка связи audio-transcriber → Hermes",
+            provider="(test)",
+        )
+        if not result.sent:
+            # api_key_row paints the raised message as «✗ …» (red).
+            raise RuntimeError(result.error or f"HTTP {result.status_code}")
+        return {"status_code": result.status_code}
+
+    refs = api_key_row(
+        section,
+        label_text="Секрет (HMAC)",
+        key_var=dialog._hermes_webhook_secret_var,
+        placeholder="(HMAC secret)",
+        on_validate=_test,
+        on_key_persisted=lambda _secret, _info: _persist_hermes(),
+        format_success=lambda info: f"✓ Доставлено (HTTP {info['status_code']})",
+        row=2,
+    )
+    refs["entry"].bind("<FocusOut>", _persist_hermes)
+    dialog._hermes_status = refs["status"]
+
+    # row 4 — help line
+    label(
+        section,
+        "ℹ Событие audio.transcribed уходит автоматически после успешной "
+        "транскрипции. Маршрут настраивается на стороне Hermes (см. docs).",
+        anchor="w",
+    ).grid(row=4, column=0, columnspan=4, padx=4, pady=(2, 6), sticky="w")

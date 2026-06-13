@@ -161,6 +161,7 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_glide_section(self, scroll_integrations)
         settings_builder.build_trello_section(self, scroll_integrations)
         settings_builder.build_dedup_section(self, scroll_integrations)
+        settings_builder.build_hermes_section(self, scroll_integrations)
 
         # Tab 3 «Резервная копия» — independent housekeeping
         settings_builder.build_gdrive_section(self, scroll_backup)
