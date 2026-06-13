@@ -16,7 +16,8 @@ import threading
 from collections.abc import Callable
 from datetime import datetime
 
-from processing import store
+from cli import core
+from processing import layout, store
 from processing.model import QueueItem, StageStatus
 
 logger = logging.getLogger(__name__)
@@ -104,6 +105,75 @@ class ProcessingQueue:
     def _persist_locked(self) -> None:
         # Caller holds self._lock. queue.json carries active items only.
         store.save_active([it for it in self._items if it.auto], self._queue_path)
+
+    def _set_stage(
+        self,
+        item: QueueItem,
+        stage: str,
+        status: StageStatus,
+        *,
+        error_stage: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        with self._lock:
+            setattr(item, stage, status)
+            item.error_stage = error_stage
+            item.error_message = error_message
+            self._persist_locked()
+        self._notify()
+
+    def _stage_transcribe(self, item: QueueItem) -> bool:
+        """Transcribe → create meeting folder → place under project. True to
+        continue, False to halt the item (stage error)."""
+        self._set_stage(item, "transcript", StageStatus.RUNNING)
+        try:
+            import utils
+
+            cfg = self._config_loader()
+            opts = item.options
+            provider = opts.get("provider") or cfg.get("cloud_provider") or "AssemblyAI"
+            api_key = (cfg.get("cloud_api_keys") or {}).get(provider)
+            if not api_key:
+                raise ValueError(f"Нет API-ключа для провайдера {provider!r}.")
+            language = opts.get("language") or None
+            if language == "auto":
+                language = None
+            out = core.run_transcribe(
+                item.audio_path,
+                provider=provider,
+                api_key=api_key,
+                language=language,
+                diarize=bool(opts.get("diarize")),
+                hotwords=opts.get("hotwords") or None,
+                denoise=bool(opts.get("denoise")),
+            )
+            folder = utils.create_history_entry(
+                item.audio_path, out.text, out.language, f"cloud:{provider}",
+            )
+            utils.save_segments(folder, out.segments)
+            project = self._resolve_project(opts.get("project_id"))
+            folder = layout.assign_project(folder, project, self._meetings_dir)
+            with self._lock:
+                item.meeting_folder = folder
+            if utils.should_delete_after_transcription(cfg, item.audio_path):
+                try:
+                    os.remove(item.audio_path)
+                except OSError as e:
+                    logger.warning("could not delete recording %s: %s", item.audio_path, e)
+            self._set_stage(item, "transcript", StageStatus.DONE)
+            return True
+        except Exception as e:  # worker-thread boundary: any failure halts the
+            # item but must never kill the daemon. Humanize for the UI; the
+            # stage's ✗! is the user signal. (CLAUDE.md broad-except: justified
+            # boundary, tracked in test_broad_except_ratchet.)
+            from tasks.errors import humanize
+
+            logger.exception("transcribe stage failed for item %s", item.id)
+            self._set_stage(
+                item, "transcript", StageStatus.ERROR,
+                error_stage="transcript", error_message=humanize(e),
+            )
+            return False
 
     def _run(self) -> None:
         # Pipeline stages (transcribe / protocol / tasks) are wired in later tasks.

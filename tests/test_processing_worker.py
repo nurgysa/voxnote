@@ -53,3 +53,62 @@ def test_loads_existing_active_items(tmp_path):
     q1.enqueue("/audio/a.m4a", {})
     q2 = _queue(tmp_path)
     assert len(q2.snapshot()) == 1
+
+
+def _fake_transcribe_output(text="hello", language="ru", segments=None):
+    class _Out:
+        pass
+    o = _Out()
+    o.text = text
+    o.language = language
+    o.segments = segments if segments is not None else [{"speaker": "A", "text": "hi"}]
+    return o
+
+
+def test_transcribe_stage_creates_folder_and_marks_done(tmp_path, monkeypatch):
+    import os
+
+    from processing.model import StageStatus
+
+    meetings = tmp_path / "meetings"
+    meetings.mkdir()
+    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
+    monkeypatch.setattr(
+        "cli.core.run_transcribe",
+        lambda *a, **k: _fake_transcribe_output(),
+    )
+    audio = tmp_path / "rec.m4a"
+    audio.write_bytes(b"\x00\x00")
+
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(meetings),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
+    ok = q._stage_transcribe(q._items[0])
+
+    assert ok is True
+    live = q.snapshot()[0]
+    assert live.transcript == StageStatus.DONE
+    assert live.meeting_folder and os.path.isdir(live.meeting_folder)
+    assert os.path.isfile(os.path.join(live.meeting_folder, "transcript.md"))
+    assert os.path.isfile(os.path.join(live.meeting_folder, "segments.json"))
+
+
+def test_transcribe_stage_missing_key_errors_and_halts(tmp_path, monkeypatch):
+    from processing.model import StageStatus
+
+    meetings = tmp_path / "meetings"
+    meetings.mkdir()
+    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
+    audio = tmp_path / "rec.m4a"
+    audio.write_bytes(b"\x00")
+    q = _queue(tmp_path, meetings_dir=str(meetings), config_loader=lambda: {})
+    q.enqueue(str(audio), {"provider": "AssemblyAI"})
+    ok = q._stage_transcribe(q._items[0])
+    assert ok is False
+    live = q.snapshot()[0]
+    assert live.transcript == StageStatus.ERROR
+    assert live.error_stage == "transcript"
+    assert live.error_message
