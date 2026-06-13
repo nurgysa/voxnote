@@ -188,6 +188,12 @@ under `docs/superpowers/` and in git history.
     foundation is merged; the auto-pipeline wiring is not).
   - Voice-ID Phase B (local speaker identification; blocked on model
     choice — any revival must respect invariant #2).
+  - UX/UI visual polish (user feedback 2026-06-14: the current
+    CustomTkinter UI "looks rough / not pretty"). Unscoped aesthetic
+    pass over the desktop UI — main window (`ui/app/builder.py`) + the
+    dialog builders (`ui/dialogs/`); wants a design pass on spacing,
+    hierarchy, color/typography, and consistent widget styling before
+    any code.
 
 ## Don't
 
