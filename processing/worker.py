@@ -175,6 +175,44 @@ class ProcessingQueue:
             )
             return False
 
+    def _read_transcript(self, folder: str) -> str:
+        for name in ("transcript.md", "transcript.txt"):
+            path = os.path.join(folder, name)
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    return f.read()
+        raise FileNotFoundError(f"transcript not found in {folder}")
+
+    def _stage_protocol(self, item: QueueItem) -> bool:
+        self._set_stage(item, "protocol", StageStatus.RUNNING)
+        try:
+            cfg = self._config_loader()
+            openrouter_key = cfg.get("openrouter_api_key")
+            if not openrouter_key:
+                raise ValueError("Нет ключа OpenRouter.")
+            language = item.options.get("language") or None
+            if language == "auto":
+                language = None
+            result = core.run_protocol(
+                transcript=self._read_transcript(item.meeting_folder),
+                lang=language,
+                model=cfg.get("openrouter_model") or core.DEFAULT_MODEL,
+                openrouter_key=openrouter_key,
+            )
+            with open(os.path.join(item.meeting_folder, "protocol.md"), "w", encoding="utf-8") as f:
+                f.write(result.markdown)
+            self._set_stage(item, "protocol", StageStatus.DONE)
+            return True
+        except Exception as e:  # worker-thread boundary — see _stage_transcribe.
+            from tasks.errors import humanize
+
+            logger.exception("protocol stage failed for item %s", item.id)
+            self._set_stage(
+                item, "protocol", StageStatus.ERROR,
+                error_stage="protocol", error_message=humanize(e),
+            )
+            return False
+
     def _run(self) -> None:
         # Pipeline stages (transcribe / protocol / tasks) are wired in later tasks.
         while not self._stop:

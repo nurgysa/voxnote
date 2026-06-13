@@ -112,3 +112,48 @@ def test_transcribe_stage_missing_key_errors_and_halts(tmp_path, monkeypatch):
     assert live.transcript == StageStatus.ERROR
     assert live.error_stage == "transcript"
     assert live.error_message
+
+
+def _done_meeting(q, tmp_path, folder_name="2026-06-13_12-00-00_m"):
+    """Create a transcript-DONE item with a real folder + transcript.md."""
+    from processing.model import StageStatus
+
+    folder = tmp_path / "meetings" / folder_name
+    folder.mkdir(parents=True)
+    (folder / "transcript.md").write_text("the transcript", encoding="utf-8")
+    q.enqueue("/audio/x.m4a", {"language": "ru"})
+    it = q._items[0]
+    it.meeting_folder = str(folder)
+    it.transcript = StageStatus.DONE
+    return it
+
+
+def test_protocol_stage_writes_protocol_md(tmp_path, monkeypatch):
+    from processing.model import StageStatus
+
+    class _Proto:
+        markdown = "# Протокол\n\n- пункт"
+    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
+    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
+    it = _done_meeting(q, tmp_path)
+    ok = q._stage_protocol(it)
+    assert ok is True
+    assert q.snapshot()[0].protocol == StageStatus.DONE
+    assert (tmp_path / "meetings" / "2026-06-13_12-00-00_m" / "protocol.md").read_text(
+        encoding="utf-8"
+    ) == "# Протокол\n\n- пункт"
+
+
+def test_protocol_stage_llm_error_halts(tmp_path, monkeypatch):
+    from processing.model import StageStatus
+
+    def _boom(*a, **k):
+        raise RuntimeError("OpenRouter вернул 500")
+    monkeypatch.setattr("cli.core.run_protocol", _boom)
+    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
+    it = _done_meeting(q, tmp_path)
+    ok = q._stage_protocol(it)
+    assert ok is False
+    live = q.snapshot()[0]
+    assert live.protocol == StageStatus.ERROR
+    assert live.error_stage == "protocol"
