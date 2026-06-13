@@ -28,6 +28,37 @@ def _default_config_path() -> str:
 _CONFIG_PATH = _default_config_path()
 
 
+# Pre-VoxNote secret-store dir, kept ONLY as the one-time migration source.
+# This is the single place the legacy brand literal may survive (guard-test
+# allowlisted). See migrate_legacy_secret_dir().
+_LEGACY_SECRET_DIR_NAME = ".audio-transcriber"
+_SECRET_DIR_NAME = ".voxnote"
+
+
+def migrate_legacy_secret_dir() -> None:
+    """One-time move of ``~/.audio-transcriber`` → ``~/.voxnote``.
+
+    Keeps existing installs' config.json (API keys), gdrive-token.json,
+    directory.json, queue.json, and model cache after the rebrand. Idempotent
+    (no-op once ``~/.voxnote`` exists). Best-effort: a failed move is logged
+    and swallowed so it can never block startup.
+
+    ORDERING INVARIANT: must run before any code reads config/tokens. Otherwise
+    the renamed code reads an empty ``~/.voxnote`` and may overwrite it with
+    defaults, orphaning live keys.
+    """
+    home = os.path.expanduser("~")
+    new_dir = os.path.join(home, _SECRET_DIR_NAME)
+    old_dir = os.path.join(home, _LEGACY_SECRET_DIR_NAME)
+    if os.path.exists(new_dir) or not os.path.isdir(old_dir):
+        return
+    try:
+        shutil.move(old_dir, new_dir)
+        logger.info("migrated secret store %s -> %s", old_dir, new_dir)
+    except OSError as exc:
+        logger.warning("could not migrate %s -> %s: %s", old_dir, new_dir, exc)
+
+
 def _restrict_posix(path: str) -> bool:
     """chmod a directory to 0o700 (owner-only). False on failure, never raises."""
     try:

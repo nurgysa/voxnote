@@ -454,6 +454,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from utils import migrate_legacy_secret_dir
+
+    migrate_legacy_secret_dir()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)

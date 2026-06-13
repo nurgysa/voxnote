@@ -194,6 +194,9 @@ def main() -> None:
     )
     faulthandler.enable(file=fault_log, all_threads=True)
 
+    from utils import migrate_legacy_secret_dir
+
+    migrate_legacy_secret_dir()
     mcp.run()
 
 
