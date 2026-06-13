@@ -8,7 +8,7 @@ concern (old invariant #2) — torch and ctranslate2 are no longer in the
 bundle — so this hook is now the entire startup-time invariant surface.
 
 PyInstaller wires this via `runtime_hooks=[...]` in the spec (see
-audio_transcriber.spec). The hook is part of the bootstrap pre-amble
+voxnote.spec). The hook is part of the bootstrap pre-amble
 PyInstaller injects before importing app.py — there is no Python user
 code we can run earlier than this.
 
@@ -48,7 +48,7 @@ import tempfile
 if sys.stderr is None or sys.stdout is None:
     _log_path = os.path.join(
         tempfile.gettempdir(),
-        "audio-transcriber-bootstrap.log",
+        "voxnote-bootstrap.log",
     )
     # line_buffering=True so the file flushes after each line — important
     # for crash investigation when the process dies before atexit runs.
@@ -58,7 +58,7 @@ if sys.stderr is None or sys.stdout is None:
     if sys.stderr is None:
         sys.stderr = _bootstrap_log
     # Mark the file so debugging is obvious — different runs append.
-    print(f"\n=== audio-transcriber bootstrap @ pid={os.getpid()} ===",
+    print(f"\n=== voxnote bootstrap @ pid={os.getpid()} ===",
           file=sys.stderr, flush=True)
 
 # Now safe to enable faulthandler; sys.stderr is guaranteed non-None.

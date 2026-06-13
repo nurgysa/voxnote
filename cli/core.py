@@ -78,7 +78,7 @@ def run_transcribe(
     failure) or ``transcriber.TranscriptionCancelled``.
     """
     # Confine the model-/user-supplied path before any read (audit WS-5 P1):
-    # reject ~/.audio-transcriber/* so a transcribe call can't exfiltrate keys.
+    # reject ~/.voxnote/* so a transcribe call can't exfiltrate keys.
     ensure_outside_secret_store(audio_path)
 
     from transcriber import Transcriber

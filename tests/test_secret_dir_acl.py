@@ -1,6 +1,6 @@
 """Tests for utils.restrict_dir_to_owner — WS-5 P2 owner-only secret-store ACL.
 
-``~/.audio-transcriber`` holds config.json (API keys) + gdrive-token.json. The
+``~/.voxnote`` holds config.json (API keys) + gdrive-token.json. The
 codebase's ``os.chmod(..., 0o600)`` is a *silent no-op on Windows*, so the dir
 was left at default ACLs. This locks it owner-only: POSIX ``chmod 0o700``;
 Windows ``icacls`` owner-only. Best-effort — never raises.
@@ -50,12 +50,12 @@ def test_windows_builds_owner_only_icacls_command():
     with patch.object(utils.os, "name", "nt"), \
          patch.dict(utils.os.environ, {"USERNAME": "alice"}), \
          patch.object(utils.subprocess, "run", _fake_run):
-        ok = utils.restrict_dir_to_owner(r"C:\Users\alice\.audio-transcriber")
+        ok = utils.restrict_dir_to_owner(r"C:\Users\alice\.voxnote")
 
     assert ok is True
     cmd = captured["cmd"]
     assert cmd[0] == "icacls"
-    assert r"C:\Users\alice\.audio-transcriber" in cmd
+    assert r"C:\Users\alice\.voxnote" in cmd
     assert "/inheritance:r" in cmd  # drop inherited ACEs (owner-only)
     # current user granted Full with object+container inheritance
     assert any("alice" in part and "(OI)(CI)F" in part for part in cmd), cmd
@@ -87,7 +87,7 @@ def test_windows_icacls_oserror_returns_false_not_raise():
 # ── Wiring: save_config hardens the secret dir only in frozen mode ───────
 
 def test_save_config_hardens_secret_dir_when_frozen(tmp_path, monkeypatch):
-    cfg = tmp_path / ".audio-transcriber" / "config.json"
+    cfg = tmp_path / ".voxnote" / "config.json"
     monkeypatch.setattr(utils, "_CONFIG_PATH", str(cfg))
     monkeypatch.setattr(utils.sys, "frozen", True, raising=False)
     seen = {}

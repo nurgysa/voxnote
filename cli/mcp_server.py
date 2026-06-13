@@ -25,7 +25,7 @@ from mcp.server.fastmcp import FastMCP
 
 from cli import config, core
 
-mcp = FastMCP("audio-transcriber")
+mcp = FastMCP("voxnote")
 
 
 # ── Server-side secret resolution (never tool params) ─────────────────
@@ -38,7 +38,7 @@ def _provider_and_key(provider: str | None, cfg: dict) -> tuple[str, str]:
     if not key:
         raise ValueError(
             f"Нет API-ключа для провайдера {resolved!r} "
-            "(config.json cloud_api_keys или AUDIO_TRANSCRIBER_API_KEY)."
+            "(config.json cloud_api_keys или VOXNOTE_API_KEY)."
         )
     return resolved, key
 
@@ -48,7 +48,7 @@ def _openrouter_key(cfg: dict) -> str:
     if not key:
         raise ValueError(
             "Нет ключа OpenRouter "
-            "(config.json openrouter_api_key или AUDIO_TRANSCRIBER_OPENROUTER_API_KEY)."
+            "(config.json openrouter_api_key или VOXNOTE_OPENROUTER_API_KEY)."
         )
     return key
 
@@ -194,6 +194,9 @@ def main() -> None:
     )
     faulthandler.enable(file=fault_log, all_threads=True)
 
+    from utils import migrate_legacy_secret_dir
+
+    migrate_legacy_secret_dir()
     mcp.run()
 
 

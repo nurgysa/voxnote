@@ -33,6 +33,6 @@ def test_start_creates_and_uses_output_dir(tmp_path):
 def test_default_output_dir_is_not_documents_root():
     r = Recorder()
     expected = os.path.join(
-        os.path.expanduser("~"), "Documents", "AudioTranscriber", "recordings",
+        os.path.expanduser("~"), "Documents", "VoxNote", "recordings",
     )
     assert r._output_dir == expected

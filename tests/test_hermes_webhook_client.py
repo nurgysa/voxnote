@@ -187,7 +187,7 @@ def test_x_request_id_format():
         post_event(_SIMPLE_PAYLOAD, _ENABLED_CONFIG)
 
     req_id = mock_post.call_args.kwargs["headers"]["X-Request-ID"]
-    assert req_id.startswith("audio-transcriber:")
+    assert req_id.startswith("voxnote:")
 
 
 # ── 7. Non-2xx returns sent=False with status code ───────────────────
@@ -322,11 +322,11 @@ def test_config_file_values_honored():
 
 def test_env_overrides_config(monkeypatch):
     """Env vars take precedence over config-file values."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", "true")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL", "http://env-host/wh")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET", "envsecret")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS", "7")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ROUTING_HINT", "telegram_inbox")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", "true")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_URL", "http://env-host/wh")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_SECRET", "envsecret")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS", "7")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ROUTING_HINT", "telegram_inbox")
 
     cfg = get_hermes_webhook_config({
         "hermes_webhook_enabled": False,
@@ -361,7 +361,7 @@ def test_env_overrides_config(monkeypatch):
 ])
 def test_bool_parsing_via_env(monkeypatch, value, expected):
     """All recognised bool strings parsed correctly via env override."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", value)
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", value)
     cfg = get_hermes_webhook_config({})
     assert cfg.enabled is expected, f"bool({value!r}) should be {expected}"
 
@@ -369,9 +369,9 @@ def test_bool_parsing_via_env(monkeypatch, value, expected):
 def test_empty_env_string_falls_through_to_config(monkeypatch):
     """Empty env string = unset (cli.config.resolve semantics): it must not
     clobber a configured value — uniformly across all five fields."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", "")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS", "")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET", "")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", "")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS", "")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_SECRET", "")
     cfg = get_hermes_webhook_config({
         "hermes_webhook_enabled": True,
         "hermes_webhook_timeout_seconds": 25,
@@ -414,7 +414,7 @@ def test_negative_timeout_falls_back():
 
 def test_bad_timeout_env_falls_back(monkeypatch):
     """Non-numeric env timeout also falls back."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS", "notanumber")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS", "notanumber")
     cfg = get_hermes_webhook_config({})
     assert cfg.timeout_seconds == 10.0
 

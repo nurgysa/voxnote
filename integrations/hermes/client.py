@@ -106,7 +106,7 @@ def post_event(payload: dict, config: HermesWebhookConfig) -> HermesWebhookResul
 
     # X-Request-ID: deterministic prefix over first 24 hex chars of body hash.
     body_hash = hashlib.sha256(body).hexdigest()
-    request_id = f"audio-transcriber:{body_hash[:24]}"
+    request_id = f"voxnote:{body_hash[:24]}"
 
     headers = {
         "Content-Type": "application/json",
@@ -200,7 +200,7 @@ def emit_audio_transcribed_event(
 # ── Config resolution (spec §9.3) ────────────────────────────────────
 
 
-_ENV_PREFIX = "AUDIO_TRANSCRIBER_HERMES_WEBHOOK_"
+_ENV_PREFIX = "VOXNOTE_HERMES_WEBHOOK_"
 _DEFAULT_URL = "http://localhost:8644/webhooks/audio-transcribed"
 _DEFAULT_TIMEOUT = 10.0
 _DEFAULT_ROUTING_HINT = "obsidian_inbox"
@@ -234,7 +234,7 @@ def get_hermes_webhook_config(config: dict | None = None) -> HermesWebhookConfig
     ``config=None`` is treated as ``{}`` — integrations stay independent of
     cli.config; callers that have a config dict (CLI, UI) pass it in.
 
-    Env vars (``AUDIO_TRANSCRIBER_HERMES_WEBHOOK_*``) override config-file
+    Env vars (``VOXNOTE_HERMES_WEBHOOK_*``) override config-file
     values. The secret is consumed but never logged or returned in error text.
     Never raises.
     """

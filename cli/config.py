@@ -2,7 +2,7 @@
 
 The agent host (e.g. a headless VPS running Hermes Agent) may have no
 ``config.json`` at all, so every secret / setting must be overridable via a
-command-line flag or an ``AUDIO_TRANSCRIBER_*`` environment variable. This
+command-line flag or an ``VOXNOTE_*`` environment variable. This
 module centralises that precedence so every subcommand resolves settings the
 same way.
 """
@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import os
 
-ENV_PREFIX = "AUDIO_TRANSCRIBER_"
+ENV_PREFIX = "VOXNOTE_"
 
-# AUDIO_TRANSCRIBER_<SUFFIX> env var → config.json key. Lets backend_from_name()
+# VOXNOTE_<SUFFIX> env var → config.json key. Lets backend_from_name()
 # (which reads secrets out of the config dict) work on a host with no
 # config.json by sourcing keys from the environment.
 _ENV_CONFIG_KEYS = {
@@ -41,7 +41,7 @@ def base_config() -> dict:
 
 
 def merged_config() -> dict:
-    """``base_config()`` overlaid with ``AUDIO_TRANSCRIBER_*`` env secrets.
+    """``base_config()`` overlaid with ``VOXNOTE_*`` env secrets.
 
     The result is the dict handed to ``tasks.backends.backend_from_name`` and
     the OpenRouter key lookup — so backend / LLM credentials can come from the
@@ -60,8 +60,8 @@ def resolve(flag, env_suffix, config_value, default=None):
 
     ``flag`` and ``config_value`` count as "unset" when None or empty string,
     so an explicit ``--flag ''`` does not shadow a real env/config value.
-    ``env_suffix`` is appended to ``AUDIO_TRANSCRIBER_`` (e.g. "PROVIDER" →
-    ``AUDIO_TRANSCRIBER_PROVIDER``).
+    ``env_suffix`` is appended to ``VOXNOTE_`` (e.g. "PROVIDER" →
+    ``VOXNOTE_PROVIDER``).
     """
     if flag:
         return flag

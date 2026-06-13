@@ -1,6 +1,6 @@
 """Persistence + disk-derived view for the processing queue.
 
-queue.json (active items only) lives at ~/.audio-transcriber/queue.json, beside
+queue.json (active items only) lives at ~/.voxnote/queue.json, beside
 config.json and directory.json. Atomic write (tmp + os.replace), mirroring
 directory/store.py. build_view derives the displayed meeting list fresh from the
 meetings dir (a two-level scan; project read from each meeting's speakers.json)
@@ -21,7 +21,7 @@ _SKIP_DIRS = {"recordings"}
 
 def _default_queue_path() -> Path:
     home = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".")
-    return home / ".audio-transcriber" / FILENAME
+    return home / ".voxnote" / FILENAME
 
 
 def load_active(path: Path | str | None = None) -> list[QueueItem]:

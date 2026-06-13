@@ -2,7 +2,7 @@
 
 Wraps google_auth_oauthlib's InstalledAppFlow to do the desktop OAuth
 loopback dance (RFC 8252), persists the resulting Credentials to
-~/.audio-transcriber/gdrive-token.json, and exposes sign-in / sign-out
+~/.voxnote/gdrive-token.json, and exposes sign-in / sign-out
 / is-signed-in for the Settings UI.
 
 Scope is drive.file (non-sensitive — app only sees files it created),
@@ -26,7 +26,7 @@ from google.auth.transport.requests import Request
 logger = logging.getLogger(__name__)
 
 
-# Public OAuth client credentials for the audio-transcriber-desktop GCP project.
+# Public OAuth client credentials for the voxnote-desktop GCP project.
 # Per RFC 8252, installed-app client secrets are NOT secrets — they ship
 # in the binary. Security comes from per-user consent + restricted scope.
 # Created in Pre-flight Step 4; paste real values here before manual smoke test.
@@ -36,11 +36,11 @@ CLIENT_SECRET = "REPLACE_WITH_REAL_CLIENT_SECRET"
 SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
 TOKEN_FILENAME = "gdrive-token.json"
-APP_DIR_NAME = ".audio-transcriber"
+APP_DIR_NAME = ".voxnote"
 
 
 def _default_token_path() -> Path:
-    """Default token-cache path: ~/.audio-transcriber/gdrive-token.json.
+    """Default token-cache path: ~/.voxnote/gdrive-token.json.
 
     Honours USERPROFILE on Windows (where Path.home() also resolves it,
     but explicit env-var fallback is friendlier to tests using monkeypatch).

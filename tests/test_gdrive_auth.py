@@ -20,13 +20,13 @@ from gdrive.auth import TOKEN_FILENAME, GDriveAuth
 
 
 def test_token_path_under_user_home(tmp_path, monkeypatch):
-    """Token file lives at ~/.audio-transcriber/gdrive-token.json
+    """Token file lives at ~/.voxnote/gdrive-token.json
     by default. We use tmp_path as a fake home for isolation."""
     monkeypatch.setenv("USERPROFILE", str(tmp_path))   # Windows
     monkeypatch.setenv("HOME", str(tmp_path))          # POSIX
 
     auth = GDriveAuth()
-    assert auth.token_path == tmp_path / ".audio-transcriber" / TOKEN_FILENAME
+    assert auth.token_path == tmp_path / ".voxnote" / TOKEN_FILENAME
 
 
 def test_sign_in_runs_flow_and_caches_credentials(tmp_path, monkeypatch):

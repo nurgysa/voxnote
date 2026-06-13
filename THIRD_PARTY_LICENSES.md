@@ -1,6 +1,6 @@
 # Third-Party Licenses
 
-Audio Transcriber is licensed under the MIT License (see [LICENSE](LICENSE)).
+VoxNote is licensed under the MIT License (see [LICENSE](LICENSE)).
 The Windows release bundles or depends on the third-party components below.
 This file summarizes their licenses; consult each project for the
 authoritative text.
@@ -27,7 +27,7 @@ authoritative text.
 
 The vendored FFmpeg build is **GPL v3** (configured with `--enable-gpl
 --enable-version3`). It is bundled as a standalone executable and invoked
-via `subprocess` — the Audio Transcriber Python source is not a derivative
+via `subprocess` — the VoxNote Python source is not a derivative
 work of FFmpeg and remains MIT-licensed (mere aggregation). To comply with
 the GPL, the release ships [`vendor/ffmpeg/LICENSE.txt`](vendor/ffmpeg/LICENSE.txt)
 (license identification + written offer for corresponding source) alongside

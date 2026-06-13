@@ -11,9 +11,9 @@ It also enforces the client-bundle invariants before shipping:
 
 * the bundle is *template-only* — no ``_internal/config.json`` and no
   ``gdrive-token.json`` may be present (keys live in
-  ``~/.audio-transcriber/config.json`` since PR #92, never in the bundle);
+  ``~/.voxnote/config.json`` since PR #92, never in the bundle);
 * none of the developer's real API keys (read from the local
-  ``~/.audio-transcriber/config.json``) appear anywhere in the bundle's
+  ``~/.voxnote/config.json``) appear anywhere in the bundle's
   text files.
 
 Any violation aborts with a non-zero exit code and the zip is not written.
@@ -47,12 +47,12 @@ FORBIDDEN_NAMES = {"config.json", "gdrive-token.json"}
 
 
 def _load_real_secrets() -> list[str]:
-    """Collect the developer's real key values from ~/.audio-transcriber/config.json.
+    """Collect the developer's real key values from ~/.voxnote/config.json.
 
     Returns an empty list (with a warning) if the file is absent — e.g. on a
     CI runner — so packaging still works, just without the leak cross-check.
     """
-    cfg_path = Path.home() / ".audio-transcriber" / "config.json"
+    cfg_path = Path.home() / ".voxnote" / "config.json"
     if not cfg_path.exists():
         print(f"  ! {cfg_path} not found — skipping real-key leak scan", flush=True)
         return []
@@ -130,7 +130,7 @@ def _check_no_bloat(bundle: Path) -> list[str]:
     """Return violation messages for known over-collection bloat that must NOT ship.
 
     The inverse of _check_required_assets: these directories reappear only when
-    ``audio_transcriber.spec`` regresses to an over-broad ``collect_all``. The
+    ``voxnote.spec`` regresses to an over-broad ``collect_all``. The
     app imports neither at runtime, so each is pure dead weight that once nearly
     doubled the bundle (568 vs 355 MB):
 
@@ -182,8 +182,8 @@ def _verify(out_zip: Path, top_name: str) -> tuple[list[str], list[str]]:
             problems.append("archive contains backslash entry names")
         if zf.testzip() is not None:
             problems.append("archive failed integrity check (testzip)")
-    if f"{top_name}/AudioTranscriber.exe" not in names:
-        problems.append("AudioTranscriber.exe missing from archive")
+    if f"{top_name}/VoxNote.exe" not in names:
+        problems.append("VoxNote.exe missing from archive")
     return names, problems
 
 
@@ -192,16 +192,16 @@ def main() -> int:
     parser.add_argument("--version", default="0.1.0", help="release version (default: 0.1.0)")
     parser.add_argument(
         "--bundle",
-        default=str(REPO_ROOT / "dist" / "AudioTranscriber"),
+        default=str(REPO_ROOT / "dist" / "VoxNote"),
         help="path to the PyInstaller bundle dir",
     )
     parser.add_argument(
         "--out",
         default=None,
-        help="output zip path (default: dist/AudioTranscriber-v<version>.zip)",
+        help="output zip path (default: dist/VoxNote-v<version>.zip)",
     )
     parser.add_argument(
-        "--top-name", default="AudioTranscriber", help="top folder name inside the zip"
+        "--top-name", default="VoxNote", help="top folder name inside the zip"
     )
     args = parser.parse_args()
 
@@ -209,13 +209,13 @@ def main() -> int:
     out_zip = (
         Path(args.out).resolve()
         if args.out
-        else REPO_ROOT / "dist" / f"AudioTranscriber-v{args.version}.zip"
+        else REPO_ROOT / "dist" / f"VoxNote-v{args.version}.zip"
     )
     top_name = args.top_name
 
-    if not (bundle / "AudioTranscriber.exe").exists():
+    if not (bundle / "VoxNote.exe").exists():
         print(
-            f"ERROR: no AudioTranscriber.exe under {bundle} — build the bundle first.",
+            f"ERROR: no VoxNote.exe under {bundle} — build the bundle first.",
             file=sys.stderr,
         )
         return 2

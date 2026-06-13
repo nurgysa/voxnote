@@ -3,7 +3,7 @@ FFmpeg — license & corresponding-source notice
 
 This application bundles unmodified FFmpeg binaries (ffmpeg.exe and
 ffprobe.exe) for audio decoding/encoding/trimming. These binaries are NOT
-part of the Audio Transcriber source code; the application invokes them as
+part of the VoxNote source code; the application invokes them as
 a separate process (subprocess), never linking FFmpeg into its own code.
 
 Build bundled here
@@ -28,12 +28,12 @@ Corresponding source (written offer)
     * https://git.ffmpeg.org/ffmpeg.git     (upstream FFmpeg source repository)
     * https://github.com/FFmpeg/FFmpeg      (source mirror)
 
-Relationship to Audio Transcriber
+Relationship to VoxNote
 ----------------------------------
-  Audio Transcriber itself is licensed under the MIT License (see the
+  VoxNote itself is licensed under the MIT License (see the
   project's top-level LICENSE file). FFmpeg is a separate work distributed
   under its own GPL v3 terms. Bundling FFmpeg as an independent executable
-  and calling it via subprocess does not place the Audio Transcriber source
+  and calling it via subprocess does not place the VoxNote source
   under the GPL (mere aggregation / use at arm's length).
 
   Note: the gyan.dev distribution ships its own LICENSE/README files with

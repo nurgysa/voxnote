@@ -59,7 +59,7 @@ def test_transcribe_tool_resolves_secrets_and_delegates(monkeypatch):
     # server-side and forward to core.run_transcribe (on_status must be None so
     # nothing leaks onto the JSON-RPC stdout channel).
     monkeypatch.setattr(config, "base_config", dict)
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_API_KEY", "test-key")
+    monkeypatch.setenv("VOXNOTE_API_KEY", "test-key")
 
     captured = {}
 
@@ -83,6 +83,6 @@ def test_transcribe_tool_resolves_secrets_and_delegates(monkeypatch):
 
 
 def test_missing_openrouter_key_raises(monkeypatch):
-    monkeypatch.delenv("AUDIO_TRANSCRIBER_OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("VOXNOTE_OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ValueError):
         srv._openrouter_key({})

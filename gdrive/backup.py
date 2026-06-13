@@ -315,7 +315,7 @@ def run_backup(
         # 5. Drive: find/create root + create snapshot folder
         client = DriveClient(credentials)
         _say("Подключаюсь к Google Drive...")
-        root_id = client.find_or_create_folder("audio-transcriber-backup")
+        root_id = client.find_or_create_folder("voxnote-backup")
         _say(f"Создаю snapshot {snapshot_name}...")
         snapshot_id = client.create_folder(snapshot_name, parent_id=root_id)
 

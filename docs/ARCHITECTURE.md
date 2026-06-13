@@ -122,9 +122,9 @@ issues/cards. The dedup pass (`tasks/dedup.py`) can mark a task `COMMENTED`
 
 | File | Owner | Mutable? | Schema |
 |---|---|---|---|
-| `~/.audio-transcriber/config.json` | `utils.save_config` | yes | see `config.example.json` |
-| `~/.audio-transcriber/gdrive-token.json` | `gdrive.auth` | yes | OAuth token cache (secret) |
-| `~/.audio-transcriber/directory.json` | `directory.store` | yes | people/projects directory |
+| `~/.voxnote/config.json` | `utils.save_config` | yes | see `config.example.json` |
+| `~/.voxnote/gdrive-token.json` | `gdrive.auth` | yes | OAuth token cache (secret) |
+| `~/.voxnote/directory.json` | `directory.store` | yes | people/projects directory |
 | `<meeting>/transcript.md` · `description.md` | `utils` / extract flow | one-shot | markdown |
 | `<meeting>/tasks_raw.json` | `tasks.persistence` | no | LLM extractor output |
 | `<meeting>/tasks.json` | `tasks.persistence` | yes | `tasks.schema.Task` |
@@ -133,7 +133,7 @@ issues/cards. The dedup pass (`tasks/dedup.py`) can mark a task `COMMENTED`
 | `logs/app.log` | `logging_setup` | rotates 2MB×5 | text |
 
 `<meeting>` is the per-recording folder under the meetings root
-(`meetings_dir`, default `Documents\AudioTranscriber\meetings`; recordings go
+(`meetings_dir`, default `Documents\VoxNote\meetings`; recordings go
 to `<meetings_dir>/recordings`).
 
 ## Cloud provider extension
@@ -169,7 +169,7 @@ ffmpeg must respect them:
 4. **`requirements.txt` pins are load-bearing** (CustomTkinter / soundfile /
    sounddevice / google-auth on Windows). Don't liberalize without a clean-VM
    smoke.
-5. **Config lives in `~/.audio-transcriber/`, never in the bundle.** Frozen
+5. **Config lives in `~/.voxnote/`, never in the bundle.** Frozen
    builds resolve config there so client updates don't wipe keys; the bundle
    ships only `config.example.json` (enforced by `scripts/package_release.py`).
 ```

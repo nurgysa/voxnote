@@ -15,17 +15,48 @@ SUPPORTED_EXTENSIONS = {".mp3", ".wav", ".m4a"}
 def _default_config_path() -> str:
     """Resolve config.json location.
 
-    Frozen (.exe): ``~/.audio-transcriber/config.json`` — OUTSIDE the bundle so
+    Frozen (.exe): ``~/.voxnote/config.json`` — OUTSIDE the bundle so
     a build update never wipes the user's settings (same app-data home as
     gdrive-token.json / directory.json). Source (dev): repo-root config.json
     beside utils.py (unchanged).
     """
     if getattr(sys, "frozen", False):
-        return os.path.join(os.path.expanduser("~"), ".audio-transcriber", "config.json")
+        return os.path.join(os.path.expanduser("~"), ".voxnote", "config.json")
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.json")
 
 
 _CONFIG_PATH = _default_config_path()
+
+
+# Pre-VoxNote secret-store dir, kept ONLY as the one-time migration source.
+# This is the single place the legacy brand literal may survive (guard-test
+# allowlisted). See migrate_legacy_secret_dir().
+_LEGACY_SECRET_DIR_NAME = ".audio-transcriber"
+_SECRET_DIR_NAME = ".voxnote"
+
+
+def migrate_legacy_secret_dir() -> None:
+    """One-time move of ``~/.audio-transcriber`` → ``~/.voxnote``.
+
+    Keeps existing installs' config.json (API keys), gdrive-token.json,
+    directory.json, queue.json, and model cache after the rebrand. Idempotent
+    (no-op once ``~/.voxnote`` exists). Best-effort: a failed move is logged
+    and swallowed so it can never block startup.
+
+    ORDERING INVARIANT: must run before any code reads config/tokens. Otherwise
+    the renamed code reads an empty ``~/.voxnote`` and may overwrite it with
+    defaults, orphaning live keys.
+    """
+    home = os.path.expanduser("~")
+    new_dir = os.path.join(home, _SECRET_DIR_NAME)
+    old_dir = os.path.join(home, _LEGACY_SECRET_DIR_NAME)
+    if os.path.exists(new_dir) or not os.path.isdir(old_dir):
+        return
+    try:
+        shutil.move(old_dir, new_dir)
+        logger.info("migrated secret store %s -> %s", old_dir, new_dir)
+    except OSError as exc:
+        logger.warning("could not migrate %s -> %s: %s", old_dir, new_dir, exc)
 
 
 def _restrict_posix(path: str) -> bool:
@@ -77,7 +108,7 @@ def _restrict_windows(path: str) -> bool:
 def restrict_dir_to_owner(path: str) -> bool:
     """Best-effort lock directory ``path`` to the current user only (WS-5 P2).
 
-    Defense-in-depth for the secret store ``~/.audio-transcriber`` (config.json
+    Defense-in-depth for the secret store ``~/.voxnote`` (config.json
     API keys + gdrive-token.json). POSIX: ``chmod 0o700``. Windows: ``icacls``
     owner-only — the ``os.chmod(0o600)`` the codebase relied on is a silent
     no-op there. Never raises: a failed hardening is logged and the caller
@@ -132,22 +163,22 @@ def get_app_icon_path() -> str | None:
     """Return absolute path to the .ico app icon, or None if missing.
 
     Resolution order:
-      1. PyInstaller bundle (frozen mode) — sys._MEIPASS/vendor/icons/audio_transcriber.ico
+      1. PyInstaller bundle (frozen mode) — sys._MEIPASS/vendor/icons/voxnote.ico
       2. Repo-root vendor/icons/ — for dev source-mode runs
       3. None — caller skips iconbitmap() rather than crashing on missing file
 
     Used by ui.app.App.__init__ to set self.iconbitmap() for the window
     title bar (Explorer/Taskbar uses the .exe-embedded icon set via
-    audio_transcriber.spec's EXE(icon=...) parameter).
+    voxnote.spec's EXE(icon=...) parameter).
     """
     candidates: list[str] = []
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", None)
         if meipass:
-            candidates.append(os.path.join(meipass, "vendor", "icons", "audio_transcriber.ico"))
+            candidates.append(os.path.join(meipass, "vendor", "icons", "voxnote.ico"))
     # Dev source-mode fallback: repo root vendor/icons/ relative to utils.py
     candidates.append(os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "vendor", "icons", "audio_transcriber.ico",
+        os.path.dirname(os.path.abspath(__file__)), "vendor", "icons", "voxnote.ico",
     ))
     for path in candidates:
         if os.path.isfile(path):
@@ -166,7 +197,7 @@ def get_ffmpeg_path() -> str | None:
     audio_io.py uses this in place of bare
     `"ffmpeg"` subprocess args so the cloud-only PyInstaller bundle works
     without ffmpeg on the user's PATH (vendored binaries from gyan.dev
-    release-essentials live under vendor/ffmpeg/ — see audio_transcriber.spec).
+    release-essentials live under vendor/ffmpeg/ — see voxnote.spec).
     """
     vendored = _get_vendored_binary("ffmpeg")
     if vendored:
@@ -258,7 +289,7 @@ def save_config(config: dict) -> None:
     if parent:
         os.makedirs(parent, exist_ok=True)
         # WS-5 P2: in frozen mode `parent` is the secret store
-        # ~/.audio-transcriber (API keys at rest) — lock it owner-only. In dev
+        # ~/.voxnote (API keys at rest) — lock it owner-only. In dev
         # mode `parent` is the repo root (config.json beside the code), so skip.
         if getattr(sys, "frozen", False):
             restrict_dir_to_owner(parent)
@@ -274,7 +305,7 @@ def save_config(config: dict) -> None:
 # ── Meetings folder — user-configurable, with 3-level fallback ─────────
 
 _DEFAULT_MEETINGS_DIR = os.path.join(
-    os.path.expanduser("~"), "Documents", "AudioTranscriber", "meetings",
+    os.path.expanduser("~"), "Documents", "VoxNote", "meetings",
 )
 
 # Legacy paths probed on first launch — entries here trigger the
@@ -306,7 +337,7 @@ def get_meetings_dir() -> str:
 
     Resolution order (each level falls through on failure):
       1. config["meetings_dir"] if non-empty AND parent exists AND writable
-      2. _DEFAULT_MEETINGS_DIR (%USERPROFILE%/Documents/AudioTranscriber/meetings/)
+      2. _DEFAULT_MEETINGS_DIR (%USERPROFILE%/Documents/VoxNote/meetings/)
       3. <bundle>/_internal/history/ — legacy last-resort fallback for
          corporate Windows profiles where Documents itself is locked
 

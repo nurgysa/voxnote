@@ -31,6 +31,10 @@ if not getattr(sys, "frozen", False):
     except OSError:
         faulthandler.enable(all_threads=True)  # fall back to stderr; never block
 
+from utils import migrate_legacy_secret_dir  # noqa: E402  (after faulthandler)
+
+migrate_legacy_secret_dir()
+
 from ui.app import main  # noqa: E402  (must follow faulthandler setup)
 
 if __name__ == "__main__":

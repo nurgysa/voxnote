@@ -1,4 +1,4 @@
-# AGENTS.md — using audio-transcriber from a coding agent
+# AGENTS.md — using voxnote from a coding agent
 
 This repo ships a **headless transcription pipeline** you can drive two ways:
 
@@ -65,11 +65,11 @@ use the Python interpreter that has `requirements-mcp.txt` installed.
 ```json
 {
   "mcpServers": {
-    "audio-transcriber": {
+    "voxnote": {
       "command": "python",
       "args": ["-m", "cli.mcp_server"],
-      "cwd": "/path/to/audio-transcriber",
-      "env": { "AUDIO_TRANSCRIBER_API_KEY": "…", "AUDIO_TRANSCRIBER_OPENROUTER_API_KEY": "…" }
+      "cwd": "/path/to/voxnote",
+      "env": { "VOXNOTE_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
     }
   }
 }
@@ -78,24 +78,24 @@ use the Python interpreter that has `requirements-mcp.txt` installed.
 **OpenAI Codex CLI** — `~/.codex/config.toml`:
 
 ```toml
-[mcp_servers.audio-transcriber]
+[mcp_servers.voxnote]
 command = "python"
 args = ["-m", "cli.mcp_server"]
-cwd = "/path/to/audio-transcriber"
-env = { AUDIO_TRANSCRIBER_API_KEY = "…", AUDIO_TRANSCRIBER_OPENROUTER_API_KEY = "…" }
+cwd = "/path/to/voxnote"
+env = { VOXNOTE_API_KEY = "…", VOXNOTE_OPENROUTER_API_KEY = "…" }
 ```
 
 **Hermes Agent** — `~/.hermes/config.yaml`:
 
 ```yaml
 mcp_servers:
-  audio-transcriber:
+  voxnote:
     command: python
     args: ["-m", "cli.mcp_server"]
-    cwd: /path/to/audio-transcriber
+    cwd: /path/to/voxnote
     env:
-      AUDIO_TRANSCRIBER_API_KEY: "…"
-      AUDIO_TRANSCRIBER_OPENROUTER_API_KEY: "…"
+      VOXNOTE_API_KEY: "…"
+      VOXNOTE_OPENROUTER_API_KEY: "…"
 ```
 
 **Google Antigravity** — `mcp_config.json`:
@@ -103,11 +103,11 @@ mcp_servers:
 ```json
 {
   "mcpServers": {
-    "audio-transcriber": {
+    "voxnote": {
       "command": "python",
       "args": ["-m", "cli.mcp_server"],
-      "cwd": "/path/to/audio-transcriber",
-      "env": { "AUDIO_TRANSCRIBER_API_KEY": "…", "AUDIO_TRANSCRIBER_OPENROUTER_API_KEY": "…" }
+      "cwd": "/path/to/voxnote",
+      "env": { "VOXNOTE_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
     }
   }
 }
@@ -116,15 +116,15 @@ mcp_servers:
 ### Hermes — native skill (it does not read AGENTS.md)
 
 Hermes discovers capabilities via **skills**, not AGENTS.md. A ready skill lives at
-`integrations/hermes/skills/audio-transcriber/`. Install it — it auto-registers as
-the `/audio-transcriber` slash command and shows in the Hermes Desktop **Skills**
+`integrations/hermes/skills/voxnote/`. Install it — it auto-registers as
+the `/voxnote` slash command and shows in the Hermes Desktop **Skills**
 pane (same `~/.hermes` config across CLI / TUI / Desktop / Gateway):
 
 ```bash
 # macOS / Linux
-cp -r integrations/hermes/skills/audio-transcriber ~/.hermes/skills/productivity/
+cp -r integrations/hermes/skills/voxnote ~/.hermes/skills/productivity/
 # Windows (PowerShell)
-Copy-Item -Recurse integrations\hermes\skills\audio-transcriber "$env:USERPROFILE\.hermes\skills\productivity\"
+Copy-Item -Recurse integrations\hermes\skills\voxnote "$env:USERPROFILE\.hermes\skills\productivity\"
 ```
 
 The skill is MCP-first (uses the tools above) with a `python -m cli` fallback, and
@@ -137,10 +137,10 @@ The agent host often has no `config.json`, so pass secrets via env:
 
 | Env var | Used for |
 |---|---|
-| `AUDIO_TRANSCRIBER_API_KEY` | STT provider key (for the active `--provider`) |
-| `AUDIO_TRANSCRIBER_PROVIDER` | Default STT provider (else `AssemblyAI`) |
-| `AUDIO_TRANSCRIBER_OPENROUTER_API_KEY` | OpenRouter (tasks + protocol) |
-| `AUDIO_TRANSCRIBER_LINEAR_API_KEY` / `_TRELLO_API_KEY` / `_TRELLO_TOKEN` / `_GLIDE_API_KEY` | Task backends |
+| `VOXNOTE_API_KEY` | STT provider key (for the active `--provider`) |
+| `VOXNOTE_PROVIDER` | Default STT provider (else `AssemblyAI`) |
+| `VOXNOTE_OPENROUTER_API_KEY` | OpenRouter (tasks + protocol) |
+| `VOXNOTE_LINEAR_API_KEY` / `_TRELLO_API_KEY` / `_TRELLO_TOKEN` / `_GLIDE_API_KEY` | Task backends |
 
 The MCP server speaks JSON-RPC on stdout — never print to it. Transcription
 progress is discarded; diagnostics go to `logs/faulthandler-mcp.log`.
@@ -152,7 +152,7 @@ In addition to the MCP-pull mode above, the app can **push** a signed
 This is the second integration direction:
 
 ```text
-Audio Transcriber  →  POST /webhooks/audio-transcribed  →  Hermes Agent
+VoxNote  →  POST /webhooks/audio-transcribed  →  Hermes Agent
 ```
 
 ### 4.1 Event payload shape
@@ -161,7 +161,7 @@ Audio Transcriber  →  POST /webhooks/audio-transcribed  →  Hermes Agent
 {
   "event_type": "audio.transcribed",
   "version": "1.0",
-  "source": "audio-transcriber",
+  "source": "voxnote",
   "routing_hint": "obsidian_inbox",
   "audio": {
     "filename": "meeting.m4a",
@@ -194,15 +194,15 @@ Key fields for Hermes routing: `event_type`, `routing_hint`,
 
 | config.json key | Env var | Default | Notes |
 |---|---|---|---|
-| `hermes_webhook_enabled` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED` | `false` | Enable sending |
-| `hermes_webhook_url` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | Hermes endpoint |
-| `hermes_webhook_secret` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET` | `""` | HMAC shared secret |
-| `hermes_webhook_timeout_seconds` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Request timeout |
-| `hermes_webhook_routing_hint` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Routing target hint |
+| `hermes_webhook_enabled` | `VOXNOTE_HERMES_WEBHOOK_ENABLED` | `false` | Enable sending |
+| `hermes_webhook_url` | `VOXNOTE_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | Hermes endpoint |
+| `hermes_webhook_secret` | `VOXNOTE_HERMES_WEBHOOK_SECRET` | `""` | HMAC shared secret |
+| `hermes_webhook_timeout_seconds` | `VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Request timeout |
+| `hermes_webhook_routing_hint` | `VOXNOTE_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Routing target hint |
 
 **Empty-env-string semantics:** an env var set to an empty string (`=""`) is
 treated as *unset* and the config.json value is used instead. This matches
-the behaviour of the other `AUDIO_TRANSCRIBER_*` vars throughout the project.
+the behaviour of the other `VOXNOTE_*` vars throughout the project.
 
 Boolean env vars accept (case-insensitive): `true`, `1`, `yes`, `on` → enabled.
 Everything else is false. The secret is consumed only for HMAC signing and
@@ -216,7 +216,7 @@ is never logged or included in error messages.
   The body bytes are built once and the same bytes are used for both signing
   and the POST body (deterministic JSON: sorted keys, compact separators,
   UTF-8).
-- **Idempotency:** `X-Request-ID: audio-transcriber:<sha256(body)[:24]>` —
+- **Idempotency:** `X-Request-ID: voxnote:<sha256(body)[:24]>` —
   deterministic per unique payload, safe for Hermes to deduplicate retries.
 - **No audio bytes** are sent — only metadata, transcript text, and paths.
 
@@ -259,7 +259,7 @@ hermes webhook subscribe audio-transcribed \
   --events "audio.transcribed" \
   --skills "personal-ai-brain-stack" \
   --deliver telegram \
-  --prompt "Audio Transcriber event received.
+  --prompt "VoxNote event received.
 
 Source: {source}
 File: {audio.filename}
@@ -287,7 +287,7 @@ Manually verify Hermes accepts the event shape (substitute `[REDACTED]`
 with your actual secret, never commit it):
 
 ```bash
-BODY='{"analysis":{"decisions":[],"ideas":[],"protocol":null,"summary":null,"tasks":[]},"audio":{"filename":"test.m4a","history_folder":null,"path":null},"event_type":"audio.transcribed","meta":{"created_at":"2026-06-11T12:00:00Z","language":"ru","provider":"test"},"routing_hint":"obsidian_inbox","source":"audio-transcriber","transcript":{"raw":"test","segments":[]},"version":"1.0"}'
+BODY='{"analysis":{"decisions":[],"ideas":[],"protocol":null,"summary":null,"tasks":[]},"audio":{"filename":"test.m4a","history_folder":null,"path":null},"event_type":"audio.transcribed","meta":{"created_at":"2026-06-11T12:00:00Z","language":"ru","provider":"test"},"routing_hint":"obsidian_inbox","source":"voxnote","transcript":{"raw":"test","segments":[]},"version":"1.0"}'
 SIG=$(BODY="$BODY" SECRET="[REDACTED]" python - <<'PY'
 import hmac, hashlib, os
 body = os.environ["BODY"].encode("utf-8")

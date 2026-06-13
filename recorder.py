@@ -25,7 +25,7 @@ class Recorder:
 
     def __init__(self, output_dir: str | None = None):
         self._output_dir = output_dir or os.path.join(
-            os.path.expanduser("~"), "Documents", "AudioTranscriber", "recordings",
+            os.path.expanduser("~"), "Documents", "VoxNote", "recordings",
         )
         self._stream: sd.InputStream | None = None
         self._file: sf.SoundFile | None = None

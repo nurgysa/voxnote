@@ -22,7 +22,7 @@ def test_get_ffmpeg_from_path_when_not_frozen(monkeypatch):
 
 def test_get_ffmpeg_from_vendor_when_frozen(tmp_path, monkeypatch):
     """Frozen mode: resolve to sys._MEIPASS/vendor/ffmpeg/ffmpeg.exe."""
-    fake_bundle = tmp_path / "AudioTranscriber_internal"
+    fake_bundle = tmp_path / "VoxNote_internal"
     vendor = fake_bundle / "vendor" / "ffmpeg"
     vendor.mkdir(parents=True)
     (vendor / "ffmpeg.exe").write_bytes(b"fake-ffmpeg-binary")
@@ -57,7 +57,7 @@ def test_get_ffprobe_mirrors_ffmpeg(monkeypatch):
 
 def test_check_ffmpeg_true_via_bundled(tmp_path, monkeypatch):
     """check_ffmpeg() returns True when bundled binary present."""
-    fake_bundle = tmp_path / "AudioTranscriber_internal"
+    fake_bundle = tmp_path / "VoxNote_internal"
     vendor = fake_bundle / "vendor" / "ffmpeg"
     vendor.mkdir(parents=True)
     (vendor / "ffmpeg.exe").write_bytes(b"fake")

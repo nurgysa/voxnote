@@ -241,7 +241,7 @@ def test_build_manifest_serializable_to_json(tmp_path):
 
 def test_run_backup_calls_client_in_correct_order(tmp_path):
     """run_backup must call DriveClient in this order:
-      1. find_or_create_folder("audio-transcriber-backup")  → root_id
+      1. find_or_create_folder("voxnote-backup")  → root_id
       2. create_folder(<iso-timestamp>, parent_id=root_id)  → snap_id
       3. upload_file(manifest.json, ..., parent_id=snap_id) → manifest_id
       4. upload_file(config.json,   ..., parent_id=snap_id) → config_id
@@ -283,7 +283,7 @@ def test_run_backup_calls_client_in_correct_order(tmp_path):
     fake_auth.get_credentials.assert_called_once()
 
     # Folder creation in the right order.
-    fake_client.find_or_create_folder.assert_called_once_with("audio-transcriber-backup")
+    fake_client.find_or_create_folder.assert_called_once_with("voxnote-backup")
     fake_client.create_folder.assert_called_once_with(
         "2026-05-23T22-30-45", parent_id="root-folder-id",
     )

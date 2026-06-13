@@ -50,18 +50,18 @@ def test_find_folder_returns_id_when_match_exists():
     fake_creds = MagicMock()
     fake_service = MagicMock()
     fake_service.files.return_value.list.return_value.execute.return_value = {
-        "files": [{"id": "folder-id-123", "name": "audio-transcriber-backup"}]
+        "files": [{"id": "folder-id-123", "name": "voxnote-backup"}]
     }
     client = DriveClient(fake_creds)
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
-        result = client.find_folder("audio-transcriber-backup")
+        result = client.find_folder("voxnote-backup")
 
     assert result == "folder-id-123"
     # Verify the query was correct (escapes name, filters by folder mime + non-trashed).
     fake_service.files.return_value.list.assert_called_once()
     call_kwargs = fake_service.files.return_value.list.call_args.kwargs
-    assert "name = 'audio-transcriber-backup'" in call_kwargs["q"]
+    assert "name = 'voxnote-backup'" in call_kwargs["q"]
     assert FOLDER_MIME in call_kwargs["q"]
     assert "trashed = false" in call_kwargs["q"]
 
@@ -83,7 +83,7 @@ def test_find_folder_no_parent_constrains_to_drive_root():
     find_folder must constrain the search to Drive's "root" folder,
     not search the entire Drive.
 
-    Without this constraint, a folder named "audio-transcriber-backup"
+    Without this constraint, a folder named "voxnote-backup"
     that the user has elsewhere in their Drive (shared from a
     colleague, leftover from another tool, etc.) would shadow the
     real one — causing subsequent backups to attach to the wrong
@@ -99,7 +99,7 @@ def test_find_folder_no_parent_constrains_to_drive_root():
     client = DriveClient(fake_creds)
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
-        client.find_folder("audio-transcriber-backup")
+        client.find_folder("voxnote-backup")
 
     call_kwargs = fake_service.files.return_value.list.call_args.kwargs
     assert "'root' in parents" in call_kwargs["q"], (
@@ -136,13 +136,13 @@ def test_create_folder_calls_files_create_with_correct_metadata():
     client = DriveClient(fake_creds)
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
-        result = client.create_folder("audio-transcriber-backup")
+        result = client.create_folder("voxnote-backup")
 
     assert result == "newly-created-id"
     fake_service.files.return_value.create.assert_called_once()
     body = fake_service.files.return_value.create.call_args.kwargs["body"]
     assert body == {
-        "name": "audio-transcriber-backup",
+        "name": "voxnote-backup",
         "mimeType": FOLDER_MIME,
     }
 
@@ -171,12 +171,12 @@ def test_find_or_create_folder_returns_existing_when_match():
     fake_creds = MagicMock()
     fake_service = MagicMock()
     fake_service.files.return_value.list.return_value.execute.return_value = {
-        "files": [{"id": "existing-id", "name": "audio-transcriber-backup"}]
+        "files": [{"id": "existing-id", "name": "voxnote-backup"}]
     }
     client = DriveClient(fake_creds)
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
-        result = client.find_or_create_folder("audio-transcriber-backup")
+        result = client.find_or_create_folder("voxnote-backup")
 
     assert result == "existing-id"
     fake_service.files.return_value.create.assert_not_called()
@@ -194,7 +194,7 @@ def test_find_or_create_folder_creates_when_no_match():
     client = DriveClient(fake_creds)
 
     with patch("googleapiclient.discovery.build", return_value=fake_service):
-        result = client.find_or_create_folder("audio-transcriber-backup")
+        result = client.find_or_create_folder("voxnote-backup")
 
     assert result == "freshly-made-id"
     fake_service.files.return_value.create.assert_called_once()

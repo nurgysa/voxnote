@@ -1,4 +1,4 @@
-"""argparse front-end for the audio-transcriber CLI.
+"""argparse front-end for the voxnote CLI.
 
 Parses subcommands, resolves settings (flag > env > config.json via
 ``cli.config``), calls the pure orchestration in ``cli.core``, serialises the
@@ -168,7 +168,7 @@ def _cmd_transcribe(args) -> int:
     if not api_key:
         raise ValueError(
             f"Нет API-ключа для провайдера {provider!r}. "
-            "Передай --api-key или AUDIO_TRANSCRIBER_API_KEY."
+            "Передай --api-key или VOXNOTE_API_KEY."
         )
     out = core.run_transcribe(
         args.audio,
@@ -215,7 +215,7 @@ def _cmd_extract_tasks(args) -> int:
     if not openrouter_key:
         raise ValueError(
             "Нет ключа OpenRouter. Передай --openrouter-key или "
-            "AUDIO_TRANSCRIBER_OPENROUTER_API_KEY."
+            "VOXNOTE_OPENROUTER_API_KEY."
         )
     result = core.run_extract_tasks(
         transcript=_read_transcript(args),
@@ -249,7 +249,7 @@ def _cmd_protocol(args) -> int:
     if not openrouter_key:
         raise ValueError(
             "Нет ключа OpenRouter. Передай --openrouter-key или "
-            "AUDIO_TRANSCRIBER_OPENROUTER_API_KEY."
+            "VOXNOTE_OPENROUTER_API_KEY."
         )
     speakers = [s.strip() for s in (args.speakers or "").split(",") if s.strip()]
     result = core.run_protocol(
@@ -370,7 +370,7 @@ def _cmd_pipeline(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="audio-transcriber",
+        prog="voxnote",
         description="Headless transcription pipeline (transcribe → tasks → "
         "protocol → send) for shell / agent use.",
     )
@@ -454,6 +454,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from utils import migrate_legacy_secret_dir
+
+    migrate_legacy_secret_dir()
     parser = build_parser()
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)
