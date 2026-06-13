@@ -109,7 +109,7 @@ class App(
         # "Отправить лог" button (D4) then lets the user ship that log. WS-3.
         self.report_callback_exception = log_callback_exception
 
-        self.title("Audio Transcriber")
+        self.title("VoxNote")
         # Geometry will be overwritten by the fullscreen setup below — kept
         # only as the un-fullscreen fallback if the user hits Esc/F11 then
         # the window manager needs a reasonable default size to revert to.
@@ -118,7 +118,7 @@ class App(
         # Set the window title-bar icon. CustomTkinter sets its own default
         # icon during super().__init__() so we must call iconbitmap AFTER.
         # The .exe-embedded icon (Explorer/Taskbar) is set separately via
-        # audio_transcriber.spec EXE(icon=...). Silently skip if the .ico
+        # voxnote.spec EXE(icon=...). Silently skip if the .ico
         # file is absent — dev runs without `python scripts/gen_icon.py`
         # shouldn't crash startup.
         _icon_path = get_app_icon_path()

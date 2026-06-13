@@ -627,7 +627,7 @@ def build_hermes_section(dialog, parent) -> None:
         )
         result = emit_audio_transcribed_event(
             config=hermes_cfg,
-            transcript_text="[ТЕСТ] Проверка связи audio-transcriber → Hermes",
+            transcript_text="[ТЕСТ] Проверка связи voxnote → Hermes",
             provider="(test)",
         )
         if not result.sent:

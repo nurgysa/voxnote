@@ -112,7 +112,7 @@ def _mock_urlopen_returning(data: bytes) -> MagicMock:
 
 def test_get_rnnoise_model_path_downloads_when_missing(tmp_path):
     """First call (cache empty): fetches from GitHub, writes to
-    ~/.audio-transcriber/models/rnnoise/, returns the cached path."""
+    ~/.voxnote/models/rnnoise/, returns the cached path."""
     fake_home = str(tmp_path / "fake_home")
     fake_model_bytes = b"x" * 85_000  # ~85 KB matches real model size
 
@@ -167,7 +167,7 @@ def test_get_rnnoise_model_path_raises_actionable_on_network_error(tmp_path):
             _get_rnnoise_model_path()
 
     # No partial file lingers.
-    cache_dir = os.path.join(fake_home, ".audio-transcriber", "models", "rnnoise")
+    cache_dir = os.path.join(fake_home, ".voxnote", "models", "rnnoise")
     if os.path.isdir(cache_dir):
         assert not any(
             f.endswith(".rnnn") for f in os.listdir(cache_dir)
@@ -291,7 +291,7 @@ def test_escape_ffmpeg_filter_path_unix_path_is_noop():
     """Unix paths have no backslashes and no colons → escape is a no-op.
     Defends against a future "clever" fix that breaks the Unix case
     while solving Windows."""
-    p = "/home/user/.audio-transcriber/models/rnnoise/sh.rnnn"
+    p = "/home/user/.voxnote/models/rnnoise/sh.rnnn"
     assert _escape_ffmpeg_filter_path(p) == p
 
 
@@ -313,7 +313,7 @@ def test_escape_ffmpeg_filter_path_windows_path_double_escapes_colon():
     Cross-platform safe: Unix paths have no backslashes and no colons,
     so the replace passes leave them untouched.
     """
-    p = r"C:\Users\nurgisa\.audio-transcriber\models\rnnoise\sh.rnnn"
+    p = r"C:\Users\nurgisa\.voxnote\models\rnnoise\sh.rnnn"
     escaped = _escape_ffmpeg_filter_path(p)
     # No raw backslashes remain (forward-slash conversion done).
     assert "\\Users" not in escaped
@@ -351,7 +351,7 @@ def test_ensure_wav_denoise_true_uses_escaped_windows_path_in_filter(tmp_path):
             f.write(b"")
         return MagicMock(returncode=0)
 
-    windows_path = r"C:\Users\nurgisa\.audio-transcriber\models\rnnoise\sh.rnnn"
+    windows_path = r"C:\Users\nurgisa\.voxnote\models\rnnoise\sh.rnnn"
     with patch("audio_io.subprocess.run", side_effect=fake_run), \
          patch(
             "audio_io._get_rnnoise_model_path",
@@ -399,7 +399,7 @@ def test_ensure_wav_with_denoise_runs_real_ffmpeg(tmp_path):
     """
     cached_model = os.path.join(
         os.path.expanduser("~"),
-        ".audio-transcriber", "models", "rnnoise", "sh.rnnn",
+        ".voxnote", "models", "rnnoise", "sh.rnnn",
     )
     if not os.path.isfile(cached_model):
         pytest.skip(

@@ -32,11 +32,11 @@ def test_version_value():
     assert payload["version"] == "1.0"
 
 
-# ── source is exactly "audio-transcriber" ────────────────────────────
+# ── source is exactly "voxnote" ────────────────────────────
 
 def test_source_value():
     payload = build_audio_transcribed_event(transcript_text="x")
-    assert payload["source"] == "audio-transcriber"
+    assert payload["source"] == "voxnote"
 
 
 # ── 4. Filename is extracted from audio_path ──────────────────────────
@@ -133,7 +133,7 @@ def test_full_spec_example():
     )
     assert payload["event_type"] == "audio.transcribed"
     assert payload["version"] == "1.0"
-    assert payload["source"] == "audio-transcriber"
+    assert payload["source"] == "voxnote"
     assert payload["audio"]["filename"] == "meeting.m4a"
     assert payload["transcript"]["raw"] == "Привет мир"
     assert payload["transcript"]["segments"] == []

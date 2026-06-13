@@ -232,7 +232,7 @@ class SettingsDialog(ctk.CTkToplevel):
         super().destroy()
 
     def _apply_dialog_icon(self) -> None:
-        """Apply the audio_transcriber.ico to this Toplevel.
+        """Apply the voxnote.ico to this Toplevel.
 
         Called via `self.after(200, ...)` to work around the CTkToplevel
         WM-handshake race that silently drops immediate `iconbitmap()` calls
@@ -582,7 +582,7 @@ class SettingsDialog(ctk.CTkToplevel):
         so a large rotated-log set doesn't freeze the dialog."""
         from datetime import datetime
 
-        default_name = f"audio-transcriber-log-{datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
+        default_name = f"voxnote-log-{datetime.now():%Y-%m-%d_%H-%M-%S}.zip"
         dest = filedialog.asksaveasfilename(
             parent=self,
             title="Сохранить лог-архив",

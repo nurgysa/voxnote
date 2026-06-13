@@ -11,7 +11,7 @@ import pytest
 
 _SKILL = (
     Path(__file__).resolve().parent.parent
-    / "integrations" / "hermes" / "skills" / "audio-transcriber" / "SKILL.md"
+    / "integrations" / "hermes" / "skills" / "voxnote" / "SKILL.md"
 )
 
 

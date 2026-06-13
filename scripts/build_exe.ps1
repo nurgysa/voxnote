@@ -1,4 +1,4 @@
-# Bundle the cloud-only Audio Transcriber as a Windows .exe (onedir).
+# Bundle the cloud-only VoxNote as a Windows .exe (onedir).
 #
 # Prereqs:
 #   1. .venv-build/ activated with cloud-only requirements.txt + requirements-build.txt installed
@@ -27,17 +27,17 @@ Write-Host "  ffmpeg.exe  = $ffmpegSize MB" -ForegroundColor DarkGray
 Write-Host "  ffprobe.exe = $ffprobeSize MB" -ForegroundColor DarkGray
 
 Write-Host "[3/6] Running PyInstaller..." -ForegroundColor Cyan
-pyinstaller audio_transcriber.spec --noconfirm
+pyinstaller voxnote.spec --noconfirm
 
 Write-Host "[4/6] Verifying bundle output..." -ForegroundColor Cyan
-$bundleDir = "dist/AudioTranscriber"
-$exePath = "$bundleDir/AudioTranscriber.exe"
+$bundleDir = "dist/VoxNote"
+$exePath = "$bundleDir/VoxNote.exe"
 if (-not (Test-Path $exePath)) {
     throw "Build failed — $exePath not found. Check PyInstaller output above for missing modules."
 }
 
 Write-Host "[5/6] Bundling config.example.json template into _internal/..." -ForegroundColor Cyan
-# The live config now lives OUTSIDE the bundle at ~/.audio-transcriber/config.json
+# The live config now lives OUTSIDE the bundle at ~/.voxnote/config.json
 # (utils._default_config_path when frozen), so a build update never wipes the
 # user's keys/settings. We bundle config.example.json as a read-only TEMPLATE;
 # on first run utils._seed_default_config copies it to ~ (empty keys -> the

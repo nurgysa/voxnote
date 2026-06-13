@@ -91,7 +91,7 @@ def _get_rnnoise_model_path() -> str:
     """Path to the RNNoise .rnnn model file for ffmpeg's ``arnndn`` filter.
 
     Lazy-downloads from ``_RNNOISE_MODEL_URL`` on first call and caches in
-    ``~/.audio-transcriber/models/rnnoise/sh.rnnn``. Returns the cached path
+    ``~/.voxnote/models/rnnoise/sh.rnnn``. Returns the cached path
     on subsequent calls — one-time ~85 KB download per machine.
 
     Why lazy and not bundled in the repo: the model is GPL-3 (per
@@ -102,7 +102,7 @@ def _get_rnnoise_model_path() -> str:
 
     Cache directory matches the existing convention used by
     ``gdrive/auth.py`` for its OAuth token cache:
-    ``~/.audio-transcriber/<subsystem>/``.
+    ``~/.voxnote/<subsystem>/``.
 
     Raises:
         RuntimeError: network failure, disk full, or any other write
@@ -112,7 +112,7 @@ def _get_rnnoise_model_path() -> str:
     """
     cache_dir = os.path.join(
         os.path.expanduser("~"),
-        ".audio-transcriber", "models", "rnnoise",
+        ".voxnote", "models", "rnnoise",
     )
     cache_path = os.path.join(cache_dir, _RNNOISE_MODEL_BASENAME)
     if os.path.isfile(cache_path):

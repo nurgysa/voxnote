@@ -111,12 +111,12 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
 | Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,speechmatics}.py` — Groq + OpenAI Whisper deleted in the 2026-05-28 rip-out (no native diarization, depended on the now-gone hybrid-with-local-pyannote path). Shared transport plumbing (HTTP error idiom, PollSpec poll loop, file streaming, validate/cancel helpers) lives in providers/_common.py — tests patch HTTP at providers._common.requests (one canonical target); tests/test_provider_transport_guard.py blocks regrowth. |
 | Task extraction (LLM → Linear/Trello/Glide) | `tasks/` (`extractor`, `sender`, `schema`, `persistence`, `linear_client`, `trello_client`, `glide_client`, `openrouter_client`, `dedup`, `protocol_generator`, `errors`) + `tasks/backends/` (Protocol-based dispatch — `base.py`, `linear.py`, `trello.py`, `glide.py`) |
-| People/projects directory (Phase A) | `directory/` (`schema`, `store` — atomic JSON at `~/.audio-transcriber/directory.json`, `context` — prompt-context renderer). Grounds protocol + task prompts with real names/roles/project descriptions. Per-run speaker timestamps persisted via `utils.save_segments` → `<meeting>/segments.json`. |
+| People/projects directory (Phase A) | `directory/` (`schema`, `store` — atomic JSON at `~/.voxnote/directory.json`, `context` — prompt-context renderer). Grounds protocol + task prompts with real names/roles/project descriptions. Per-run speaker timestamps persisted via `utils.save_segments` → `<meeting>/segments.json`. |
 | Reference-document grounding (markitdown) | `tasks/doc_context.py` (`convert_documents` + `combine_context`) — converts user-attached PDF/DOCX/PPTX/XLSX to Markdown via Microsoft markitdown (document extras ONLY; never `[audio-transcription]` — invariant #2) and folds them into the same `context=` slot the directory grounding feeds. Wired into the Extract dialog's `_run_extraction`; `MarkItDown` is sentinel-lazy-loaded for testability. |
 | Audio editor | `audio_cutter.py` (silence-removal button removed in the 2026-05-28 rip-out; manual trim + preview + export retained) |
 | Logging setup | `logging_setup.py` |
-| Persistent settings | dev: repo-root `config.json`; frozen: `~/.audio-transcriber/config.json` (survives app updates — PR #92). Template: `config.example.json`. Helpers: `utils.load_config` (corrupt-JSON quarantine) + `utils.save_config` (atomic write; owner-only ACL on the secret-store dir when frozen) |
-| Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.audio-transcriber/gdrive-token.json`) |
+| Persistent settings | dev: repo-root `config.json`; frozen: `~/.voxnote/config.json` (survives app updates — PR #92). Template: `config.example.json`. Helpers: `utils.load_config` (corrupt-JSON quarantine) + `utils.save_config` (atomic write; owner-only ACL on the secret-store dir when frozen) |
+| Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.voxnote/gdrive-token.json`) |
 | Google Drive API wrapper (Phase 7.1) | `gdrive/client.py` (`DriveClient` — thin wrapper over `googleapiclient.discovery.build`; find/create folder + upload file) |
 | Google Drive backup orchestrator (Phase 7.1) | `gdrive/backup.py` (`run_backup` — composes `redact_config` + `zip_history` + `build_manifest` + `DriveClient`) |
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
@@ -157,7 +157,7 @@ under `docs/superpowers/` and in git history.
   + atomic save, provider poll-loop JSON guards, Tk callback-exception
   logging, diagnostics log-bundle button), security hardening (CLI/MCP
   path confinement, markitdown size cap, owner-only ACL on
-  `~/.audio-transcriber`), PyInstaller de-bloat (568 → 355 MB) with
+  `~/.voxnote`), PyInstaller de-bloat (568 → 355 MB) with
   packaging guards. Roadmap spec:
   `docs/superpowers/specs/2026-06-04-audit-remediation-design.md`.
 - **Improvement audit complete** (2026-06-10 → 06-13, PRs #130–#147):

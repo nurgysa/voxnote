@@ -29,10 +29,10 @@ def _make_bundle(
     ``scipy`` / ``pandas_tests`` simulate the over-broad-collect_all bloat that
     must NOT ship (see _check_no_bloat) — both default off (the lean bundle).
     """
-    bundle = tmp_path / "AudioTranscriber"
+    bundle = tmp_path / "VoxNote"
     internal = bundle / "_internal"
     internal.mkdir(parents=True)
-    (bundle / "AudioTranscriber.exe").write_bytes(b"MZ")
+    (bundle / "VoxNote.exe").write_bytes(b"MZ")
     if markitdown:
         (internal / "markitdown").mkdir()
         (internal / "markitdown" / "__init__.py").write_text("")

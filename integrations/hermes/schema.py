@@ -66,7 +66,7 @@ def build_audio_transcribed_event(
     return {
         "event_type": "audio.transcribed",
         "version": "1.0",
-        "source": "audio-transcriber",
+        "source": "voxnote",
         "routing_hint": routing_hint,
         "audio": {
             "filename": filename,

@@ -3,7 +3,7 @@
 The MCP server exposes ``transcribe_audio(audio_path)`` where the path is a
 *model-supplied* tool argument, and the CLI accepts audio / transcript /
 tasks file paths. Without a guard an agent could point those at the secret
-store — ``~/.audio-transcriber/{config.json,gdrive-token.json,directory.json,
+store — ``~/.voxnote/{config.json,gdrive-token.json,directory.json,
 queue.json}`` — and exfiltrate credentials by having them transcribed and
 uploaded to a cloud provider.
 
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-_SECRET_DIR_NAME = ".audio-transcriber"
+_SECRET_DIR_NAME = ".voxnote"
 
 
 def _secret_store_root() -> Path:
@@ -32,10 +32,10 @@ def ensure_outside_secret_store(path: str) -> str:
     the secret store.
 
     The path is expanded (``~``) and resolved (symlinks + ``..``) *before* the
-    containment check, so ``foo/../.audio-transcriber/config.json`` and a
+    containment check, so ``foo/../.voxnote/config.json`` and a
     symlink pointing into the store are both caught — string-prefix checks on
     the raw input would miss them. Containment is by resolved parent, so a
-    sibling like ``~/.audio-transcriber-public`` is allowed.
+    sibling like ``~/.voxnote-public`` is allowed.
     """
     resolved = Path(path).expanduser().resolve()
     root = _secret_store_root()

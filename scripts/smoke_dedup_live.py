@@ -66,7 +66,7 @@ def _discover_config(explicit: str | None) -> str:
     """Resolve which config.json to read: explicit, then C:\\Apps, then repo."""
     candidates = [
         explicit,
-        r"C:\Apps\AudioTranscriber\_internal\config.json",
+        r"C:\Apps\VoxNote\_internal\config.json",
         os.path.join(_REPO_ROOT, "config.json"),
     ]
     for path in candidates:

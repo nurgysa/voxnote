@@ -1,6 +1,6 @@
 """On-disk store for the people/projects directory.
 
-One combined file ~/.audio-transcriber/directory.json holding
+One combined file ~/.voxnote/directory.json holding
 {"people": [...], "projects": [...]}. Atomic write (tmp + os.replace),
 mirroring tasks/persistence.py. Lives outside history/ and config.json so
 voiceprint biometrics never ride the Google Drive backup.
@@ -27,13 +27,13 @@ def _now_iso() -> str:
 
 
 def _default_directory_path() -> Path:
-    """~/.audio-transcriber/directory.json — beside the gdrive token cache.
+    """~/.voxnote/directory.json — beside the gdrive token cache.
 
     USERPROFILE/HOME env lookup mirrors gdrive/auth.py and stays test-friendly
     under monkeypatch.
     """
     home = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".")
-    return home / ".audio-transcriber" / FILENAME
+    return home / ".voxnote" / FILENAME
 
 
 class DirectoryStore:

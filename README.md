@@ -1,8 +1,8 @@
-# Audio Transcriber
+# VoxNote
 
-[![CI](https://github.com/nurgysa/audio-transcriber/actions/workflows/tests.yml/badge.svg)](https://github.com/nurgysa/audio-transcriber/actions/workflows/tests.yml)
-[![Release](https://img.shields.io/github/v/release/nurgysa/audio-transcriber)](https://github.com/nurgysa/audio-transcriber/releases/latest)
-[![License: MIT](https://img.shields.io/github/license/nurgysa/audio-transcriber)](LICENSE)
+[![CI](https://github.com/nurgysa/voxnote/actions/workflows/tests.yml/badge.svg)](https://github.com/nurgysa/voxnote/actions/workflows/tests.yml)
+[![Release](https://img.shields.io/github/v/release/nurgysa/voxnote)](https://github.com/nurgysa/voxnote/releases/latest)
+[![License: MIT](https://img.shields.io/github/license/nurgysa/voxnote)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](docs/CLIENT_SETUP.md)
 
 Десктоп-приложение для Windows: транскрипция аудио + диаризация спикеров
@@ -15,7 +15,7 @@
 > Linear / Trello / Glide and meeting-protocol generation. Built for
 > Kazakh + Russian + English code-switching meetings. The UI and docs are
 > currently Russian-only. Grab the ready-to-run `.exe` from
-> [Releases](https://github.com/nurgysa/audio-transcriber/releases/latest).
+> [Releases](https://github.com/nurgysa/voxnote/releases/latest).
 
 > **Cloud-only с 2026-05-28.** Локальный стек (faster-whisper / pyannote /
 > CUDA / torch) удалён из кодовой базы. Если вы искали GPU-версию — она в
@@ -24,8 +24,8 @@
 ## Скачать
 
 Готовое приложение (Windows 10/11, Python не нужен):
-**[Releases → AudioTranscriber-vX.Y.Z.zip](https://github.com/nurgysa/audio-transcriber/releases/latest)** (~147 МБ).
-Распакуйте в папку под вашим пользователем и запустите `AudioTranscriber.exe` —
+**[Releases → VoxNote-vX.Y.Z.zip](https://github.com/nurgysa/voxnote/releases/latest)** (~147 МБ).
+Распакуйте в папку под вашим пользователем и запустите `VoxNote.exe` —
 первый запуск по шагам: [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
 
 Остальной README — для разработки из исходников.
@@ -87,7 +87,7 @@ Windows (CustomTkinter / soundfile / sounddevice / google-auth). Не обнов
 ## API-ключи
 
 Всё распознавание и LLM-работа — через cloud. Ключи вводятся в **Настройках**
-(хранятся в `~/.audio-transcriber/config.json`, в git не попадают):
+(хранятся в `~/.voxnote/config.json`, в git не попадают):
 
 | Сервис | Зачем | Где взять |
 |---|---|---|
@@ -170,15 +170,15 @@ speaker-сегменты, путь к истории встречи). Запро
 Доставка — **best-effort**: если Hermes недоступен, транскрипция всё равно
 считается успешной.
 
-**Конфигурация** (`~/.audio-transcriber/config.json` или переменные окружения):
+**Конфигурация** (`~/.voxnote/config.json` или переменные окружения):
 
 | Ключ config.json | Переменная окружения | По умолчанию | Описание |
 |---|---|---|---|
-| `hermes_webhook_enabled` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED` | `false` | Включить отправку |
-| `hermes_webhook_url` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | URL endpoint Hermes |
-| `hermes_webhook_secret` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET` | `""` | Shared secret для HMAC |
-| `hermes_webhook_timeout_seconds` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Таймаут запроса (сек) |
-| `hermes_webhook_routing_hint` | `AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Хинт маршрутизации |
+| `hermes_webhook_enabled` | `VOXNOTE_HERMES_WEBHOOK_ENABLED` | `false` | Включить отправку |
+| `hermes_webhook_url` | `VOXNOTE_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | URL endpoint Hermes |
+| `hermes_webhook_secret` | `VOXNOTE_HERMES_WEBHOOK_SECRET` | `""` | Shared secret для HMAC |
+| `hermes_webhook_timeout_seconds` | `VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Таймаут запроса (сек) |
+| `hermes_webhook_routing_hint` | `VOXNOTE_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Хинт маршрутизации |
 
 > Переменная окружения с пустым значением (`=""`) игнорируется — берётся
 > значение из config.json. Env-переменные с непустым значением перекрывают

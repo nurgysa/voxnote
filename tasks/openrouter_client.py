@@ -46,8 +46,8 @@ class OpenRouterClient:
         return {
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/audio-transcriber",
-            "X-Title": "Audio Transcriber",
+            "HTTP-Referer": "https://github.com/nurgysa/voxnote",
+            "X-Title": "VoxNote",
         }
 
     def close(self) -> None:

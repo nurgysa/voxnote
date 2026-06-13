@@ -1,4 +1,4 @@
-"""Command-line interface for audio-transcriber.
+"""Command-line interface for voxnote.
 
 A thin, headless adapter over the existing pipeline (``transcriber`` /
 ``tasks`` / ``providers``) so external agents (e.g. Hermes Agent) can drive

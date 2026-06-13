@@ -2,7 +2,7 @@
 
 Two-tab CRUD over directory.store.DirectoryStore. «Люди»: ФИО, role, project
 membership (checkboxes). «Проекты»: name + description. Mutations persist
-immediately via DirectoryStore (atomic JSON at ~/.audio-transcriber/directory.json).
+immediately via DirectoryStore (atomic JSON at ~/.voxnote/directory.json).
 Mirrors ui/dialogs/terms.py for the list/row/button style.
 """
 from __future__ import annotations

@@ -3,7 +3,7 @@
 **Версия:** v1.0 (Task 5 of MVP v5 plan, 2026-05-28)
 **Источник:** Tauri SaaS spec §7.9, embedded in `tasks/protocol_template.py`
 
-Этот документ описывает шаблон, по которому Audio Transcriber генерирует
+Этот документ описывает шаблон, по которому VoxNote генерирует
 `<history>/<run>/protocol.md` после клика «Извлечь задачи» в Extract dialog.
 
 ## Зачем 5 блоков
@@ -132,5 +132,5 @@ Phase 2 (post-MVP) добавит per-block регенерацию через `P
 
 Spec §7.9 описывает 10 type-specific seeded templates (Standup,
 Customer Call, Sprint Retro, …) которые приедут в Phase 2 как файлы
-`<vault>/.audio-transcriber/protocol_templates/<Type>.md`. В v1.0 один
+`<vault>/.voxnote/protocol_templates/<Type>.md`. В v1.0 один
 универсальный 5-block skeleton покрывает все типы встреч.

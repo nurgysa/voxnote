@@ -66,7 +66,7 @@ class DriveClient:
         Folder names on Drive are NOT unique — two folders with the
         same name can coexist. We return the FIRST match (ordered by
         Drive's default — typically creation time). Backup orchestrator
-        only ever creates one ``audio-transcriber-backup`` folder so
+        only ever creates one ``voxnote-backup`` folder so
         collisions are user-induced (they manually created a duplicate)
         and we accept whichever Drive returns.
         """
@@ -82,7 +82,7 @@ class DriveClient:
         # pointing at the user's My Drive root. Without this branch,
         # `parent_id=None` would omit the predicate entirely and match
         # the name ANYWHERE in the user's Drive — including a folder
-        # called "audio-transcriber-backup" that was created by some
+        # called "voxnote-backup" that was created by some
         # other tool, shared from a colleague, or left over from an
         # earlier backup attempt. That would then become the cached
         # gdrive_root_folder_id, and subsequent backups would attach
@@ -124,7 +124,7 @@ class DriveClient:
     def find_or_create_folder(self, name: str, parent_id: str | None = None) -> str:
         """find_folder; if None, create_folder. Returns the (existing or
         new) folder id. Used by the orchestrator to ensure the
-        ``audio-transcriber-backup`` top folder exists exactly once,
+        ``voxnote-backup`` top folder exists exactly once,
         then create a timestamped child for each snapshot.
         """
         existing = self.find_folder(name, parent_id=parent_id)

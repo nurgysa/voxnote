@@ -1,12 +1,12 @@
-"""Generate vendor/icons/audio_transcriber.ico — multi-res Windows app icon.
+"""Generate vendor/icons/voxnote.ico — multi-res Windows app icon.
 
 Run from repo root:
     python scripts/gen_icon.py
 
-Output: vendor/icons/audio_transcriber.ico (sizes 16, 32, 48, 64, 128, 256)
+Output: vendor/icons/voxnote.ico (sizes 16, 32, 48, 64, 128, 256)
         Each resolution rendered independently for crisp small-icon text.
 
-Design: blue rounded-square background + bold white «АТ» (Audio Transcriber)
+Design: blue rounded-square background + bold white «АТ» (VoxNote)
 monogram in Russian Cyrillic. Placeholder — replace with real brand asset
 when the visual identity for v0.2 is ready.
 
@@ -79,7 +79,7 @@ def make_icon(size: int) -> Image.Image:
 
 
 def main() -> None:
-    out_path = Path("vendor/icons/audio_transcriber.ico")
+    out_path = Path("vendor/icons/voxnote.ico")
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     sizes = [256, 128, 64, 48, 32, 16]

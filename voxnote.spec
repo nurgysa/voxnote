@@ -1,8 +1,8 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""PyInstaller spec for the cloud-only Audio Transcriber Windows bundle.
+"""PyInstaller spec for the cloud-only VoxNote Windows bundle.
 
-Build: pyinstaller audio_transcriber.spec --noconfirm
-Output: dist/AudioTranscriber/  (onedir bundle, target 150-300 MB)
+Build: pyinstaller voxnote.spec --noconfirm
+Output: dist/VoxNote/  (onedir bundle, target 150-300 MB)
 
 Cloud-only since the 2026-05-28 rip-out: no torch / ctranslate2 /
 faster_whisper / pyannote / speechbrain in the build venv (they're gone
@@ -26,7 +26,7 @@ from PyInstaller.utils.hooks import collect_all, copy_metadata
 block_cipher = None
 PROJECT_ROOT = Path(SPECPATH)
 VENDOR_FFMPEG = PROJECT_ROOT / "vendor" / "ffmpeg"
-APP_ICON = PROJECT_ROOT / "vendor" / "icons" / "audio_transcriber.ico"
+APP_ICON = PROJECT_ROOT / "vendor" / "icons" / "voxnote.ico"
 
 # markitdown document grounding (tasks/doc_context.py — attach reference docs →
 # Markdown → LLM context). Two packages genuinely NEED collect_all because
@@ -169,7 +169,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="AudioTranscriber",
+    name="VoxNote",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -186,5 +186,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="AudioTranscriber",
+    name="VoxNote",
 )

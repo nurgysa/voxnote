@@ -1,25 +1,25 @@
 ---
-name: audio-transcriber
+name: voxnote
 description: Transcribe meeting audio (Kazakh/Russian/English incl. code-switching), extract action items, generate a 5-block Russian meeting protocol (MoM), and push tasks to Linear / Trello / Glide. Use when the user has an audio recording (mp3/wav/m4a) of a meeting, call, or interview and wants a transcript, tasks, a protocol, or those tasks sent to a task tracker.
 version: 0.1.0
-author: audio-transcriber
+author: voxnote
 license: see repository
 metadata:
   hermes:
     tags: [transcription, meetings, speech-to-text, tasks, protocol]
     category: productivity
 required_environment_variables:
-  - name: AUDIO_TRANSCRIBER_API_KEY
+  - name: VOXNOTE_API_KEY
     prompt: "Cloud STT provider API key (default provider: AssemblyAI)"
-    help: "Speech-to-text key. Default provider is AssemblyAI; set AUDIO_TRANSCRIBER_PROVIDER to Deepgram/Gladia/Speechmatics to use another (then this is that provider's key)."
+    help: "Speech-to-text key. Default provider is AssemblyAI; set VOXNOTE_PROVIDER to Deepgram/Gladia/Speechmatics to use another (then this is that provider's key)."
     required_for: [transcribe_audio]
-  - name: AUDIO_TRANSCRIBER_OPENROUTER_API_KEY
+  - name: VOXNOTE_OPENROUTER_API_KEY
     prompt: "OpenRouter API key (task extraction + protocol)"
     help: "Key from openrouter.ai. Used by extract_tasks and generate_protocol."
     required_for: [extract_tasks, generate_protocol]
 ---
 
-# Audio Transcriber
+# VoxNote
 
 Turn a meeting recording into a transcript, action items, and a shareable
 protocol — and optionally push the tasks into a task tracker.
@@ -36,15 +36,15 @@ Speech may be Kazakh / Russian / English, including code-switching — pass lang
 
 ## Prerequisites
 
-The `audio-transcriber` project (Python) must be on this machine. Two ways to call it:
+The `voxnote` project (Python) must be on this machine. Two ways to call it:
 
 - **Preferred — MCP server.** If its MCP server is registered (Hermes config
-  `mcp_servers.audio-transcriber`), the tools below appear in your tool list and
+  `mcp_servers.voxnote`), the tools below appear in your tool list and
   resolve API keys server-side.
 - **Fallback — CLI.** Run `python -m cli ...` from the project directory (`REPO`,
-  the path where `audio-transcriber` is checked out).
+  the path where `voxnote` is checked out).
 
-Required env vars: `AUDIO_TRANSCRIBER_API_KEY`, `AUDIO_TRANSCRIBER_OPENROUTER_API_KEY`
+Required env vars: `VOXNOTE_API_KEY`, `VOXNOTE_OPENROUTER_API_KEY`
 (see frontmatter; the MCP registration can supply them via its `env` block).
 
 ## Tools / Commands
@@ -108,8 +108,8 @@ metadata, and the local history-folder path. It is HMAC-SHA256 signed via the
 succeeds even if Hermes is unreachable.
 
 Enable by setting `hermes_webhook_enabled: true` (and a shared secret) in
-`~/.audio-transcriber/config.json` or via the
-`AUDIO_TRANSCRIBER_HERMES_WEBHOOK_*` env vars.
+`~/.voxnote/config.json` or via the
+`VOXNOTE_HERMES_WEBHOOK_*` env vars.
 
 For Hermes-side setup (gateway config, `hermes webhook subscribe`, health check,
 and the full config/env reference) see **`AGENTS.md §4`** in the repo.

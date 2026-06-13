@@ -63,7 +63,7 @@ def _make_args(*, json_flag=True, save=False, quiet=True):
 def test_cmd_transcribe_disabled_no_post(monkeypatch, capsys):
     """When Hermes is disabled (default), requests.post is never called."""
     # Ensure the env flag is NOT set
-    monkeypatch.delenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", raising=False)
+    monkeypatch.delenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", raising=False)
 
     with patch("cli.core.run_transcribe", return_value=_FakeResult()), \
          patch("cli.config.base_config", return_value={}), \
@@ -78,12 +78,12 @@ def test_cmd_transcribe_disabled_no_post(monkeypatch, capsys):
 
 def test_cmd_transcribe_enabled_post_called_once(monkeypatch, capsys):
     """When Hermes is enabled via env, post is called exactly once."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", "true")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", "true")
     monkeypatch.setenv(
-        "AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL",
+        "VOXNOTE_HERMES_WEBHOOK_URL",
         "http://localhost:8644/webhooks/audio-transcribed",
     )
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_SECRET", "test-secret")
 
     mock_resp = MagicMock()
     mock_resp.ok = True
@@ -106,10 +106,10 @@ def test_cmd_transcribe_enabled_post_called_once(monkeypatch, capsys):
 
 def test_cmd_transcribe_enabled_stdout_json_unchanged(monkeypatch, capsys):
     """--json output is byte-for-byte the TranscribeResult dict, no Hermes noise."""
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", "true")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET", "s")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", "true")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_SECRET", "s")
     monkeypatch.setenv(
-        "AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL",
+        "VOXNOTE_HERMES_WEBHOOK_URL",
         "http://localhost:8644/webhooks/audio-transcribed",
     )
 
@@ -137,10 +137,10 @@ def test_cmd_transcribe_request_exception_exit_ok(monkeypatch, capsys):
     """A requests.RequestException during webhook emit must not change exit code."""
     import requests as _requests
 
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_ENABLED", "true")
-    monkeypatch.setenv("AUDIO_TRANSCRIBER_HERMES_WEBHOOK_SECRET", "s")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", "true")
+    monkeypatch.setenv("VOXNOTE_HERMES_WEBHOOK_SECRET", "s")
     monkeypatch.setenv(
-        "AUDIO_TRANSCRIBER_HERMES_WEBHOOK_URL",
+        "VOXNOTE_HERMES_WEBHOOK_URL",
         "http://localhost:8644/webhooks/audio-transcribed",
     )
 

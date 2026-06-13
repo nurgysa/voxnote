@@ -1,7 +1,7 @@
 """config.example.json must not resurrect CUDA-era ghost keys.
 
 The template is not just documentation: utils._seed_default_config copies
-it into ~/.audio-transcriber/config.json on every fresh frozen install, so
+it into ~/.voxnote/config.json on every fresh frozen install, so
 dead keys here propagate into real user configs. These keys died with the
 2026-05-28 cloud-only rip-out (#103 removed the last plumbing; the no-op
 normalize toggle followed once its checkbox was removed);
