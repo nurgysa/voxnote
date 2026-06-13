@@ -10,6 +10,7 @@ and decoupled from the directory store.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
@@ -210,6 +211,45 @@ class ProcessingQueue:
             self._set_stage(
                 item, "protocol", StageStatus.ERROR,
                 error_stage="protocol", error_message=humanize(e),
+            )
+            return False
+
+    def _stage_tasks(self, item: QueueItem) -> bool:
+        """Extract a task DRAFT → tasks_raw.json → AWAITING_REVIEW. No send."""
+        self._set_stage(item, "tasks", StageStatus.RUNNING)
+        try:
+            cfg = self._config_loader()
+            openrouter_key = cfg.get("openrouter_api_key")
+            if not openrouter_key:
+                raise ValueError("Нет ключа OpenRouter.")
+            language = item.options.get("language") or None
+            if language == "auto":
+                language = None
+            model = cfg.get("openrouter_model") or core.DEFAULT_MODEL
+            result = core.run_extract_tasks(
+                transcript=self._read_transcript(item.meeting_folder),
+                lang=language,
+                model=model,
+                openrouter_key=openrouter_key,
+            )
+            tasks = result.get("tasks", [])
+            payload = {
+                "tasks": [t.to_dict() for t in tasks],
+                "corrections": result.get("corrections", 0),
+                "model": result.get("model", model),
+            }
+            target = os.path.join(item.meeting_folder, "tasks_raw.json")
+            with open(target, "w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=False, indent=2)
+            self._set_stage(item, "tasks", StageStatus.AWAITING_REVIEW)
+            return True
+        except Exception as e:  # worker-thread boundary — see _stage_transcribe.
+            from tasks.errors import humanize
+
+            logger.exception("task-draft stage failed for item %s", item.id)
+            self._set_stage(
+                item, "tasks", StageStatus.ERROR,
+                error_stage="tasks", error_message=humanize(e),
             )
             return False
 

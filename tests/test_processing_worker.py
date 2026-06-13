@@ -157,3 +157,37 @@ def test_protocol_stage_llm_error_halts(tmp_path, monkeypatch):
     live = q.snapshot()[0]
     assert live.protocol == StageStatus.ERROR
     assert live.error_stage == "protocol"
+
+
+def test_tasks_stage_writes_raw_and_awaits_review(tmp_path, monkeypatch):
+    import json
+
+    from processing.model import StageStatus
+    from tasks.schema import Task
+
+    fake = {"tasks": [Task(title="Do X")], "corrections": 1, "model": "m"}
+    monkeypatch.setattr("cli.core.run_extract_tasks", lambda *a, **k: fake)
+    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
+    it = _done_meeting(q, tmp_path)
+    ok = q._stage_tasks(it)
+    assert ok is True
+    assert q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW
+    raw_path = tmp_path / "meetings" / "2026-06-13_12-00-00_m" / "tasks_raw.json"
+    data = json.loads(raw_path.read_text(encoding="utf-8"))
+    assert data["tasks"][0]["title"] == "Do X"
+    assert data["corrections"] == 1
+    assert data["model"] == "m"
+
+
+def test_tasks_stage_error_halts(tmp_path, monkeypatch):
+    from processing.model import StageStatus
+
+    def _boom(*a, **k):
+        raise RuntimeError("OpenRouter не вернул валидных задач")
+    monkeypatch.setattr("cli.core.run_extract_tasks", _boom)
+    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
+    it = _done_meeting(q, tmp_path)
+    ok = q._stage_tasks(it)
+    assert ok is False
+    assert q.snapshot()[0].tasks == StageStatus.ERROR
+    assert q.snapshot()[0].error_stage == "tasks"
