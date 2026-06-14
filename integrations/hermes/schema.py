@@ -24,6 +24,9 @@ def build_audio_transcribed_event(
     ideas: list | None = None,
     decisions: list | None = None,
     protocol: str | None = None,
+    note_path: str | None = None,
+    source_path: str | None = None,
+    project: dict | None = None,
     created_at: str | None = None,
 ) -> dict:
     """Build a JSON-serializable ``audio.transcribed`` event dict.
@@ -43,6 +46,12 @@ def build_audio_transcribed_event(
         ideas: Extracted idea list. Defaults to ``[]``.
         decisions: Extracted decision list. Defaults to ``[]``.
         protocol: Optional generated protocol text.
+        note_path: Path to the meeting transcript.md (populated by the
+            processing-queue worker in PR-B2).
+        source_path: Path to the audio file in Google Drive sources
+            (populated by the processing-queue worker after archive_audio).
+        project: Dict with ``id`` and ``name`` keys identifying the
+            project this meeting belongs to. ``None`` when not in a queue.
         created_at: UTC timestamp string ``YYYY-MM-DDTHH:MM:SSZ``. When
             omitted, current timezone-aware UTC time is used.
 
@@ -65,14 +74,17 @@ def build_audio_transcribed_event(
 
     return {
         "event_type": "audio.transcribed",
-        "version": "1.0",
+        "version": "1.1",
         "source": "voxnote",
         "routing_hint": routing_hint,
         "audio": {
             "filename": filename,
             "path": path_str,
             "history_folder": history_folder,
+            "note_path": note_path,
+            "source_path": source_path,
         },
+        "project": project,
         "transcript": {
             "raw": transcript_text,
             "segments": segments if segments is not None else [],

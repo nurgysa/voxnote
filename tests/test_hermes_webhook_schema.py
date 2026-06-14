@@ -1,6 +1,6 @@
 """Tests for the Hermes webhook event payload builder.
 
-All eight spec §11.2 schema behaviors are covered here.
+All schema behaviors are covered here (v1.1 as of PR-B1 Task 2).
 Pure unit tests — no network, no filesystem I/O beyond module import.
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ from integrations.hermes.schema import build_audio_transcribed_event
 def test_required_top_level_fields_present():
     payload = build_audio_transcribed_event(transcript_text="hello")
     for key in ("event_type", "version", "source", "routing_hint",
-                "audio", "transcript", "analysis", "meta"):
+                "audio", "project", "transcript", "analysis", "meta"):
         assert key in payload, f"Missing top-level field: {key!r}"
 
 
@@ -25,11 +25,11 @@ def test_event_type_value():
     assert payload["event_type"] == "audio.transcribed"
 
 
-# ── 3. version is exactly "1.0" ───────────────────────────────────────
+# ── 3. version is exactly "1.1" ───────────────────────────────────────
 
 def test_version_value():
     payload = build_audio_transcribed_event(transcript_text="x")
-    assert payload["version"] == "1.0"
+    assert payload["version"] == "1.1"
 
 
 # ── source is exactly "voxnote" ────────────────────────────
@@ -132,7 +132,7 @@ def test_full_spec_example():
         created_at="2026-06-11T12:00:00Z",
     )
     assert payload["event_type"] == "audio.transcribed"
-    assert payload["version"] == "1.0"
+    assert payload["version"] == "1.1"
     assert payload["source"] == "voxnote"
     assert payload["audio"]["filename"] == "meeting.m4a"
     assert payload["transcript"]["raw"] == "Привет мир"

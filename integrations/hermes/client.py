@@ -173,6 +173,9 @@ def emit_audio_transcribed_event(
     ideas: list | None = None,
     decisions: list | None = None,
     protocol: str | None = None,
+    note_path: str | None = None,
+    source_path: str | None = None,
+    project: dict | None = None,
 ) -> HermesWebhookResult:
     """Build an ``audio.transcribed`` payload and POST it to Hermes.
 
@@ -193,6 +196,9 @@ def emit_audio_transcribed_event(
         ideas=ideas,
         decisions=decisions,
         protocol=protocol,
+        note_path=note_path,
+        source_path=source_path,
+        project=project,
     )
     return post_event(payload, config)
 

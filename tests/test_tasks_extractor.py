@@ -41,13 +41,18 @@ def _llm_response(tasks: list[dict]) -> str:
 
 
 def test_parse_extracts_well_formed_task():
+    # Near-future due_date computed at run time: the extractor clears due_dates
+    # that have slipped into the past (staleness guard), so a hardcoded date is a
+    # time-bomb that fails the day it expires. Keep it dynamic and always-valid.
+    from datetime import date, timedelta
+    future = (date.today() + timedelta(days=30)).isoformat()
     raw = _llm_response([{
         "title": "Починить login",
         "description": "Айдар сообщил жалобы.",
         "priority": "high",
         "assignee_id": "u-aidar",
         "label_ids": ["l-bug"],
-        "due_date": "2026-05-15",
+        "due_date": future,
     }])
     tasks, corrections = parse_and_validate(raw, _members(), _labels())
     assert len(tasks) == 1
@@ -59,7 +64,7 @@ def test_parse_extracts_well_formed_task():
     assert t.assignee_name == "Айдар"   # filled from team context
     assert t.label_ids == ["l-bug"]
     assert t.label_names == ["bug"]
-    assert t.due_date == "2026-05-15"
+    assert t.due_date == future
 
 
 def test_parse_strips_json_codefences():
