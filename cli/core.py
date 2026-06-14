@@ -67,6 +67,9 @@ def run_transcribe(
     diarize: bool = False,
     hotwords: str | None = None,
     denoise: bool = False,
+    num_speakers: int | None = None,
+    min_speakers: int | None = None,
+    max_speakers: int | None = None,
     on_status=None,
 ) -> TranscribeOutput:
     """Transcribe one audio file via a cloud provider.
@@ -92,6 +95,9 @@ def run_transcribe(
         denoise_audio=denoise,
         cloud_provider=provider,
         cloud_api_key=api_key,
+        num_speakers=num_speakers,
+        min_speakers=min_speakers,
+        max_speakers=max_speakers,
         on_status=on_status,
     )
     segments = transcriber.last_segments or []
