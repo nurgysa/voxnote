@@ -147,6 +147,39 @@ def format_srt(segments: list[dict]) -> str:
     return "\n\n".join(blocks) + "\n"
 
 
+def format_diarized_markdown(
+    segments: list[dict], speaker_map: dict[str, str] | None = None
+) -> str:
+    """Obsidian-friendly diarized body: ``**Speaker:** text`` blocks, consecutive
+    same-speaker segments merged, NO timecodes (those live in the SRT/VTT export).
+    No speakers anywhere → plain paragraphs. Pure."""
+    if not segments:
+        return ""
+    if speaker_map is None:
+        speaker_map = _build_speaker_map(segments)
+
+    blocks: list[str] = []
+    prev: str | None = None
+    texts: list[str] = []
+
+    def _flush() -> None:
+        body = " ".join(t.strip() for t in texts if t and t.strip())
+        if body:
+            blocks.append(f"**{prev}:** {body}" if prev else body)
+
+    for seg in segments:
+        raw = seg.get("speaker")
+        speaker = speaker_map.get(raw, str(raw)) if raw else None
+        if speaker == prev and prev is not None:
+            texts.append(seg.get("text", ""))
+            continue
+        _flush()
+        texts = [seg.get("text", "")]
+        prev = speaker
+    _flush()
+    return "\n\n".join(blocks)
+
+
 def apply_speaker_names(text: str, name_by_label: dict[str, str]) -> str:
     """Replace bracketed friendly speaker labels with real names.
 
