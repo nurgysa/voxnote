@@ -5,6 +5,10 @@ config.json and directory.json. Atomic write (tmp + os.replace), mirroring
 directory/store.py. build_view derives the displayed meeting list fresh from the
 meetings dir (a two-level scan; project read from each meeting's speakers.json)
 and overlays the active items. No Tk, no heavy deps; safe to import headlessly.
+
+PR-B2: a meeting's status is binary on disk — transcript.md present ⇒ DONE,
+else PENDING (VoxNote is transcribe-only). Hermes's downstream progress shows as
+display badges (protocol.md / tasks.md presence), never as queue status.
 """
 from __future__ import annotations
 
@@ -45,30 +49,31 @@ def save_active(items: list[QueueItem], path: Path | str | None = None) -> None:
     os.replace(tmp, p)
 
 
-def stage_status_from_folder(folder: str) -> dict:
-    """Derive transcript/protocol/tasks StageStatus from which files exist."""
+def _has(folder: str, name: str) -> bool:
+    return os.path.isfile(os.path.join(folder, name))
 
-    def has(name: str) -> bool:
-        return os.path.isfile(os.path.join(folder, name))
 
-    if has("transcript.md") or has("transcript.txt"):
-        transcript = StageStatus.DONE
-    else:
-        transcript = StageStatus.PENDING
-    protocol = StageStatus.DONE if has("protocol.md") else StageStatus.PENDING
-    if has("tasks.json"):
-        tasks = StageStatus.DONE
-    elif has("tasks_raw.json"):
-        tasks = StageStatus.AWAITING_REVIEW
-    else:
-        tasks = StageStatus.PENDING
-    return {"transcript": transcript, "protocol": protocol, "tasks": tasks}
+def meeting_status_from_folder(folder: str) -> StageStatus:
+    """DONE when a transcript exists in the folder (VoxNote's only job), else
+    PENDING. Hermes's protocol/tasks are surfaced as badges, not status."""
+    if _has(folder, "transcript.md") or _has(folder, "transcript.txt"):
+        return StageStatus.DONE
+    return StageStatus.PENDING
+
+
+def hermes_badges_from_folder(folder: str) -> dict:
+    """Hermes downstream-progress display flags: has Hermes written protocol.md /
+    tasks.md into this meeting folder yet? Pure file-presence, never status."""
+    return {
+        "has_protocol": _has(folder, "protocol.md"),
+        "has_tasks": _has(folder, "tasks.md"),
+    }
 
 
 def is_meeting_folder(folder: str) -> bool:
     """True if the folder holds meeting artifacts (so it is a meeting, not a
-    project container). create_history_entry writes transcript.md +
-    description.md together, so these markers are reliable for real meetings."""
+    project container). VoxNote writes transcript.md; legacy meetings may also
+    carry description.md / segments.json, kept as markers for back-compat."""
     for marker in ("transcript.md", "transcript.txt", "description.md", "segments.json"):
         if os.path.isfile(os.path.join(folder, marker)):
             return True
@@ -76,8 +81,8 @@ def is_meeting_folder(folder: str) -> bool:
 
 
 def _row_from_folder(folder: str) -> QueueItem:
-    stages = stage_status_from_folder(folder)
     speakers = load_speakers(folder)
+    badges = hermes_badges_from_folder(folder)
     name = os.path.basename(os.path.normpath(folder))
     return QueueItem(
         id=folder,
@@ -87,9 +92,9 @@ def _row_from_folder(folder: str) -> QueueItem:
         meeting_folder=folder,
         auto=False,
         project_id=(speakers.get("project_id") or None),
-        transcript=stages["transcript"],
-        protocol=stages["protocol"],
-        tasks=stages["tasks"],
+        status=meeting_status_from_folder(folder),
+        has_protocol=badges["has_protocol"],
+        has_tasks=badges["has_tasks"],
     )
 
 

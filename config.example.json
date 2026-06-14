@@ -24,6 +24,8 @@
   "gdrive_root_folder_id": "",
   "appearance_mode": "Тёмная",
   "meetings_dir": "",
+  "sources_dir": "",
+  "inbox_dir": "",
   "hermes_webhook_enabled": false,
   "hermes_webhook_url": "http://localhost:8644/webhooks/audio-transcribed",
   "hermes_webhook_secret": "",

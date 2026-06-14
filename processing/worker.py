@@ -1,8 +1,11 @@
 """Serial processing-queue worker — the third frontend over cli.core.
 
-A single daemon thread carries each auto=True item through transcribe ->
-protocol -> task-draft, calling the same cli.core.run_* functions the CLI and
-GUI use, writing artifacts into the meeting folder, and persisting queue.json.
+A single daemon thread carries each auto=True item through ONE stage:
+transcribe → archive audio to Drive sources → write transcript.md into the
+Obsidian vault → persist a segments sidecar → fire a best-effort Hermes nudge.
+VoxNote is transcribe-only; Hermes owns protocol/tasks/approve/send downstream
+(spec: docs/superpowers/specs/2026-06-14-voxnote-transcription-queue-design.md).
+
 NO Tk: the thread mutates state under a lock and persists; the UI reads via
 snapshot() and the injected on_change callback. Config and project resolution
 are injected (config_loader / resolve_project) so this module stays headless
@@ -10,20 +13,39 @@ and decoupled from the directory store.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
+import re
 import threading
 from collections.abc import Callable
 from datetime import datetime
 
 from cli import core
-from processing import layout, store
+from processing import preflight, sources, store, vault_note
 from processing.model import QueueItem, StageStatus
 
 logger = logging.getLogger(__name__)
 
 _IDLE_WAIT_S = 1.0
+_SLUG_ILLEGAL = re.compile(r"[^\w]+", re.UNICODE)
+
+
+def _slug(text: str) -> str:
+    """Filesystem-safe meeting slug from a title: Unicode letters/digits kept,
+    runs of anything else → '-'. Falls back to 'meeting' when empty."""
+    base = os.path.splitext(text)[0].strip().lower()
+    base = _SLUG_ILLEGAL.sub("-", base).strip("-_")
+    return base or "meeting"
+
+
+def _parse_created(created_at: str) -> tuple[str, str, str]:
+    """(date 'YYYY-MM-DD', time 'HH:MM', hhmm 'HHMM') from an ISO timestamp.
+    Tolerant: returns ('', '', '') when unparseable."""
+    try:
+        dt = datetime.fromisoformat(created_at)
+    except (ValueError, TypeError):
+        return "", "", ""
+    return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M"), dt.strftime("%H%M")
 
 
 class ProcessingQueue:
@@ -71,6 +93,7 @@ class ProcessingQueue:
             options=options,
             auto=True,
             project_id=options.get("project_id"),
+            source=options.get("source") or "pick",
         )
         with self._lock:
             self._items.append(item)
@@ -82,12 +105,9 @@ class ProcessingQueue:
     def retry(self, item_id: str) -> None:
         with self._lock:
             for it in self._items:
-                if it.id == item_id:
-                    it.error_stage = None
+                if it.id == item_id and it.status == StageStatus.ERROR:
+                    it.status = StageStatus.PENDING
                     it.error_message = None
-                    for stage in ("transcript", "protocol", "tasks"):
-                        if getattr(it, stage) == StageStatus.ERROR:
-                            setattr(it, stage, StageStatus.PENDING)
                     it.auto = True
                     self._persist_locked()
                     break
@@ -107,28 +127,26 @@ class ProcessingQueue:
         # Caller holds self._lock. queue.json carries active items only.
         store.save_active([it for it in self._items if it.auto], self._queue_path)
 
-    def _set_stage(
-        self,
-        item: QueueItem,
-        stage: str,
-        status: StageStatus,
-        *,
-        error_stage: str | None = None,
-        error_message: str | None = None,
+    def _set_status(
+        self, item: QueueItem, status: StageStatus, *, error_message: str | None = None
     ) -> None:
         with self._lock:
-            setattr(item, stage, status)
-            item.error_stage = error_stage
+            item.status = status
             item.error_message = error_message
             self._persist_locked()
         self._notify()
 
-    def _stage_transcribe(self, item: QueueItem) -> bool:
-        """Transcribe → create meeting folder → place under project. True to
-        continue, False to halt the item (stage error)."""
-        self._set_stage(item, "transcript", StageStatus.RUNNING)
+    def _process_item(self, item: QueueItem) -> None:
+        """Transcribe → archive audio (sources) → write transcript.md (vault) →
+        speakers.json + segments sidecar → best-effort Hermes nudge → DONE. Any
+        failure halts THIS item (ERROR) but never kills the daemon."""
+        self._set_status(item, StageStatus.RUNNING)
         try:
             import utils
+            from integrations.hermes.client import (
+                emit_audio_transcribed_event,
+                get_hermes_webhook_config,
+            )
 
             cfg = self._config_loader()
             opts = item.options
@@ -139,6 +157,15 @@ class ProcessingQueue:
             language = opts.get("language") or None
             if language == "auto":
                 language = None
+
+            info = preflight.probe(item.audio_path)
+            duration_s = info.get("duration_s")
+            size_bytes = info.get("size_bytes", 0)
+            ok, reason = preflight.provider_limit_ok(provider, duration_s, size_bytes)
+            if not ok:
+                raise ValueError(reason)
+            denoise = preflight.should_denoise(duration_s, bool(opts.get("denoise")))
+
             out = core.run_transcribe(
                 item.audio_path,
                 provider=provider,
@@ -146,131 +173,92 @@ class ProcessingQueue:
                 language=language,
                 diarize=bool(opts.get("diarize")),
                 hotwords=opts.get("hotwords") or None,
-                denoise=bool(opts.get("denoise")),
+                denoise=denoise,
+                num_speakers=opts.get("num_speakers"),
+                min_speakers=opts.get("min_speakers"),
+                max_speakers=opts.get("max_speakers"),
             )
-            folder = utils.create_history_entry(
-                item.audio_path, out.text, out.language, f"cloud:{provider}",
-            )
-            utils.save_segments(folder, out.segments)
+
+            date, time_str, hhmm = _parse_created(item.created_at)
+            base = "_".join(p for p in (date, hhmm, _slug(item.title)) if p) or item.id
             project = self._resolve_project(opts.get("project_id"))
-            folder = layout.assign_project(folder, project, self._meetings_dir)
+
+            # Archive only AFTER a successful transcribe, so a failure never
+            # strands or loses audio (spec §Failure-handling, ordering). The
+            # note then records the FINAL Drive path in a single write — no
+            # second pass over transcript.md.
+            sources_dir = (cfg.get("sources_dir") or "").strip()
+            source_path: str | None = None
+            if sources_dir:
+                try:
+                    source_path = sources.archive_audio(
+                        item.audio_path, sources_dir, base,
+                        move=item.source in ("record", "inbox"),
+                    )
+                except OSError as e:
+                    # Archiving is non-fatal: the note records the original path
+                    # instead (spec §Failure-handling). Audio stays put.
+                    logger.warning("audio archive failed for %s: %s", item.id, e)
+
+            hermes_cfg = get_hermes_webhook_config(cfg)
+            content = vault_note.render_transcript_note(
+                segments=out.segments,
+                title=item.title,
+                project_name=getattr(project, "name", None),
+                date=date,
+                time=time_str,
+                participants=[],
+                provider=provider,
+                language=out.language,
+                voxnote_id=item.id,
+                source_path=source_path or item.audio_path,
+                nudged=hermes_cfg.enabled,
+            )
+            note_path = vault_note.write_transcript_note(
+                self._meetings_dir, project, base, content
+            )
+            folder = os.path.dirname(note_path)
             with self._lock:
                 item.meeting_folder = folder
-            if utils.should_delete_after_transcription(cfg, item.audio_path):
-                try:
-                    os.remove(item.audio_path)
-                except OSError as e:
-                    logger.warning("could not delete recording %s: %s", item.audio_path, e)
-            self._set_stage(item, "transcript", StageStatus.DONE)
-            return True
-        except Exception as e:  # worker-thread boundary: any failure halts the
+                item.source_path = source_path
+            # Keep speakers.json for «Извлечь задачи» + directory compat, and so
+            # store.build_view reads the project back from disk.
+            utils.save_speakers(folder, opts.get("project_id"), [], {})
+            utils.save_segments_sidecar(item.id, out.segments)
+
+            if hermes_cfg.enabled:
+                result = emit_audio_transcribed_event(
+                    config=hermes_cfg,
+                    transcript_text=out.text,
+                    audio_path=item.audio_path,
+                    history_folder=folder,
+                    note_path=note_path,
+                    source_path=source_path,
+                    project=(
+                        {"id": project.id, "name": project.name} if project else None
+                    ),
+                    provider=provider,
+                    language=out.language,
+                )
+                with self._lock:
+                    item.nudge_delivered = bool(result.sent)
+
+            self._set_status(item, StageStatus.DONE)
+        except Exception as e:  # worker-thread boundary: any failure halts THIS
             # item but must never kill the daemon. Humanize for the UI; the
-            # stage's ✗! is the user signal. (CLAUDE.md broad-except: justified
+            # ERROR status is the user signal. (CLAUDE.md broad-except: justified
             # boundary, tracked in test_broad_except_ratchet.)
             from tasks.errors import humanize
 
-            logger.exception("transcribe stage failed for item %s", item.id)
-            self._set_stage(
-                item, "transcript", StageStatus.ERROR,
-                error_stage="transcript", error_message=humanize(e),
-            )
-            return False
-
-    def _read_transcript(self, folder: str) -> str:
-        for name in ("transcript.md", "transcript.txt"):
-            path = os.path.join(folder, name)
-            if os.path.isfile(path):
-                with open(path, encoding="utf-8") as f:
-                    return f.read()
-        raise FileNotFoundError(f"transcript not found in {folder}")
-
-    def _stage_protocol(self, item: QueueItem) -> bool:
-        self._set_stage(item, "protocol", StageStatus.RUNNING)
-        try:
-            cfg = self._config_loader()
-            openrouter_key = cfg.get("openrouter_api_key")
-            if not openrouter_key:
-                raise ValueError("Нет ключа OpenRouter.")
-            language = item.options.get("language") or None
-            if language == "auto":
-                language = None
-            result = core.run_protocol(
-                transcript=self._read_transcript(item.meeting_folder),
-                lang=language,
-                model=cfg.get("openrouter_model") or core.DEFAULT_MODEL,
-                openrouter_key=openrouter_key,
-            )
-            with open(os.path.join(item.meeting_folder, "protocol.md"), "w", encoding="utf-8") as f:
-                f.write(result.markdown)
-            self._set_stage(item, "protocol", StageStatus.DONE)
-            return True
-        except Exception as e:  # worker-thread boundary — see _stage_transcribe.
-            from tasks.errors import humanize
-
-            logger.exception("protocol stage failed for item %s", item.id)
-            self._set_stage(
-                item, "protocol", StageStatus.ERROR,
-                error_stage="protocol", error_message=humanize(e),
-            )
-            return False
-
-    def _stage_tasks(self, item: QueueItem) -> bool:
-        """Extract a task DRAFT → tasks_raw.json → AWAITING_REVIEW. No send."""
-        self._set_stage(item, "tasks", StageStatus.RUNNING)
-        try:
-            cfg = self._config_loader()
-            openrouter_key = cfg.get("openrouter_api_key")
-            if not openrouter_key:
-                raise ValueError("Нет ключа OpenRouter.")
-            language = item.options.get("language") or None
-            if language == "auto":
-                language = None
-            model = cfg.get("openrouter_model") or core.DEFAULT_MODEL
-            result = core.run_extract_tasks(
-                transcript=self._read_transcript(item.meeting_folder),
-                lang=language,
-                model=model,
-                openrouter_key=openrouter_key,
-            )
-            tasks = result.get("tasks", [])
-            payload = {
-                "tasks": [t.to_dict() for t in tasks],
-                "corrections": result.get("corrections", 0),
-                "model": result.get("model", model),
-            }
-            target = os.path.join(item.meeting_folder, "tasks_raw.json")
-            with open(target, "w", encoding="utf-8") as f:
-                json.dump(payload, f, ensure_ascii=False, indent=2)
-            self._set_stage(item, "tasks", StageStatus.AWAITING_REVIEW)
-            return True
-        except Exception as e:  # worker-thread boundary — see _stage_transcribe.
-            from tasks.errors import humanize
-
-            logger.exception("task-draft stage failed for item %s", item.id)
-            self._set_stage(
-                item, "tasks", StageStatus.ERROR,
-                error_stage="tasks", error_message=humanize(e),
-            )
-            return False
+            logger.exception("processing failed for item %s", item.id)
+            self._set_status(item, StageStatus.ERROR, error_message=humanize(e))
 
     def _next_auto_item(self) -> QueueItem | None:
         with self._lock:
             for it in self._items:
-                if it.auto and (
-                    it.transcript == StageStatus.PENDING
-                    or it.protocol == StageStatus.PENDING
-                    or it.tasks == StageStatus.PENDING
-                ):
+                if it.auto and it.status == StageStatus.PENDING:
                     return it
         return None
-
-    def _process_item(self, item: QueueItem) -> None:
-        if item.transcript == StageStatus.PENDING and not self._stage_transcribe(item):
-            return
-        if item.protocol == StageStatus.PENDING and not self._stage_protocol(item):
-            return
-        if item.tasks == StageStatus.PENDING:
-            self._stage_tasks(item)
 
     def _run(self) -> None:
         while not self._stop:

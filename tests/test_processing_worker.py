@@ -1,5 +1,8 @@
 import json
+import os
+import types
 
+from directory.schema import Project
 from processing.model import StageStatus
 from processing.worker import ProcessingQueue
 
@@ -16,29 +19,73 @@ def _queue(tmp_path, **over):
     return ProcessingQueue(**kwargs)
 
 
+class _Out:
+    def __init__(self, text="hello", language="ru", segments=None):
+        self.text = text
+        self.language = language
+        self.segments = segments if segments is not None else [
+            {"speaker": "A", "text": "hi"}
+        ]
+
+
+def _patch_happy(monkeypatch, *, duration_s=60.0, size_bytes=1000, capture=None):
+    """Patch preflight.probe + cli.core.run_transcribe for a happy run. When
+    ``capture`` is a dict, run_transcribe records its kwargs there."""
+    monkeypatch.setattr(
+        "processing.preflight.probe",
+        lambda p: {"duration_s": duration_s, "size_bytes": size_bytes},
+    )
+
+    def _fake_transcribe(*a, **k):
+        if capture is not None:
+            capture.update(k)
+        return _Out()
+
+    monkeypatch.setattr("cli.core.run_transcribe", _fake_transcribe)
+
+
+def _sandbox_home(tmp_path, monkeypatch):
+    """Keep the segments sidecar (~/.voxnote/segments) inside tmp_path."""
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+
+def _audio(tmp_path, name="rec.m4a"):
+    p = tmp_path / name
+    p.write_bytes(b"\x00\x00")
+    return str(p)
+
+
+# ── enqueue / persistence (no processing) ──
+
 def test_enqueue_appends_and_persists(tmp_path):
     q = _queue(tmp_path)
     item_id = q.enqueue("/audio/a.m4a", {"provider": "AssemblyAI", "project_id": "p1"})
-
     snap = q.snapshot()
     assert len(snap) == 1
     assert snap[0].id == item_id
     assert snap[0].audio_path == "/audio/a.m4a"
     assert snap[0].auto is True
     assert snap[0].project_id == "p1"
-    assert snap[0].transcript == StageStatus.PENDING
-
+    assert snap[0].source == "pick"
+    assert snap[0].status == StageStatus.PENDING
     with open(tmp_path / "queue.json", encoding="utf-8") as f:
         data = json.load(f)
     assert data["items"][0]["id"] == item_id
+
+
+def test_enqueue_captures_source(tmp_path):
+    q = _queue(tmp_path)
+    q.enqueue("/audio/a.m4a", {"source": "record"})
+    assert q.snapshot()[0].source == "record"
 
 
 def test_snapshot_is_a_deep_copy(tmp_path):
     q = _queue(tmp_path)
     q.enqueue("/audio/a.m4a", {})
     snap = q.snapshot()
-    snap[0].transcript = StageStatus.DONE
-    assert q.snapshot()[0].transcript == StageStatus.PENDING
+    snap[0].status = StageStatus.DONE
+    assert q.snapshot()[0].status == StageStatus.PENDING
 
 
 def test_on_change_fires_on_enqueue(tmp_path):
@@ -55,225 +102,252 @@ def test_loads_existing_active_items(tmp_path):
     assert len(q2.snapshot()) == 1
 
 
-def _fake_transcribe_output(text="hello", language="ru", segments=None):
-    class _Out:
-        pass
-    o = _Out()
-    o.text = text
-    o.language = language
-    o.segments = segments if segments is not None else [{"speaker": "A", "text": "hi"}]
-    return o
+# ── _process_item: happy path + archive variants ──
 
-
-def test_transcribe_stage_creates_folder_and_marks_done(tmp_path, monkeypatch):
-    import os
-
-    from processing.model import StageStatus
+def test_process_item_writes_note_and_copies_for_pick(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    from utils import load_segments_sidecar
 
     meetings = tmp_path / "meetings"
-    meetings.mkdir()
-    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
-    monkeypatch.setattr(
-        "cli.core.run_transcribe",
-        lambda *a, **k: _fake_transcribe_output(),
-    )
-    audio = tmp_path / "rec.m4a"
-    audio.write_bytes(b"\x00\x00")
-
+    sources_dir = tmp_path / "sources"
+    audio = _audio(tmp_path)
+    proj = Project(name="Kitng", id="p1")
     q = _queue(
         tmp_path,
         meetings_dir=str(meetings),
-        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
-    )
-    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
-    ok = q._stage_transcribe(q._items[0])
-
-    assert ok is True
-    live = q.snapshot()[0]
-    assert live.transcript == StageStatus.DONE
-    assert live.meeting_folder and os.path.isdir(live.meeting_folder)
-    assert os.path.isfile(os.path.join(live.meeting_folder, "transcript.md"))
-    assert os.path.isfile(os.path.join(live.meeting_folder, "segments.json"))
-
-
-def test_transcribe_stage_missing_key_errors_and_halts(tmp_path, monkeypatch):
-    from processing.model import StageStatus
-
-    meetings = tmp_path / "meetings"
-    meetings.mkdir()
-    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
-    audio = tmp_path / "rec.m4a"
-    audio.write_bytes(b"\x00")
-    q = _queue(tmp_path, meetings_dir=str(meetings), config_loader=lambda: {})
-    q.enqueue(str(audio), {"provider": "AssemblyAI"})
-    ok = q._stage_transcribe(q._items[0])
-    assert ok is False
-    live = q.snapshot()[0]
-    assert live.transcript == StageStatus.ERROR
-    assert live.error_stage == "transcript"
-    assert live.error_message
-
-
-def _done_meeting(q, tmp_path, folder_name="2026-06-13_12-00-00_m"):
-    """Create a transcript-DONE item with a real folder + transcript.md."""
-    from processing.model import StageStatus
-
-    folder = tmp_path / "meetings" / folder_name
-    folder.mkdir(parents=True)
-    (folder / "transcript.md").write_text("the transcript", encoding="utf-8")
-    q.enqueue("/audio/x.m4a", {"language": "ru"})
-    it = q._items[0]
-    it.meeting_folder = str(folder)
-    it.transcript = StageStatus.DONE
-    return it
-
-
-def test_protocol_stage_writes_protocol_md(tmp_path, monkeypatch):
-    from processing.model import StageStatus
-
-    class _Proto:
-        markdown = "# Протокол\n\n- пункт"
-    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
-    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
-    it = _done_meeting(q, tmp_path)
-    ok = q._stage_protocol(it)
-    assert ok is True
-    assert q.snapshot()[0].protocol == StageStatus.DONE
-    assert (tmp_path / "meetings" / "2026-06-13_12-00-00_m" / "protocol.md").read_text(
-        encoding="utf-8"
-    ) == "# Протокол\n\n- пункт"
-
-
-def test_protocol_stage_llm_error_halts(tmp_path, monkeypatch):
-    from processing.model import StageStatus
-
-    def _boom(*a, **k):
-        raise RuntimeError("OpenRouter вернул 500")
-    monkeypatch.setattr("cli.core.run_protocol", _boom)
-    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
-    it = _done_meeting(q, tmp_path)
-    ok = q._stage_protocol(it)
-    assert ok is False
-    live = q.snapshot()[0]
-    assert live.protocol == StageStatus.ERROR
-    assert live.error_stage == "protocol"
-
-
-def test_tasks_stage_writes_raw_and_awaits_review(tmp_path, monkeypatch):
-    import json
-
-    from processing.model import StageStatus
-    from tasks.schema import Task
-
-    fake = {"tasks": [Task(title="Do X")], "corrections": 1, "model": "m"}
-    monkeypatch.setattr("cli.core.run_extract_tasks", lambda *a, **k: fake)
-    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
-    it = _done_meeting(q, tmp_path)
-    ok = q._stage_tasks(it)
-    assert ok is True
-    assert q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW
-    raw_path = tmp_path / "meetings" / "2026-06-13_12-00-00_m" / "tasks_raw.json"
-    data = json.loads(raw_path.read_text(encoding="utf-8"))
-    assert data["tasks"][0]["title"] == "Do X"
-    assert data["corrections"] == 1
-    assert data["model"] == "m"
-
-
-def test_tasks_stage_error_halts(tmp_path, monkeypatch):
-    from processing.model import StageStatus
-
-    def _boom(*a, **k):
-        raise RuntimeError("OpenRouter не вернул валидных задач")
-    monkeypatch.setattr("cli.core.run_extract_tasks", _boom)
-    q = _queue(tmp_path, config_loader=lambda: {"openrouter_api_key": "or-key"})
-    it = _done_meeting(q, tmp_path)
-    ok = q._stage_tasks(it)
-    assert ok is False
-    assert q.snapshot()[0].tasks == StageStatus.ERROR
-    assert q.snapshot()[0].error_stage == "tasks"
-
-
-def test_process_item_walks_all_stages(tmp_path, monkeypatch):
-    import os
-
-    from processing.model import StageStatus
-    from tasks.schema import Task
-
-    meetings = tmp_path / "meetings"
-    meetings.mkdir()
-    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
-    monkeypatch.setattr("cli.core.run_transcribe", lambda *a, **k: _fake_transcribe_output())
-
-    class _Proto:
-        markdown = "# P"
-    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
-    monkeypatch.setattr(
-        "cli.core.run_extract_tasks",
-        lambda *a, **k: {"tasks": [Task(title="T")], "corrections": 0, "model": "m"},
-    )
-    audio = tmp_path / "r.m4a"
-    audio.write_bytes(b"\x00")
-    q = _queue(
-        tmp_path, meetings_dir=str(meetings),
+        resolve_project=lambda pid: proj if pid == "p1" else None,
         config_loader=lambda: {
-            "cloud_api_keys": {"AssemblyAI": "k"}, "openrouter_api_key": "or",
+            "cloud_api_keys": {"AssemblyAI": "k"},
+            "sources_dir": str(sources_dir),
         },
     )
-    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
+    q.enqueue(audio, {"provider": "AssemblyAI", "project_id": "p1", "source": "pick"})
     q._process_item(q._items[0])
 
     live = q.snapshot()[0]
-    assert live.transcript == StageStatus.DONE
-    assert live.protocol == StageStatus.DONE
-    assert live.tasks == StageStatus.AWAITING_REVIEW
+    assert live.status == StageStatus.DONE
+    assert live.meeting_folder and os.path.isdir(live.meeting_folder)
+    assert os.path.basename(os.path.dirname(live.meeting_folder)) == "Kitng"
+    note = os.path.join(live.meeting_folder, "transcript.md")
+    assert os.path.isfile(note)
+    with open(note, encoding="utf-8") as f:
+        body = f.read()
+    assert "hi" in body
+    assert os.path.isfile(os.path.join(live.meeting_folder, "speakers.json"))
+    assert os.path.isfile(audio)
+    assert live.source_path and os.path.isfile(live.source_path)
+    assert os.path.dirname(live.source_path) == str(sources_dir)
+    assert load_segments_sidecar(live.id) == [{"speaker": "A", "text": "hi"}]
+    assert not os.path.isfile(os.path.join(live.meeting_folder, "segments.json"))
 
 
-def test_process_item_halts_after_failed_stage(tmp_path, monkeypatch):
-    from processing.model import StageStatus
-
-    meetings = tmp_path / "meetings"
-    meetings.mkdir()
-    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
-
-    def _boom(*a, **k):
-        raise RuntimeError("AssemblyAI вернул 401")
-    monkeypatch.setattr("cli.core.run_transcribe", _boom)
-    called = []
-    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: called.append("p"))
-    audio = tmp_path / "r.m4a"
-    audio.write_bytes(b"\x00")
+def test_process_item_moves_audio_for_record(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    sources_dir = tmp_path / "sources"
+    audio = _audio(tmp_path, "rec.wav")
     q = _queue(
-        tmp_path, meetings_dir=str(meetings),
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "sources_dir": str(sources_dir),
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "record"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    assert not os.path.exists(audio)
+    assert live.source_path and os.path.isfile(live.source_path)
+
+
+def test_process_item_without_sources_dir_keeps_audio(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
         config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
     )
-    q.enqueue(str(audio), {"provider": "AssemblyAI"})
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "record"})
     q._process_item(q._items[0])
-
     live = q.snapshot()[0]
-    assert live.transcript == StageStatus.ERROR
-    assert live.protocol == StageStatus.PENDING
+    assert live.status == StageStatus.DONE
+    assert os.path.isfile(audio)
+    assert live.source_path is None
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        assert "source_path:" in f.read()
+
+
+# ── _process_item: guards + errors ──
+
+def test_process_item_missing_key_errors_and_halts(tmp_path, monkeypatch):
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    q = _queue(tmp_path, meetings_dir=str(tmp_path / "meetings"), config_loader=lambda: {})
+    q.enqueue(audio, {"provider": "AssemblyAI"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.ERROR
+    assert live.error_message
+    assert live.meeting_folder is None
+
+
+def test_process_item_provider_cap_blocks_before_upload(tmp_path, monkeypatch):
+    _sandbox_home(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "processing.preflight.probe",
+        lambda p: {"duration_s": None, "size_bytes": 5 * 1024**3},
+    )
+    called = []
+    monkeypatch.setattr("cli.core.run_transcribe", lambda *a, **k: called.append(1))
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI"})
+    q._process_item(q._items[0])
+    assert q.snapshot()[0].status == StageStatus.ERROR
     assert called == []
 
 
-def test_retry_resets_errored_stage_to_pending(tmp_path):
-    from processing.model import StageStatus
+def test_process_item_denoise_auto_off_for_long_audio(tmp_path, monkeypatch):
+    cap = {}
+    _patch_happy(monkeypatch, duration_s=46 * 60, capture=cap)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "denoise": True})
+    q._process_item(q._items[0])
+    assert cap["denoise"] is False
+    assert q.snapshot()[0].status == StageStatus.DONE
 
+
+def test_process_item_denoise_kept_for_short_audio(tmp_path, monkeypatch):
+    cap = {}
+    _patch_happy(monkeypatch, duration_s=600, capture=cap)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "denoise": True})
+    q._process_item(q._items[0])
+    assert cap["denoise"] is True
+
+
+def test_process_item_transcribe_error_halts_and_leaves_audio(tmp_path, monkeypatch):
+    _sandbox_home(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "processing.preflight.probe",
+        lambda p: {"duration_s": 60.0, "size_bytes": 1000},
+    )
+
+    def _boom(*a, **k):
+        raise RuntimeError("AssemblyAI вернул 401")
+
+    monkeypatch.setattr("cli.core.run_transcribe", _boom)
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "record"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.ERROR
+    assert live.error_message
+    assert os.path.isfile(audio)
+
+
+# ── _process_item: Hermes nudge ──
+
+def test_process_item_nudge_enabled_marks_delivered(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    sent = {}
+
+    def _emit(**k):
+        sent.update(k)
+        return types.SimpleNamespace(sent=True)
+
+    monkeypatch.setattr(
+        "integrations.hermes.client.emit_audio_transcribed_event", _emit
+    )
+    audio = _audio(tmp_path)
+    proj = Project(name="P", id="p1")
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        resolve_project=lambda pid: proj,
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"},
+            "hermes_webhook_enabled": True,
+            "hermes_webhook_secret": "s",
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "project_id": "p1"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    assert live.nudge_delivered is True
+    assert sent["note_path"].endswith("transcript.md")
+    assert sent["project"] == {"id": "p1", "name": "P"}
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        assert "nudged: true" in f.read()
+
+
+def test_process_item_nudge_failure_still_done(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        "integrations.hermes.client.emit_audio_transcribed_event",
+        lambda **k: types.SimpleNamespace(sent=False),
+    )
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"},
+            "hermes_webhook_enabled": True,
+            "hermes_webhook_secret": "s",
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    assert live.nudge_delivered is False
+
+
+# ── retry / scheduling ──
+
+def test_retry_resets_errored_item_to_pending(tmp_path):
     q = _queue(tmp_path)
     item_id = q.enqueue("/audio/a.m4a", {})
     it = q._items[0]
-    it.transcript = StageStatus.DONE
-    it.protocol = StageStatus.ERROR
-    it.error_stage = "protocol"
+    it.status = StageStatus.ERROR
     it.error_message = "boom"
-
+    it.auto = False
     q.retry(item_id)
-
     live = q.snapshot()[0]
-    assert live.transcript == StageStatus.DONE
-    assert live.protocol == StageStatus.PENDING
-    assert live.error_stage is None
+    assert live.status == StageStatus.PENDING
     assert live.error_message is None
     assert live.auto is True
+
+
+def test_retry_ignores_non_errored(tmp_path):
+    q = _queue(tmp_path)
+    item_id = q.enqueue("/audio/a.m4a", {})
+    q._items[0].status = StageStatus.DONE
+    q.retry(item_id)
+    assert q.snapshot()[0].status == StageStatus.DONE
 
 
 def test_retry_unknown_id_is_noop(tmp_path):
@@ -290,50 +364,29 @@ def test_next_auto_item_skips_auto_false(tmp_path):
     assert q._next_auto_item() is None
 
 
-def test_next_auto_item_skips_fully_settled(tmp_path):
-    from processing.model import StageStatus
-
+def test_next_auto_item_skips_settled(tmp_path):
     q = _queue(tmp_path)
     q.enqueue("/audio/a.m4a", {})
-    it = q._items[0]
-    it.transcript = StageStatus.DONE
-    it.protocol = StageStatus.DONE
-    it.tasks = StageStatus.AWAITING_REVIEW
+    q._items[0].status = StageStatus.DONE
     assert q._next_auto_item() is None
 
 
-def test_started_thread_drains_to_awaiting_review(tmp_path, monkeypatch):
+def test_started_thread_drains_to_done(tmp_path, monkeypatch):
     import time
 
-    from processing.model import StageStatus
-    from tasks.schema import Task
-
-    meetings = tmp_path / "meetings"
-    meetings.mkdir()
-    monkeypatch.setattr("utils.get_meetings_dir", lambda: str(meetings))
-    monkeypatch.setattr("cli.core.run_transcribe", lambda *a, **k: _fake_transcribe_output())
-
-    class _Proto:
-        markdown = "# P"
-    monkeypatch.setattr("cli.core.run_protocol", lambda *a, **k: _Proto())
-    monkeypatch.setattr(
-        "cli.core.run_extract_tasks",
-        lambda *a, **k: {"tasks": [Task(title="T")], "corrections": 0, "model": "m"},
-    )
-    audio = tmp_path / "r.m4a"
-    audio.write_bytes(b"\x00")
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
     q = _queue(
-        tmp_path, meetings_dir=str(meetings),
-        config_loader=lambda: {
-            "cloud_api_keys": {"AssemblyAI": "k"}, "openrouter_api_key": "or",
-        },
+        tmp_path, meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
     )
     q.start()
-    q.enqueue(str(audio), {"provider": "AssemblyAI", "language": "ru"})
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "record"})
     deadline = time.monotonic() + 5.0
     while time.monotonic() < deadline:
-        if q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW:
+        if q.snapshot()[0].status == StageStatus.DONE:
             break
         time.sleep(0.02)
     q.stop()
-    assert q.snapshot()[0].tasks == StageStatus.AWAITING_REVIEW
+    assert q.snapshot()[0].status == StageStatus.DONE
