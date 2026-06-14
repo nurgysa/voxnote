@@ -52,11 +52,16 @@ def _parse_ffmpeg_duration(stderr: str) -> float | None:
 def _duration_via_soundfile(audio_path: str) -> float | None:
     """Duration via soundfile header (WAV/FLAC/OGG). None on any read failure
     (e.g. .m4a/.mp3, which soundfile can't decode)."""
+    import soundfile
+
     try:
         from audio_io import get_duration_s
 
         return get_duration_s(audio_path)
-    except (RuntimeError, OSError):
+    except (RuntimeError, OSError, soundfile.SoundFileError):
+        # soundfile.SoundFileError is the base for libsndfile decode failures.
+        # LibsndfileError already subclasses RuntimeError, but catching the base
+        # honors the "any soundfile probe failure → fall back to ffmpeg" contract.
         return None
 
 
@@ -73,8 +78,12 @@ def _duration_via_ffmpeg(audio_path: str) -> float | None:
             [ffmpeg, "-i", audio_path],
             capture_output=True,
             check=False,
+            timeout=30,
         )
-    except OSError:
+    except (OSError, subprocess.TimeoutExpired):
+        # Probe runs on the worker thread before anything else, and inbox files
+        # live on a Google Drive-synced path — a stalled mount must not hang the
+        # queue. A header read is sub-second; 30 s is a generous ceiling.
         return None
     stderr = proc.stderr.decode("utf-8", errors="replace") if proc.stderr else ""
     return _parse_ffmpeg_duration(stderr)
@@ -100,8 +109,9 @@ def provider_limit_ok(
     provider: str, duration_s: float | None, size_bytes: int
 ) -> tuple[bool, str]:
     """``(ok, reason)``. False with a Russian message when the file exceeds the
-    provider's upload cap. ``duration_s`` is reserved for future per-provider
-    duration caps; the live gate is size."""
+    provider's upload cap. An unreadable file (``size_bytes == 0``) passes —
+    we can't reject what we couldn't measure. ``duration_s`` is reserved for
+    future per-provider duration caps; the live gate is size."""
     if size_bytes and size_bytes > _SIZE_CAP_BYTES:
         gb = size_bytes / 1024**3
         return (

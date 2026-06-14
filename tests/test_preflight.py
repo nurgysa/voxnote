@@ -79,6 +79,10 @@ def test_should_denoise_false_for_long_requested():
     assert preflight.should_denoise(46 * 60.0, True) is False
 
 
+def test_should_denoise_true_at_exactly_threshold():
+    assert preflight.should_denoise(45 * 60.0, True) is True
+
+
 def test_should_denoise_false_when_not_requested():
     assert preflight.should_denoise(60.0, False) is False
 
