@@ -600,6 +600,43 @@ def open_in_explorer(path: str) -> None:
         os.startfile(path)
 
 
+def _segments_sidecar_dir() -> str:
+    """~/.voxnote/segments — SRT/VTT source data kept OUT of the vault. Home via
+    USERPROFILE/HOME so tests can monkeypatch it (mirrors processing/store)."""
+    home = os.environ.get("USERPROFILE") or os.environ.get("HOME") or "."
+    return os.path.join(home, ".voxnote", "segments")
+
+
+def save_segments_sidecar(
+    voxnote_id: str, segments: list[dict], *, base_dir: str | None = None
+) -> str:
+    """Persist raw segments outside the vault for later SRT/VTT export, keyed by
+    the meeting's voxnote_id. Atomic write. Returns the file path."""
+    target_dir = base_dir or _segments_sidecar_dir()
+    os.makedirs(target_dir, exist_ok=True)
+    path = os.path.join(target_dir, f"{voxnote_id}.json")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(segments, f, ensure_ascii=False)
+    os.replace(tmp, path)
+    return path
+
+
+def load_segments_sidecar(
+    voxnote_id: str, *, base_dir: str | None = None
+) -> list[dict] | None:
+    """Read a sidecar by voxnote_id. None when absent or malformed."""
+    target_dir = base_dir or _segments_sidecar_dir()
+    path = os.path.join(target_dir, f"{voxnote_id}.json")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return None
+
+
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
     """Russian plural word form for ``n``: 1 встреча / 2 встречи / 5 встреч.
 
