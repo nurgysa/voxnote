@@ -43,6 +43,8 @@ Removing `transcription_mixin.py` + the `_btn_transcribe` widget breaks `__init_
 | `ui/app/transcription_mixin.py` | **DELETE**. |
 | `tests/test_ui_hermes_emit.py` | **DELETE** (source-slices the deleted file; Hermes emit moved to the worker, covered by `test_processing_worker`). |
 | `tests/test_transcription_mixin_delete_source.py` | **DELETE** (source-slices the deleted file; delete-after-transcription is superseded by the worker's archive-move-for-record, covered by `test_processing_worker`). |
+| `tests/test_transcription_mixin_segments.py` | **DELETE** (source-slices the deleted file; the run-loop's segment persistence is superseded by the worker's `save_segments_sidecar`, covered by `test_processing_worker`). |
+| `tests/test_bundle_ui_only.py` | **EDIT** — drop `test_transcription_mixin_has_no_local_plumbing` (the module is gone, so the guard is moot) + remove the `"ui/app/transcription_mixin.py"` entry from the `test_ui_has_no_noop_normalize_toggle` loop; keep every other affordance guard. |
 | `tests/test_broad_except_ratchet.py` | remove the `"ui/app/transcription_mixin.py": 3` BASELINE entry. |
 | `tests/test_ui_queue_wiring.py` | **NEW** — source-slice wiring assertions. |
 
@@ -507,8 +509,10 @@ with:
 
 - [ ] **Step 12: Delete the dead module + its source-slice tests; update the ratchet**
 
+Three test files source-slice the deleted module and are conceptually superseded (their behaviors now live in `processing/worker.py`, covered by `tests/test_processing_worker.py`): the Hermes emit, the delete-after-transcription, and the run-loop segment persistence. `git rm` all four:
+
 ```bash
-git rm ui/app/transcription_mixin.py tests/test_ui_hermes_emit.py tests/test_transcription_mixin_delete_source.py
+git rm ui/app/transcription_mixin.py tests/test_ui_hermes_emit.py tests/test_transcription_mixin_delete_source.py tests/test_transcription_mixin_segments.py
 ```
 
 Then in `tests/test_broad_except_ratchet.py`, remove this line from the `BASELINE` dict:
@@ -517,7 +521,58 @@ Then in `tests/test_broad_except_ratchet.py`, remove this line from the `BASELIN
     "ui/app/transcription_mixin.py": 3,            # worker boundary + crash dump + hermes daemon
 ```
 
-(The Hermes emit + delete-after-transcription behaviors moved into `processing/worker.py` and are covered by `tests/test_processing_worker.py`'s nudge-delivered/failed and archive-move-for-record tests. `queue_mixin.py` has zero broad-except, so no new BASELINE entry.)
+(The Hermes emit + delete-after-transcription + segment persistence moved into `processing/worker.py`. `queue_mixin.py` has zero broad-except, so no new BASELINE entry.)
+
+- [ ] **Step 12b: Edit `tests/test_bundle_ui_only.py` — drop the two dead reads of the removed module**
+
+This file is a broader "local-only affordances are deleted" guard whose OTHER assertions (voices/model-picker/device/hf-token/normalize across `ui/dialogs/*` + `audio_cutter.py` + `providers/__init__.py`) must keep working — so EDIT, don't delete.
+
+First, remove the whole `test_transcription_mixin_has_no_local_plumbing` function (the module is gone, so the guard is moot). Replace:
+
+```python
+def test_transcription_mixin_has_no_local_plumbing():
+    src = Path("ui/app/transcription_mixin.py").read_text(encoding="utf-8")
+    assert "load_model" not in src, "load_model() is gone — cloud-only Transcriber"
+    assert "_transcriber.load_model" not in src
+    assert "hf_token" not in src.lower(), "hf_token plumbing must be removed"
+    assert "voice_lib_path" not in src, "voice_lib_path plumbing must be removed"
+    assert "diarize_device" not in src, "diarize_device plumbing must be removed"
+    assert "voices_from_config" not in src, "voice_library import must be removed"
+
+
+def test_ui_has_no_noop_normalize_toggle():
+```
+
+with:
+
+```python
+def test_ui_has_no_noop_normalize_toggle():
+```
+
+Second, remove the `"ui/app/transcription_mixin.py"` entry from the `test_ui_has_no_noop_normalize_toggle` loop. Replace:
+
+```python
+    for rel in [
+        "ui/dialogs/settings.py",
+        "ui/dialogs/settings_builder.py",
+        "ui/dialogs/extract_tasks/builder.py",
+        "ui/app/builder.py",
+        "ui/app/settings_mixin.py",
+        "ui/app/transcription_mixin.py",
+    ]:
+```
+
+with:
+
+```python
+    for rel in [
+        "ui/dialogs/settings.py",
+        "ui/dialogs/settings_builder.py",
+        "ui/dialogs/extract_tasks/builder.py",
+        "ui/app/builder.py",
+        "ui/app/settings_mixin.py",
+    ]:
+```
 
 - [ ] **Step 13a: Create `tests/test_ui_queue_wiring.py`**
 
@@ -597,7 +652,8 @@ Expected: clean. Watch for unused imports — `primary_button` (builder), `threa
 ```bash
 git add ui/app/queue_mixin.py ui/app/__init__.py ui/app/builder.py \
         ui/app/recorder_mixin.py ui/app/settings_mixin.py ui/app/dialogs_mixin.py \
-        tests/test_broad_except_ratchet.py tests/test_ui_queue_wiring.py
+        tests/test_broad_except_ratchet.py tests/test_ui_queue_wiring.py \
+        tests/test_bundle_ui_only.py
 git commit -F- <<'EOF'
 feat(ui): wire processing queue as the input path (PR-C1)
 
@@ -640,7 +696,7 @@ EOF
 - Lifecycle: `App.__init__` builds `_dir_store` + `_queue` after `build_ui` (so `_lbl_queue` exists for `_refresh_queue_indicator`), starts it, binds `WM_DELETE_WINDOW` → `_on_app_close` (`queue.stop()` + `destroy()`). ✓
 - Threading: `on_change` (fired from the worker daemon) wraps `self.after(0, self._on_queue_changed)` — the established cross-thread→Tk pattern in this codebase. `_on_queue_changed`/`_refresh_queue_indicator`/`_enqueue` only touch widgets on the Tk thread. ✓
 - Dead-code removal is complete and ruff-driven: `_transcriber`/`_is_running`/`_cancel_event` (Step 6) → `import threading` (Step 3) + TYPE_CHECKING `Transcriber` (Step 4); `primary_button` (Step 8). `_last_history_folder`/`_audio_path` are KEPT (still used by `dialogs_mixin` + the cutter). ✓
-- Removed-symbol fallout: the only non-doc consumers of `transcription_mixin`/`_btn_transcribe` are the files edited here + the two deleted tests; `cli/app.py`'s own `_emit_hermes_event`, the `voxnote.spec` comment, and `settings_builder.py`'s comment are incidental and unaffected. ✓
+- Removed-symbol fallout: exactly 5 test files reference `transcription_mixin` (verified by grep) — 3 deleted (`test_ui_hermes_emit`, `test_transcription_mixin_delete_source`, `test_transcription_mixin_segments`), 1 edited (`test_bundle_ui_only`), 1 ratchet baseline; the only non-doc consumers of `_btn_transcribe` are the UI files edited here; `cli/app.py`'s own `_emit_hermes_event`, the `voxnote.spec` comment, and `settings_builder.py`'s comment are incidental and unaffected. ✓
 - Test strings match the code exactly: `_enqueue(path, "record")` (Step 9) / `_enqueue(path, "pick")` (Step 10) / `_lbl_queue` (Step 8) / `def _build_options` etc. (Step 1) / no `TranscriptionMixin` in `__init__` (Steps 2/5) / no `_btn_transcribe` in builder/recorder/settings/dialogs (Steps 8/9/10/11). ✓
 - Ratchet: removing `transcription_mixin.py` (3 broad) + its BASELINE line; `queue_mixin.py` adds 0 broad — ratchet stays truthful. ✓
 
