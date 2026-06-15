@@ -39,6 +39,8 @@ def _patch_happy(monkeypatch, *, duration_s=60.0, size_bytes=1000, capture=None)
     def _fake_transcribe(*a, **k):
         if capture is not None:
             capture.update(k)
+            if a:
+                capture["audio_path"] = a[0]
         return _Out()
 
     monkeypatch.setattr("cli.core.run_transcribe", _fake_transcribe)
@@ -390,3 +392,94 @@ def test_started_thread_drains_to_done(tmp_path, monkeypatch):
         time.sleep(0.02)
     q.stop()
     assert q.snapshot()[0].status == StageStatus.DONE
+
+
+def test_loads_reconciles_interrupted_running_to_error(tmp_path):
+    from processing.model import QueueItem
+    from processing.store import save_active
+
+    qp = tmp_path / "queue.json"
+    save_active(
+        [QueueItem(id="x", audio_path="/a.m4a", title="a", created_at="t",
+                   auto=True, status=StageStatus.RUNNING)],
+        path=qp,
+    )
+    q = _queue(tmp_path, queue_path=str(qp))
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.ERROR
+    assert live.error_message
+    q.retry("x")
+    assert q.snapshot()[0].status == StageStatus.PENDING
+
+
+def test_process_item_moves_audio_for_inbox(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    sources_dir = tmp_path / "sources"
+    audio = _audio(tmp_path, "phone.m4a")
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "sources_dir": str(sources_dir),
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "inbox"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    assert not os.path.exists(audio)  # inbox is drained by the move
+    assert live.source_path and os.path.isfile(live.source_path)
+
+
+def test_process_item_archive_failure_is_nonfatal(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+
+    def _boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("processing.sources.archive_audio", _boom)
+    sources_dir = tmp_path / "sources"
+    audio = _audio(tmp_path, "rec.wav")
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "sources_dir": str(sources_dir),
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "record"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE  # archiving is non-fatal
+    assert live.source_path is None
+    assert os.path.isfile(audio)  # original left in place when archive failed
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        assert "source_path:" in f.read()  # note records the original path
+
+
+def test_process_item_resumes_from_source_path_when_original_gone(tmp_path, monkeypatch):
+    cap = {}
+    _patch_happy(monkeypatch, capture=cap)
+    _sandbox_home(tmp_path, monkeypatch)
+    archived = _audio(tmp_path, "archived.m4a")  # the prior attempt's archived copy
+    sources_dir = tmp_path / "sources"
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "sources_dir": str(sources_dir),
+        },
+    )
+    q.enqueue("/gone/original.m4a", {"provider": "AssemblyAI", "source": "record"})
+    it = q._items[0]
+    it.source_path = archived  # a prior attempt already archived (and moved) it
+    q._process_item(it)
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    # transcribed from the archived copy, not the missing original
+    assert cap["audio_path"] == archived
+    # already-archived → not re-archived; the copy stays put
+    assert os.path.isfile(archived)
+    assert live.source_path == archived

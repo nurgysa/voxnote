@@ -64,6 +64,20 @@ class ProcessingQueue:
         self._queue_path = queue_path
         self._on_change = on_change
         self._items: list[QueueItem] = store.load_active(queue_path)
+        # A RUNNING item in a freshly-loaded queue means a prior session
+        # crashed mid-transcribe. Don't silently auto-resume — re-running a
+        # 2–3 h cloud job costs real money (spec: no auto-retry). Surface it as
+        # ERROR so the user can decide to «Повторить». (__init__ is
+        # single-threaded; no lock needed yet.)
+        interrupted = [it for it in self._items if it.status == StageStatus.RUNNING]
+        for it in interrupted:
+            it.status = StageStatus.ERROR
+            it.error_message = (
+                "Обработка прервана (приложение было перезапущено). "
+                "Нажми «Повторить», чтобы запустить заново."
+            )
+        if interrupted:
+            store.save_active([it for it in self._items if it.auto], queue_path)
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
@@ -142,6 +156,9 @@ class ProcessingQueue:
         failure halts THIS item (ERROR) but never kills the daemon."""
         self._set_status(item, StageStatus.RUNNING)
         try:
+            # Lazy imports keep this module's import cost low and mirror
+            # cli.core's lazy pattern; an ImportError surfacing as a per-item
+            # ERROR (not a dead daemon) is acceptable at this boundary.
             import utils
             from integrations.hermes.client import (
                 emit_audio_transcribed_event,
@@ -158,7 +175,15 @@ class ProcessingQueue:
             if language == "auto":
                 language = None
 
-            info = preflight.probe(item.audio_path)
+            # Resume-safe: if a prior attempt already archived the audio
+            # (source_path recorded) and the original is gone, work from the
+            # archived copy so a retry after a mid-run failure isn't a dead end.
+            audio_path = item.audio_path
+            already_archived = bool(item.source_path) and os.path.exists(item.source_path)
+            if already_archived and not os.path.exists(audio_path):
+                audio_path = item.source_path
+
+            info = preflight.probe(audio_path)
             duration_s = info.get("duration_s")
             size_bytes = info.get("size_bytes", 0)
             ok, reason = preflight.provider_limit_ok(provider, duration_s, size_bytes)
@@ -167,7 +192,7 @@ class ProcessingQueue:
             denoise = preflight.should_denoise(duration_s, bool(opts.get("denoise")))
 
             out = core.run_transcribe(
-                item.audio_path,
+                audio_path,
                 provider=provider,
                 api_key=api_key,
                 language=language,
@@ -181,24 +206,32 @@ class ProcessingQueue:
 
             date, time_str, hhmm = _parse_created(item.created_at)
             base = "_".join(p for p in (date, hhmm, _slug(item.title)) if p) or item.id
+            base = base[:120]  # guard pathologically long titles → folder/file names
             project = self._resolve_project(opts.get("project_id"))
 
             # Archive only AFTER a successful transcribe, so a failure never
-            # strands or loses audio (spec §Failure-handling, ordering). The
-            # note then records the FINAL Drive path in a single write — no
-            # second pass over transcript.md.
+            # strands or loses audio (spec §Failure-handling, ordering). Record
+            # source_path immediately so a MOVED original is never lost track of
+            # if a later step fails — a retry then resumes from it. Skip when a
+            # prior attempt already archived. The note records the FINAL path in
+            # a single write.
             sources_dir = (cfg.get("sources_dir") or "").strip()
-            source_path: str | None = None
-            if sources_dir:
+            source_path: str | None = item.source_path
+            if sources_dir and not already_archived:
                 try:
                     source_path = sources.archive_audio(
-                        item.audio_path, sources_dir, base,
+                        audio_path, sources_dir, base,
                         move=item.source in ("record", "inbox"),
                     )
                 except OSError as e:
                     # Archiving is non-fatal: the note records the original path
                     # instead (spec §Failure-handling). Audio stays put.
                     logger.warning("audio archive failed for %s: %s", item.id, e)
+                    source_path = item.source_path
+                if source_path:
+                    with self._lock:
+                        item.source_path = source_path
+                        self._persist_locked()
 
             hermes_cfg = get_hermes_webhook_config(cfg)
             content = vault_note.render_transcript_note(
@@ -211,7 +244,7 @@ class ProcessingQueue:
                 provider=provider,
                 language=out.language,
                 voxnote_id=item.id,
-                source_path=source_path or item.audio_path,
+                source_path=source_path or audio_path,
                 nudged=hermes_cfg.enabled,
             )
             note_path = vault_note.write_transcript_note(
@@ -230,7 +263,7 @@ class ProcessingQueue:
                 result = emit_audio_transcribed_event(
                     config=hermes_cfg,
                     transcript_text=out.text,
-                    audio_path=item.audio_path,
+                    audio_path=audio_path,
                     history_folder=folder,
                     note_path=note_path,
                     source_path=source_path,
