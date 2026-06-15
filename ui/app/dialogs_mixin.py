@@ -15,7 +15,7 @@ panels were CUDA-era diagnostics with no purpose in cloud-only mode.
 Mixin contract: relies on App providing ``self._config``, ``self._settings_dialog``,
 ``self._cutter``,
 ``self._textbox``, ``self._lbl_status``, ``self._lbl_file``,
-``self._btn_save``, ``self._btn_copy``, ``self._btn_transcribe``,
+``self._btn_save``, ``self._btn_copy``,
 ``self._btn_extract_tasks``, ``self._lang_var``, ``self._audio_path``,
 ``self._last_history_folder``. ``_open_extract_tasks_dialog`` lazy-imports
 ``ExtractTasksDialog`` to keep the ``tasks/extractor`` (and transitively
@@ -154,7 +154,6 @@ class DialogsMixin:
             self._lbl_file.configure(
                 text=os.path.basename(audio_path), text_color=TEXT_PRIMARY,
             )
-            self._btn_transcribe.configure(state="normal")
         self._lbl_status.configure(
             text="Загружено из истории", text_color=TEXT_SECONDARY,
         )

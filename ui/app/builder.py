@@ -33,7 +33,6 @@ from ui.widgets import (
     card,
     label,
     option_menu,
-    primary_button,
     tonal_button,
 )
 
@@ -111,12 +110,6 @@ def build_ui(app):
 
     app._lbl_file = label(file_card, text="Файл не выбран", anchor="w")
     app._lbl_file.grid(row=0, column=1, padx=(0, 12), pady=14, sticky="ew")
-
-    app._btn_transcribe = primary_button(
-        file_card, text="Транскрибировать",
-        command=app._start_transcription, width=190, state="disabled",
-    )
-    app._btn_transcribe.grid(row=0, column=2, padx=16, pady=14)
 
     # --- Recorder card (row=3 — was row=2 before banner) ---
     rec_card = card(app)
@@ -313,6 +306,15 @@ def build_ui(app):
         command=app._open_settings_dialog, width=140,
     )
     app._btn_settings.grid(row=0, column=3, padx=(0, 16), pady=14, sticky="e")
+
+    # --- Queue indicator strip (row=5) ---
+    # Aggregate status of the serial processing queue, repainted reactively by
+    # QueueMixin._refresh_queue_indicator (record/pick enqueue replaced the old
+    # transcribe button). Per-meeting status lives in «Встречи» (PR-C2).
+    app._lbl_queue = label(
+        app, text="● Очередь: 0 в работе · 0 ошибок", anchor="w",
+    )
+    app._lbl_queue.grid(row=5, column=0, padx=24, pady=(2, 0), sticky="w")
 
     # --- Progress bar ---
     app._progress = ctk.CTkProgressBar(

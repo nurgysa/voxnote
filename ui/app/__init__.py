@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 import os
-import threading
 import tkinter as tk
 from typing import TYPE_CHECKING
 
 import customtkinter as ctk
 
+from directory.store import DirectoryStore
 from logging_setup import init_logging, log_callback_exception
+from processing.worker import ProcessingQueue
 from recorder import Recorder
 from theme import BG
-from utils import get_app_icon_path, load_config, save_config
+from utils import get_app_icon_path, get_meetings_dir, load_config, save_config
 
 # Submodule re-exports. ``main`` lives in ``.main_entry`` so the repo-root
 # ``app.py`` (the faulthandler bootstrap) keeps working through its existing
@@ -28,10 +29,10 @@ from .constants import (
 )
 from .dialogs_mixin import DialogsMixin
 from .main_entry import main as main
+from .queue_mixin import QueueMixin
 from .recorder_mixin import RecorderMixin
 from .save_mixin import SaveMixin
 from .settings_mixin import SettingsMixin
-from .transcription_mixin import TranscriptionMixin
 
 # Type-only imports — these classes are referenced as type annotations on
 # ``App`` attributes (``self._settings_dialog: SettingsDialog | None``, etc.)
@@ -40,7 +41,6 @@ from .transcription_mixin import TranscriptionMixin
 # don't need to load unless a type checker is running.
 if TYPE_CHECKING:
     from audio_cutter import AudioCutter
-    from transcriber import Transcriber
     from ui.dialogs.settings import SettingsDialog
 
 init_logging()
@@ -97,7 +97,7 @@ class App(
     RecorderMixin,
     SaveMixin,
     SettingsMixin,
-    TranscriptionMixin,
+    QueueMixin,
     ctk.CTk,
 ):
     def __init__(self):
@@ -176,9 +176,7 @@ class App(
         self.configure(fg_color=BG)
 
         self._audio_path: str | None = None
-        self._transcriber: Transcriber | None = None
         self._recorder = Recorder()
-        self._is_running = False
         self._rec_timer_id: str | None = None
         self._config = load_config()
         # One-time migration: collapse the old single ``cloud_api_key``
@@ -202,12 +200,9 @@ class App(
         # _on_appearance_changed can ping it to redraw its Canvas — the
         # cutter is otherwise free to be reopened/recreated freely.
         self._cutter: AudioCutter | None = None
-        # Cancel signal for the worker thread. Worker checks this between
-        # segments and around the diarization subprocess; setting it
-        # interrupts the run within ~250 ms.
-        self._cancel_event = threading.Event()
-        # Path to the most recent successful transcription's history folder.
-        # Populated in _on_complete; consumed by _open_extract_tasks_dialog.
+        # Path to the most recently loaded meeting folder (set when a meeting
+        # is opened from «Встречи» via _load_history_into_main); consumed by
+        # _open_extract_tasks_dialog.
         self._last_history_folder: str | None = None
 
         # First-run detection — builder.py uses this to conditionally render
@@ -222,6 +217,23 @@ class App(
 
         build_ui(self)
 
+        # Processing queue (PR-C1): record-stop / «Выбрать файл» enqueue here;
+        # the serial worker transcribes → vault transcript.md → Drive sources →
+        # Hermes nudge. on_change is marshalled to the Tk thread via after(0).
+        self._dir_store = DirectoryStore()
+        self._dir_store.load()
+        self._queue = ProcessingQueue(
+            meetings_dir=get_meetings_dir(),
+            config_loader=load_config,
+            resolve_project=lambda pid: (
+                self._dir_store.get_project(pid) if pid else None
+            ),
+            on_change=lambda: self.after(0, self._on_queue_changed),
+        )
+        self._queue.start()
+        self.protocol("WM_DELETE_WINDOW", self._on_app_close)
+        self._refresh_queue_indicator()
+
         # First-launch meetings migration check. If meetings_dir isn't
         # explicitly configured AND a legacy history folder still has
         # entries, schedule a one-shot prompt (defer 500 ms so the main
@@ -229,7 +241,7 @@ class App(
         meetings_cfg = (self._config.get("meetings_dir") or "").strip()
         if not meetings_cfg:
             from meetings_migration import detect_old_locations
-            from utils import _LEGACY_HISTORY_LOCATIONS, get_meetings_dir
+            from utils import _LEGACY_HISTORY_LOCATIONS
             old_locations = detect_old_locations(
                 probe_paths=_LEGACY_HISTORY_LOCATIONS,
             )
