@@ -17,8 +17,7 @@ Mixin contract: relies on App providing ``self._config`` (mutable dict),
 ``self._cloud_api_key_var``, ``self._cloud_api_keys`` (dict), the
 ``self._linear_*_var`` / ``self._glide_*_var`` / ``self._openrouter_*_var``
 / ``self._appearance_var`` / ``self._gdrive_*`` families,
-``self._transcriber`` (lazy, never invalidated in cloud-only mode),
-``self._audio_path``, ``self._lbl_file``, ``self._btn_transcribe``, and
+``self._audio_path``, ``self._lbl_file``, and
 the dialog refs ``self._settings_dialog`` / ``self._cutter`` (used by
 the live appearance-mode switch).
 """
@@ -225,6 +224,9 @@ class SettingsMixin:
                 "Неподдерживаемый формат файла.\nПоддерживаются: MP3, WAV, M4A",
             )
             return
+        # Keep _audio_path for the Audio Cutter; the queue is the transcription
+        # path now (the old transcribe button is gone). «Выбрать файл» copies
+        # the original to Drive sources (the worker leaves the user's file in place).
         self._audio_path = path
         self._lbl_file.configure(text=os.path.basename(path), text_color=TEXT_PRIMARY)
-        self._btn_transcribe.configure(state="normal")
+        self._enqueue(path, "pick")

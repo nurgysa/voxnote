@@ -33,7 +33,6 @@ from ui.widgets import (
     card,
     label,
     option_menu,
-    primary_button,
     tonal_button,
 )
 
@@ -112,12 +111,6 @@ def build_ui(app):
     app._lbl_file = label(file_card, text="Файл не выбран", anchor="w")
     app._lbl_file.grid(row=0, column=1, padx=(0, 12), pady=14, sticky="ew")
 
-    app._btn_transcribe = primary_button(
-        file_card, text="Транскрибировать",
-        command=app._start_transcription, width=190, state="disabled",
-    )
-    app._btn_transcribe.grid(row=0, column=2, padx=16, pady=14)
-
     # --- Recorder card (row=3 — was row=2 before banner) ---
     rec_card = card(app)
     rec_card.grid(row=3, column=0, padx=16, pady=6, sticky="ew")
@@ -151,7 +144,7 @@ def build_ui(app):
     # All settings StringVar/BooleanVar live on App as the source of truth.
     # The Settings dialog binds widgets to these vars on demand; closing
     # the dialog destroys widgets but leaves vars (and config.json state)
-    # intact, so _start_transcription always reads consistent values.
+    # intact, so _build_options always reads consistent values.
     saved_lang = app._config.get("language", "Авто-определение")
     app._lang_var = ctk.StringVar(
         value=saved_lang if saved_lang in LANGUAGES else "Авто-определение",
@@ -180,8 +173,8 @@ def build_ui(app):
     )
     # Visible API-key field — populated from the per-provider dict
     # for whichever provider is currently selected. _on_cloud_provider_changed
-    # swaps it on dropdown change. Lazy save to the dict happens at
-    # transcribe time (transcription_mixin _on_transcribe_clicked).
+    # swaps it on dropdown change. The key is persisted to the dict by the
+    # Settings dialog (validate / paste), not by the enqueue path.
     app._cloud_api_key_var = ctk.StringVar(
         value=app._cloud_api_keys.get(
             app._cloud_provider_var.get(), ""
@@ -314,13 +307,14 @@ def build_ui(app):
     )
     app._btn_settings.grid(row=0, column=3, padx=(0, 16), pady=14, sticky="e")
 
-    # --- Progress bar ---
-    app._progress = ctk.CTkProgressBar(
-        app, height=4, corner_radius=2,
-        fg_color=PROGRESS_BG, progress_color=BLUE,
+    # --- Queue indicator strip (row=5) ---
+    # Aggregate status of the serial processing queue, repainted reactively by
+    # QueueMixin._refresh_queue_indicator (record/pick enqueue replaced the old
+    # transcribe button). Per-meeting status lives in «Встречи» (PR-C2).
+    app._lbl_queue = label(
+        app, text="● Очередь: 0 в работе · 0 ошибок", anchor="w",
     )
-    app._progress.grid(row=6, column=0, padx=16, pady=(10, 0), sticky="ew")
-    app._progress.set(0)
+    app._lbl_queue.grid(row=5, column=0, padx=24, pady=(2, 0), sticky="w")
 
     # --- Text result ---
     app._textbox = ctk.CTkTextbox(

@@ -3,7 +3,7 @@
 Extracted from ``ui/app/__init__.py`` (F4-PR-2c). Mixin contract: relies on
 the App instance providing ``self._recorder`` (a ``recorder.Recorder``),
 ``self._btn_rec``, ``self._btn_rec_pause``, ``self._lbl_rec_time``,
-``self._lbl_file``, ``self._btn_transcribe``, ``self._rec_level``,
+``self._lbl_file``, ``self._rec_level``,
 ``self._lbl_status``, ``self._audio_path``, ``self._rec_timer_id``, and
 the ``after`` / ``after_cancel`` methods inherited from ``ctk.CTk``.
 """
@@ -49,15 +49,13 @@ class RecorderMixin:
         self._btn_rec_pause.configure(state="disabled", text="Пауза")
         self._rec_level.set(0)
         if path and os.path.exists(path):
-            # Auto-load the recording for transcription
+            # Keep _audio_path so the Audio Cutter can pre-load the recording;
+            # the queue is the transcription path now (no «Транскрибировать»).
             self._audio_path = path
             self._lbl_file.configure(text=os.path.basename(path), text_color=TEXT_PRIMARY)
-            self._btn_transcribe.configure(state="normal")
             elapsed = self._lbl_rec_time.cget("text")
             self._lbl_rec_time.configure(text=elapsed, text_color=GREEN)
-            self._lbl_status.configure(
-                text=f"Запись сохранена: {os.path.basename(path)}", text_color=GREEN,
-            )
+            self._enqueue(path, "record")
 
     def _toggle_pause(self):
         if self._recorder.is_paused:

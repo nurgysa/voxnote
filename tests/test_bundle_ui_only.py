@@ -110,30 +110,19 @@ def test_audio_cutter_has_no_silence_remove_button():
         assert marker not in src, f"audio_cutter.py still references {marker!r}"
 
 
-def test_transcription_mixin_has_no_local_plumbing():
-    src = Path("ui/app/transcription_mixin.py").read_text(encoding="utf-8")
-    assert "load_model" not in src, "load_model() is gone — cloud-only Transcriber"
-    assert "_transcriber.load_model" not in src
-    assert "hf_token" not in src.lower(), "hf_token plumbing must be removed"
-    assert "voice_lib_path" not in src, "voice_lib_path plumbing must be removed"
-    assert "diarize_device" not in src, "diarize_device plumbing must be removed"
-    assert "voices_from_config" not in src, "voice_library import must be removed"
-
-
 def test_ui_has_no_noop_normalize_toggle():
     # The normalize checkbox was a no-op: since #103 the cloud path hardcodes
     # ensure_wav(normalize=False) by design (provider gateways apply their own
     # gain normalization), so the toggle controlled nothing while claiming to.
     # Verify the whole Var loop is gone: widget (settings.py), Var seed
-    # (builder.py), persistence handler (settings_mixin.py), docstring contract
-    # mentions (transcription_mixin.py).
+    # (builder.py), persistence handler + docstring contract mentions
+    # (settings_mixin.py).
     for rel in [
         "ui/dialogs/settings.py",
         "ui/dialogs/settings_builder.py",
         "ui/dialogs/extract_tasks/builder.py",
         "ui/app/builder.py",
         "ui/app/settings_mixin.py",
-        "ui/app/transcription_mixin.py",
     ]:
         src = Path(rel).read_text(encoding="utf-8")
         assert "_normalize_var" not in src, f"{rel} still references _normalize_var"
