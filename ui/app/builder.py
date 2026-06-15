@@ -144,7 +144,7 @@ def build_ui(app):
     # All settings StringVar/BooleanVar live on App as the source of truth.
     # The Settings dialog binds widgets to these vars on demand; closing
     # the dialog destroys widgets but leaves vars (and config.json state)
-    # intact, so _start_transcription always reads consistent values.
+    # intact, so _build_options always reads consistent values.
     saved_lang = app._config.get("language", "Авто-определение")
     app._lang_var = ctk.StringVar(
         value=saved_lang if saved_lang in LANGUAGES else "Авто-определение",
@@ -173,8 +173,8 @@ def build_ui(app):
     )
     # Visible API-key field — populated from the per-provider dict
     # for whichever provider is currently selected. _on_cloud_provider_changed
-    # swaps it on dropdown change. Lazy save to the dict happens at
-    # transcribe time (transcription_mixin _on_transcribe_clicked).
+    # swaps it on dropdown change. The key is persisted to the dict by the
+    # Settings dialog (validate / paste), not by the enqueue path.
     app._cloud_api_key_var = ctk.StringVar(
         value=app._cloud_api_keys.get(
             app._cloud_provider_var.get(), ""
@@ -315,14 +315,6 @@ def build_ui(app):
         app, text="● Очередь: 0 в работе · 0 ошибок", anchor="w",
     )
     app._lbl_queue.grid(row=5, column=0, padx=24, pady=(2, 0), sticky="w")
-
-    # --- Progress bar ---
-    app._progress = ctk.CTkProgressBar(
-        app, height=4, corner_radius=2,
-        fg_color=PROGRESS_BG, progress_color=BLUE,
-    )
-    app._progress.grid(row=6, column=0, padx=16, pady=(10, 0), sticky="ew")
-    app._progress.set(0)
 
     # --- Text result ---
     app._textbox = ctk.CTkTextbox(

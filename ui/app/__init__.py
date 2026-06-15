@@ -228,7 +228,7 @@ class App(
             resolve_project=lambda pid: (
                 self._dir_store.get_project(pid) if pid else None
             ),
-            on_change=lambda: self.after(0, self._on_queue_changed),
+            on_change=self._safe_after_refresh,
         )
         self._queue.start()
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)

@@ -17,6 +17,7 @@ App.__init__). NO worker thread of its own — ProcessingQueue owns that.
 from __future__ import annotations
 
 import os
+import tkinter as tk
 from tkinter import messagebox
 
 from processing.model import StageStatus
@@ -67,6 +68,15 @@ class QueueMixin:
             text_color=GREEN,
         )
         self._refresh_queue_indicator()
+
+    def _safe_after_refresh(self) -> None:
+        """ProcessingQueue on_change fires on the worker daemon thread; during
+        shutdown the Tk root may already be torn down. Catch the post-destroy
+        TclError so it never kills the worker thread mid-status-write."""
+        try:
+            self.after(0, self._on_queue_changed)
+        except tk.TclError:
+            pass
 
     def _on_queue_changed(self) -> None:
         """ProcessingQueue on_change target. Already marshalled to the Tk thread

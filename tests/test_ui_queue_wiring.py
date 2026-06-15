@@ -55,3 +55,14 @@ def test_record_and_pick_enqueue():
 
 def test_dialogs_mixin_has_no_transcribe_button():
     assert "_btn_transcribe" not in _DIALOGS
+
+
+def test_on_app_close_stops_queue():
+    assert "self._queue.stop()" in _QUEUE
+    assert "self.destroy()" in _QUEUE
+
+
+def test_on_change_marshals_via_after():
+    # on_change fires on the worker thread → must marshal to Tk via after(0).
+    assert "after(0, self._on_queue_changed)" in _QUEUE
+    assert "_safe_after_refresh" in _INIT
