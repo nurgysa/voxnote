@@ -66,3 +66,11 @@ def test_on_change_marshals_via_after():
     # on_change fires on the worker thread → must marshal to Tk via after(0).
     assert "after(0, self._on_queue_changed)" in _QUEUE
     assert "_safe_after_refresh" in _INIT
+
+
+def test_save_mixin_has_no_dead_transcriber_ref():
+    # PR-C1 removed self._transcriber from App.__init__; save_mixin must not
+    # read it (would AttributeError on «Сохранить»). Source-slice guard —
+    # the App can't be imported on Linux CI (sounddevice/PortAudio).
+    src = Path("ui/app/save_mixin.py").read_text(encoding="utf-8")
+    assert "_transcriber" not in src

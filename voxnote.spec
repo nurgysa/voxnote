@@ -112,7 +112,7 @@ a = Analysis(
         "googleapiclient.discovery_cache.file_cache",
         "google_auth_oauthlib.flow",
         # Hermes outbound webhook (spec 2026-06-11) — imported only at
-        # function level inside transcription_mixin._emit_hermes_event;
+        # function level inside processing.worker._process_item;
         # listed explicitly so a frozen build can never miss the package.
         "integrations.hermes.client",
         "integrations.hermes.schema",

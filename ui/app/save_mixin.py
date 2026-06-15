@@ -2,11 +2,12 @@
 
 Extracted from ``ui/app/__init__.py`` (F4-PR-2c). Mixin contract: relies on
 the App instance providing ``self._textbox``, ``self._audio_path``,
-``self._transcriber`` (or None), ``self._lbl_status``, and the
-``clipboard_clear`` / ``clipboard_append`` methods inherited from
-``ctk.CTk``. SRT/VTT export reads per-segment timestamps from
-``self._transcriber.last_segments`` — silently degrades to TXT-only when
-segments are missing (e.g. the user typed text into the box manually).
+``self._lbl_status``, and the ``clipboard_clear`` / ``clipboard_append``
+methods inherited from ``ctk.CTk``. Since the queue rework (PR-C1) there is
+no in-session segment source — the worker writes per-segment timestamps to
+the app-data sidecar (``utils.save_segments_sidecar``), not the UI — so
+SRT/VTT export degrades to a warning; TXT/MD always works. (Wiring saved-
+meeting segments from the sidecar into SRT/VTT is a future enhancement.)
 """
 from __future__ import annotations
 
@@ -41,18 +42,18 @@ class SaveMixin:
         if not path:
             return
 
-        # SRT/VTT need per-segment timestamps from the last transcription.
-        # If the user picks a subtitle format but we don't have segments
-        # (e.g. they typed text into the box manually), warn — a silent .srt
-        # with one giant cue would be useless.
+        # SRT/VTT need per-segment timestamps. The queue worker writes those to
+        # the app-data sidecar, not the UI, so there is no in-session segment
+        # source here yet — degrade to a warning (a .srt with one giant cue
+        # would be useless). Wiring the sidecar in is a future enhancement.
         ext = os.path.splitext(path)[1].lower()
-        segments = self._transcriber.last_segments if self._transcriber else None
+        segments = None
         if ext in (".srt", ".vtt"):
             if not segments:
                 messagebox.showwarning(
                     "Нет таймкодов",
-                    "Для экспорта в SRT/VTT нужна свежая транскрипция —\n"
-                    "запустите её заново.",
+                    "Экспорт в SRT/VTT пока недоступен для сохранённых встреч —\n"
+                    "сохраните как TXT или MD.",
                 )
                 return
             from transcript_format import format_srt, format_vtt
