@@ -39,6 +39,7 @@ from ui.widgets import (
 from .constants import (
     APPEARANCE_MODES,
     LANGUAGES,
+    NO_PROJECT_LABEL,
     SPEAKER_COUNTS,
 )
 
@@ -157,6 +158,12 @@ def build_ui(app):
     app._spk_count_var = ctk.StringVar(
         value=saved_spk if saved_spk in SPEAKER_COUNTS else "Авто",
     )
+    # Main-bar project selector (PR-C1b). The visible value is a project
+    # name (or «Без проекта»); QueueMixin._refresh_project_selector rebuilds
+    # the values + the label→id map from the directory store after build_ui
+    # (the store isn't constructed yet at build time) and again whenever the
+    # Справочники dialog closes. Default selection comes from last_project_id.
+    app._project_var = ctk.StringVar(value=NO_PROJECT_LABEL)
     # RNNoise (arnndn) — opt-in, default off. When enabled, the cloud
     # path runs a pre-denoise pass via ffmpeg before sending audio to
     # the provider. (No normalization Var: the cloud path hardcodes
@@ -306,6 +313,20 @@ def build_ui(app):
         command=app._open_settings_dialog, width=140,
     )
     app._btn_settings.grid(row=0, column=3, padx=(0, 16), pady=14, sticky="e")
+
+    # Project selector — run-card row 1, aligned under the speaker label/menu
+    # (col 1 = label, col 2 = dropdown). Populated by
+    # QueueMixin._refresh_project_selector; feeds _build_options' project_id.
+    label(run_card, "Проект").grid(
+        row=1, column=1, padx=(0, 8), pady=(0, 14), sticky="w",
+    )
+    app._project_menu = option_menu(
+        run_card, app._project_var, [NO_PROJECT_LABEL],
+        command=app._on_project_changed,
+    )
+    app._project_menu.grid(
+        row=1, column=2, padx=(0, 12), pady=(0, 14), sticky="ew",
+    )
 
     # --- Queue indicator strip (row=5) ---
     # Aggregate status of the serial processing queue, repainted reactively by

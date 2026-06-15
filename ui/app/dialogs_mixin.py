@@ -80,7 +80,21 @@ class DialogsMixin:
         MeetingsDialog(self, on_load_to_main=self._load_history_into_main)
 
     def _open_directory_dialog(self):
-        DirectoryDialog(self)
+        dlg = DirectoryDialog(self)
+        # Projects may be added/renamed/deleted in the editor. Refresh the
+        # main-bar selector when this (modal, non-blocking — grab_set without
+        # wait_window) dialog closes. DirectoryDialog persists via its own
+        # store, so reload App's _dir_store first.
+        dlg.bind(
+            "<Destroy>",
+            lambda e: self._on_directory_dialog_closed(e, dlg),
+        )
+
+    def _on_directory_dialog_closed(self, event, dlg) -> None:
+        # CTk fires <Destroy> for inner widgets too; act only on the toplevel.
+        if event.widget is dlg:
+            self._dir_store.load()
+            self._refresh_project_selector()
 
     def _open_extract_tasks_dialog(self):
         """Validate the OpenRouter key is set, then open the Extract dialog.

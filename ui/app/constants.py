@@ -33,6 +33,11 @@ SPEAKER_COUNTS: dict[str, tuple[int | None, int | None, int | None]] = {
     "5+": (None, 5, None),
 }
 
+# Main-bar project selector — the "no project" sentinel label. Its menu
+# entry maps to project_id=None (meeting written to <meetings_dir>/ root,
+# Hermes event project=null). Shared by builder.py + queue_mixin.py.
+NO_PROJECT_LABEL = "Без проекта"
+
 # Visible label → CustomTkinter appearance_mode value.
 # "system" follows the Windows light/dark setting; the other two are explicit.
 APPEARANCE_MODES: dict[str, str] = {
