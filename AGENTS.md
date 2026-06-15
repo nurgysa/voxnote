@@ -7,9 +7,19 @@ This repo ships a **headless transcription pipeline** you can drive two ways:
 2. **As an MCP server** — typed tools over stdio (`python -m cli.mcp_server`).
    Registration snippets for all four agents are below.
 
-Pipeline: **transcribe → extract tasks → generate protocol → send to a task
-backend** (Linear / Glide / Trello). Cloud STT (AssemblyAI / Deepgram / Gladia /
-Speechmatics); KZ+RU+EN code-switching; OpenRouter for tasks + protocol.
+Pipeline (full chain, available to CLI/MCP callers): **transcribe → extract
+tasks → generate protocol → send to a task backend** (Linear / Glide / Trello).
+Cloud STT (AssemblyAI / Deepgram / Gladia / Speechmatics); KZ+RU+EN
+code-switching; OpenRouter for tasks + protocol.
+
+> **Desktop queue (Mini-AGI / Hermes-native flow):** VoxNote's own processing
+> queue runs **transcribe-only** — it writes a diarized `transcript.md` into the
+> Obsidian vault, archives the audio to Google Drive `sources/`, and fires a
+> best-effort `audio.transcribed` nudge (§4). **Hermes** then owns the
+> downstream: protocol, task extraction, human approval, and sending to
+> trackers. The `extract-tasks` / `protocol` / `send` commands below remain
+> available for manual or agent-driven use — they are simply not what the
+> desktop auto-pipeline runs.
 
 For repo *development* conventions (invariants, test/lint contract, module map)
 see **`CLAUDE.md`** — this file is only about *consuming the tool*.
@@ -160,14 +170,17 @@ VoxNote  →  POST /webhooks/audio-transcribed  →  Hermes Agent
 ```json
 {
   "event_type": "audio.transcribed",
-  "version": "1.0",
+  "version": "1.1",
   "source": "voxnote",
   "routing_hint": "obsidian_inbox",
   "audio": {
     "filename": "meeting.m4a",
     "path": "C:/Users/.../meeting.m4a",
-    "history_folder": "C:/Users/.../<meeting-folder>"
+    "history_folder": "C:/Users/.../<meeting-folder>",
+    "note_path": "C:/Users/.../30 Meetings/<project>/<meeting>/transcript.md",
+    "source_path": "G:/My Drive/.../sources/2026-06-14_1000_meeting.m4a"
   },
+  "project": { "id": "p1", "name": "Kitng" },
   "transcript": {
     "raw": "<full transcript text>",
     "segments": []
@@ -188,7 +201,10 @@ VoxNote  →  POST /webhooks/audio-transcribed  →  Hermes Agent
 ```
 
 Key fields for Hermes routing: `event_type`, `routing_hint`,
-`transcript.raw`, `meta.provider`, `meta.language`, `audio.history_folder`.
+`transcript.raw`, `meta.provider`, `meta.language`, `audio.history_folder`,
+`audio.note_path` (the vault `transcript.md`), `audio.source_path` (the archived
+audio in Drive `sources/`), and `project` (`{id, name}`, or `null` outside a
+queue run).
 
 ### 4.2 Config / env reference
 
@@ -287,7 +303,7 @@ Manually verify Hermes accepts the event shape (substitute `[REDACTED]`
 with your actual secret, never commit it):
 
 ```bash
-BODY='{"analysis":{"decisions":[],"ideas":[],"protocol":null,"summary":null,"tasks":[]},"audio":{"filename":"test.m4a","history_folder":null,"path":null},"event_type":"audio.transcribed","meta":{"created_at":"2026-06-11T12:00:00Z","language":"ru","provider":"test"},"routing_hint":"obsidian_inbox","source":"voxnote","transcript":{"raw":"test","segments":[]},"version":"1.0"}'
+BODY='{"analysis":{"decisions":[],"ideas":[],"protocol":null,"summary":null,"tasks":[]},"audio":{"filename":"test.m4a","history_folder":null,"note_path":null,"path":null,"source_path":null},"event_type":"audio.transcribed","meta":{"created_at":"2026-06-11T12:00:00Z","language":"ru","provider":"test"},"project":null,"routing_hint":"obsidian_inbox","source":"voxnote","transcript":{"raw":"test","segments":[]},"version":"1.1"}'
 SIG=$(BODY="$BODY" SECRET="[REDACTED]" python - <<'PY'
 import hmac, hashlib, os
 body = os.environ["BODY"].encode("utf-8")
