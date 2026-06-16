@@ -57,3 +57,8 @@ def test_meetings_preserves_legacy_pinned_strings():
     assert "class MeetingViewerDialog" in _MEET
     assert "transcript.md" in _MEET and "transcript.txt" in _MEET
     assert 'initialfile="transcript.md"' in _MEET
+
+
+def test_meetings_delete_forgets_queue_item():
+    # Deleting a meeting must also evict its lingering active item (no ghost row).
+    assert "_queue.forget(" in _MEET

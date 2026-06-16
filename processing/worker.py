@@ -128,6 +128,21 @@ class ProcessingQueue:
         self._wake.set()
         self._notify()
 
+    def forget(self, item_id: str) -> None:
+        """Drop an item from the active queue — e.g. its meeting folder was
+        deleted from «Встречи». No-op if the id is absent or the item is
+        currently RUNNING (never evict a live job)."""
+        with self._lock:
+            keep = [
+                it for it in self._items
+                if not (it.id == item_id and it.status != StageStatus.RUNNING)
+            ]
+            changed = len(keep) != len(self._items)
+            self._items = keep
+            if changed:
+                self._persist_locked()
+        self._notify()
+
     def snapshot(self) -> list[QueueItem]:
         with self._lock:
             return [QueueItem.from_dict(it.to_dict()) for it in self._items]

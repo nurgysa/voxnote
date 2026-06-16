@@ -483,3 +483,30 @@ def test_process_item_resumes_from_source_path_when_original_gone(tmp_path, monk
     # already-archived → not re-archived; the copy stays put
     assert os.path.isfile(archived)
     assert live.source_path == archived
+
+
+# ── forget (evict an item, e.g. its meeting was deleted) ──
+
+def test_forget_drops_item_and_persists(tmp_path):
+    q = _queue(tmp_path)
+    item_id = q.enqueue("/audio/a.m4a", {})
+    q._set_status(q._items[0], StageStatus.DONE)
+    q.forget(item_id)
+    assert q.snapshot() == []
+    with open(tmp_path / "queue.json", encoding="utf-8") as f:
+        assert json.load(f)["items"] == []
+
+
+def test_forget_ignores_unknown_id(tmp_path):
+    q = _queue(tmp_path)
+    q.enqueue("/audio/a.m4a", {})
+    q.forget("does-not-exist")
+    assert len(q.snapshot()) == 1
+
+
+def test_forget_refuses_to_evict_running(tmp_path):
+    q = _queue(tmp_path)
+    item_id = q.enqueue("/audio/a.m4a", {})
+    q._set_status(q._items[0], StageStatus.RUNNING)
+    q.forget(item_id)
+    assert len(q.snapshot()) == 1  # a live job must not be evicted

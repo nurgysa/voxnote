@@ -363,7 +363,7 @@ class MeetingsDialog(ctk.CTkToplevel):
                 row, text="✕", width=32, height=32, corner_radius=16,
                 font=ctk.CTkFont(family=FONT, size=14),
                 fg_color="transparent", hover_color=BORDER, text_color=RED,
-                command=lambda f=item.meeting_folder: self._delete(f),
+                command=lambda it=item: self._delete(it),
             ).grid(row=0, column=col, rowspan=2, padx=(0, 8), pady=4)
         elif item.status == StageStatus.ERROR:
             ctk.CTkButton(
@@ -404,10 +404,14 @@ class MeetingsDialog(ctk.CTkToplevel):
         self._queue.retry(item_id)
         self._render()
 
-    def _delete(self, folder_path):
-        if folder_path and messagebox.askyesno("Удалить", "Удалить эту встречу?"):
-            delete_history_entry(folder_path)
-            self._transcript_cache.pop(folder_path, None)
+    def _delete(self, item):
+        folder = item.meeting_folder
+        if folder and messagebox.askyesno("Удалить", "Удалить эту встречу?"):
+            delete_history_entry(folder)
+            # Also evict the lingering DONE active item, else build_view's
+            # overlay re-appends it as a ghost row pointing at the deleted folder.
+            self._queue.forget(item.id)
+            self._transcript_cache.pop(folder, None)
             self._render()
 
     def _close(self):
