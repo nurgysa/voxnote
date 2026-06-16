@@ -170,8 +170,52 @@ def build_meetings_section(dialog, parent) -> None:
     dialog._refresh_meetings_stats()
 
 
+def build_sources_section(dialog, parent) -> None:
+    """Audio-archive folder picker (sources_dir).
+
+    Where the worker copies/moves source audio after transcription (the
+    Hermes 'sources/' convention). Empty = don't archive — the worker skips
+    archiving when sources_dir is unset (processing/worker.py). No
+    migration/stats like Встречи: this is just a destination, and any
+    previously archived files stay where they are.
+    """
+    section = section_card(dialog, parent, "Архив аудио", row=5)
+
+    label(
+        section,
+        "Папка-архив исходного аудио (напр. Google Drive → sources). "
+        "Пусто = не архивировать.",
+        anchor="w",
+    ).grid(row=0, column=0, columnspan=4, padx=4, pady=(4, 6), sticky="w")
+
+    dialog._sources_path_var = ctk.StringVar(
+        value=(dialog._parent._config.get("sources_dir") or ""),
+    )
+    dialog._sources_entry = ctk.CTkEntry(
+        section, textvariable=dialog._sources_path_var,
+        height=36, corner_radius=10,
+        border_color=BORDER, border_width=1,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+        font=ctk.CTkFont(family=FONT, size=12),
+        state="readonly",
+    )
+    dialog._sources_entry.grid(
+        row=1, column=0, columnspan=3, padx=4, pady=6, sticky="ew",
+    )
+
+    tonal_button(
+        section, text="\U0001f4c1 Выбрать",
+        command=dialog._on_pick_sources_folder, width=130,
+    ).grid(row=1, column=3, padx=(4, 4), pady=6)
+
+    tonal_button(
+        section, text="Очистить",
+        command=dialog._on_clear_sources_folder, width=120,
+    ).grid(row=2, column=3, padx=(4, 4), pady=(0, 6))
+
+
 def build_dictionaries_section(dialog, parent) -> None:
-    section = section_card(dialog, parent, "Словари", row=5)
+    section = section_card(dialog, parent, "Словари", row=6)
 
     tonal_button(
         section, text="Словарь терминов",
