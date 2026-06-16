@@ -147,6 +147,8 @@ class ProcessingQueue:
         with self._lock:
             item.status = status
             item.error_message = error_message
+            if status == StageStatus.RUNNING:
+                item.started_at = datetime.now().isoformat(timespec="seconds")
             self._persist_locked()
         self._notify()
 
