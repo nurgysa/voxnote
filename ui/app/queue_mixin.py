@@ -7,12 +7,15 @@ writes transcript.md into the Obsidian vault, archives audio to Drive sources,
 and fires a best-effort Hermes nudge. The App reacts to queue changes via the
 injected on_change callback (marshalled to the Tk thread with after(0, ...)) and
 shows an aggregate indicator strip. Per-meeting status + history land in the
-«Встречи» dialog (PR-C2); the project selector lands in PR-C1b.
+«Встречи» dialog (PR-C2). The main-bar project selector is wired here (PR-C1b):
+_refresh_project_selector rebuilds the label→id map from _dir_store and
+_build_options reads the chosen project_id.
 
 Mixin contract: relies on App providing the option Vars (_cloud_provider_var,
-_lang_var, _diar_var, _spk_count_var, _denoise_var), _cloud_api_keys, _config,
-the widgets _lbl_queue / _lbl_status, and self._queue (ProcessingQueue, built in
-App.__init__). NO worker thread of its own — ProcessingQueue owns that.
+_lang_var, _diar_var, _spk_count_var, _denoise_var, _project_var), _cloud_api_keys,
+_config, _dir_store (DirectoryStore), the widgets _lbl_queue / _lbl_status /
+_project_menu, and self._queue (ProcessingQueue, built in App.__init__). NO worker
+thread of its own — ProcessingQueue owns that.
 """
 from __future__ import annotations
 

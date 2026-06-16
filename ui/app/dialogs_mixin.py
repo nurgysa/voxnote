@@ -92,9 +92,17 @@ class DialogsMixin:
 
     def _on_directory_dialog_closed(self, event, dlg) -> None:
         # CTk fires <Destroy> for inner widgets too; act only on the toplevel.
-        if event.widget is dlg:
-            self._dir_store.load()
+        if event.widget is not dlg:
+            return
+        self._dir_store.load()
+        # If the whole app is closing while Справочники is open, this <Destroy>
+        # fires during root teardown and _project_menu may be mid-destruction.
+        # Swallow the post-destroy TclError (the normal close-dialog-only path is
+        # unaffected) — mirrors QueueMixin._safe_after_refresh's shutdown guard.
+        try:
             self._refresh_project_selector()
+        except tk.TclError:
+            pass
 
     def _open_extract_tasks_dialog(self):
         """Validate the OpenRouter key is set, then open the Extract dialog.
