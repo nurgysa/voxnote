@@ -77,7 +77,9 @@ class DialogsMixin:
         TermsDialog(self, self._config, self._refresh_settings_summaries)
 
     def _open_meetings_dialog(self):
-        MeetingsDialog(self, on_load_to_main=self._load_history_into_main)
+        MeetingsDialog(
+            self, on_load_to_main=self._load_history_into_main, queue=self._queue,
+        )
 
     def _open_directory_dialog(self):
         dlg = DirectoryDialog(self)
