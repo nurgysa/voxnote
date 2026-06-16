@@ -153,6 +153,7 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_audio_section(self, scroll_transcription)
         settings_builder.build_cloud_section(self, scroll_transcription)
         settings_builder.build_meetings_section(self, scroll_transcription)
+        settings_builder.build_sources_section(self, scroll_transcription)
         settings_builder.build_dictionaries_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
@@ -407,6 +408,26 @@ class SettingsDialog(ctk.CTkToplevel):
         new_path = get_meetings_dir()
         self._meetings_path_var.set(new_path)
         self._refresh_meetings_stats()
+
+    def _on_pick_sources_folder(self) -> None:
+        """«Выбрать» for the audio archive — native dir picker, then persist."""
+        chosen = filedialog.askdirectory(
+            title="Папка-архив исходного аудио",
+            initialdir=self._sources_path_var.get() or None,
+            parent=self,
+        )
+        if not chosen:
+            return  # user cancelled
+        normalized = os.path.abspath(chosen)
+        self._parent._config["sources_dir"] = normalized
+        save_config(self._parent._config)
+        self._sources_path_var.set(normalized)
+
+    def _on_clear_sources_folder(self) -> None:
+        """«Очистить» — empty sources_dir disables archiving (worker skips)."""
+        self._parent._config["sources_dir"] = ""
+        save_config(self._parent._config)
+        self._sources_path_var.set("")
 
     def _refresh_summaries(self) -> None:
         """Mirror App's existing summary-rendering for terms.

@@ -26,6 +26,7 @@
   "meetings_dir": "",
   "sources_dir": "",
   "inbox_dir": "",
+  "last_project_id": "",
   "hermes_webhook_enabled": false,
   "hermes_webhook_url": "http://localhost:8644/webhooks/audio-transcribed",
   "hermes_webhook_secret": "",

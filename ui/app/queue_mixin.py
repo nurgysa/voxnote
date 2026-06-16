@@ -7,12 +7,15 @@ writes transcript.md into the Obsidian vault, archives audio to Drive sources,
 and fires a best-effort Hermes nudge. The App reacts to queue changes via the
 injected on_change callback (marshalled to the Tk thread with after(0, ...)) and
 shows an aggregate indicator strip. Per-meeting status + history land in the
-«Встречи» dialog (PR-C2); the project selector lands in PR-C1b.
+«Встречи» dialog (PR-C2). The main-bar project selector is wired here (PR-C1b):
+_refresh_project_selector rebuilds the label→id map from _dir_store and
+_build_options reads the chosen project_id.
 
 Mixin contract: relies on App providing the option Vars (_cloud_provider_var,
-_lang_var, _diar_var, _spk_count_var, _denoise_var), _cloud_api_keys, _config,
-the widgets _lbl_queue / _lbl_status, and self._queue (ProcessingQueue, built in
-App.__init__). NO worker thread of its own — ProcessingQueue owns that.
+_lang_var, _diar_var, _spk_count_var, _denoise_var, _project_var), _cloud_api_keys,
+_config, _dir_store (DirectoryStore), the widgets _lbl_queue / _lbl_status /
+_project_menu, and self._queue (ProcessingQueue, built in App.__init__). NO worker
+thread of its own — ProcessingQueue owns that.
 """
 from __future__ import annotations
 
@@ -22,8 +25,9 @@ from tkinter import messagebox
 
 from processing.model import StageStatus
 from theme import GREEN, RED, TEXT_SECONDARY
+from utils import save_config
 
-from .constants import LANGUAGES, SPEAKER_COUNTS
+from .constants import LANGUAGES, NO_PROJECT_LABEL, SPEAKER_COUNTS
 
 
 class QueueMixin:
@@ -31,8 +35,8 @@ class QueueMixin:
 
     def _build_options(self, source: str) -> dict:
         """Gather the current run options from the App's setting Vars into the
-        dict the worker consumes. project_id is None in PR-C1 (the project
-        selector lands in PR-C1b)."""
+        dict the worker consumes. project_id comes from the main-bar project
+        selector (Без проекта → None)."""
         saved_terms = self._config.get("hotwords", [])
         num_speakers, min_speakers, max_speakers = SPEAKER_COUNTS.get(
             self._spk_count_var.get(), (None, None, None),
@@ -46,9 +50,45 @@ class QueueMixin:
             "min_speakers": min_speakers,
             "max_speakers": max_speakers,
             "denoise": bool(self._denoise_var.get()),
-            "project_id": None,
+            "project_id": getattr(self, "_project_choices", {}).get(
+                self._project_var.get()
+            ),
             "source": source,
         }
+
+    def _refresh_project_selector(self) -> None:
+        """(Re)build the project dropdown from the directory store.
+
+        Called once at startup (after _dir_store.load()) and again whenever the
+        Справочники dialog closes (projects may be added/renamed/deleted).
+        Builds a label→id map (Без проекта → None); duplicate project names get
+        a short id suffix so the map stays 1:1. Restores the selection from
+        config[last_project_id], falling back to Без проекта if that project is
+        gone."""
+        choices: dict[str, str | None] = {NO_PROJECT_LABEL: None}
+        for project in self._dir_store.projects():
+            label = project.name or "(без имени)"
+            if label in choices:
+                label = f"{label} · {project.id[:6]}"
+            choices[label] = project.id
+        self._project_choices = choices
+        self._project_menu.configure(values=list(choices.keys()))
+
+        last = (self._config.get("last_project_id") or "").strip()
+        selected = NO_PROJECT_LABEL
+        if last:
+            for lbl, pid in choices.items():
+                if pid == last:
+                    selected = lbl
+                    break
+        self._project_var.set(selected)
+
+    def _on_project_changed(self, _label: str | None = None) -> None:
+        """Persist the chosen project as last_project_id so it's the default
+        next launch. Без проекта (None) is stored as an empty string."""
+        pid = getattr(self, "_project_choices", {}).get(self._project_var.get())
+        self._config["last_project_id"] = pid or ""
+        save_config(self._config)
 
     def _enqueue(self, audio_path: str, source: str) -> None:
         """Add an audio file to the processing queue. Pre-checks the cloud key

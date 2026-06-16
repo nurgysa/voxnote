@@ -222,6 +222,7 @@ class App(
         # Hermes nudge. on_change is marshalled to the Tk thread via after(0).
         self._dir_store = DirectoryStore()
         self._dir_store.load()
+        self._refresh_project_selector()  # populate the main-bar project dropdown
         self._queue = ProcessingQueue(
             meetings_dir=get_meetings_dir(),
             config_loader=load_config,
