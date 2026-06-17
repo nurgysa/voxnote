@@ -23,6 +23,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
+from processing.inbox_watcher import InboxWatcher
 from processing.model import StageStatus
 from theme import GREEN, RED, TEXT_SECONDARY
 from utils import save_config
@@ -32,6 +33,10 @@ from .constants import LANGUAGES, NO_PROJECT_LABEL, SPEAKER_COUNTS
 
 class QueueMixin:
     """Enqueue + reactive indicator over the App's ProcessingQueue."""
+
+    # Inbox poll cadence. The watcher debounces on size-stability across two
+    # polls, so effective enqueue latency after a Drive sync finishes is ≈2×.
+    _INBOX_POLL_MS = 10_000
 
     def _build_options(self, source: str) -> dict:
         """Gather the current run options from the App's setting Vars into the
@@ -136,7 +141,53 @@ class QueueMixin:
             text_color=RED if errors else TEXT_SECONDARY,
         )
 
+    def _inbox_tick(self) -> None:
+        """Poll the Drive inbox folder and enqueue newly-arrived audio.
+
+        Runs on the Tk thread via after(...). Rebuilds the watcher when the
+        configured inbox_dir changed (a Settings edit takes effect without a
+        restart). Dedups ready paths against the still-active (non-DONE) queue
+        items by audio_path so a restart mid-queue (a PENDING/RUNNING/ERROR file
+        still in inbox) can't enqueue it twice — a DONE item's path is stale (the
+        worker moved the file out of inbox), so it never blocks a new same-name
+        drop. Inbox items are no-project and skip the interactive API-key dialog
+        — a missing key surfaces as a queue ERROR item (visible in «Встречи»),
+        not a popup with no user to dismiss it."""
+        try:
+            current = (self._config.get("inbox_dir") or "").strip() or None
+            if current != self._inbox_dir:
+                self._inbox_dir = current
+                self._inbox_watcher = InboxWatcher(current)
+            ready = self._inbox_watcher.poll()
+            if ready:
+                queued = {
+                    it.audio_path for it in self._queue.snapshot()
+                    if it.status != StageStatus.DONE
+                }
+                added = 0
+                for path in ready:
+                    if path in queued:
+                        continue
+                    options = self._build_options("inbox")
+                    options["project_id"] = None
+                    self._queue.enqueue(path, options)
+                    added += 1
+                if added:
+                    self._lbl_status.configure(
+                        text=f"Из inbox добавлено: {added}", text_color=GREEN,
+                    )
+                    self._refresh_queue_indicator()
+            self._inbox_after_id = self.after(self._INBOX_POLL_MS, self._inbox_tick)
+        except tk.TclError:
+            self._inbox_after_id = None  # window destroyed mid-tick — stop the loop
+
     def _on_app_close(self) -> None:
-        """Stop the queue's daemon thread, then close the window."""
+        """Stop the queue's daemon thread + the inbox poll, then close."""
+        if self._inbox_after_id is not None:
+            try:
+                self.after_cancel(self._inbox_after_id)
+            except tk.TclError:
+                pass
+            self._inbox_after_id = None
         self._queue.stop()
         self.destroy()
