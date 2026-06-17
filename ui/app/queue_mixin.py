@@ -146,11 +146,13 @@ class QueueMixin:
 
         Runs on the Tk thread via after(...). Rebuilds the watcher when the
         configured inbox_dir changed (a Settings edit takes effect without a
-        restart). Dedups ready paths against the live queue snapshot by
-        audio_path so a restart mid-queue (file still in inbox, not yet moved by
-        the worker) can't enqueue it twice. Inbox items are no-project and skip
-        the interactive API-key dialog — a missing key surfaces as a queue ERROR
-        item (visible in «Встречи»), not a popup with no user to dismiss it."""
+        restart). Dedups ready paths against the still-active (non-DONE) queue
+        items by audio_path so a restart mid-queue (a PENDING/RUNNING/ERROR file
+        still in inbox) can't enqueue it twice — a DONE item's path is stale (the
+        worker moved the file out of inbox), so it never blocks a new same-name
+        drop. Inbox items are no-project and skip the interactive API-key dialog
+        — a missing key surfaces as a queue ERROR item (visible in «Встречи»),
+        not a popup with no user to dismiss it."""
         try:
             current = (self._config.get("inbox_dir") or "").strip() or None
             if current != self._inbox_dir:
@@ -158,7 +160,10 @@ class QueueMixin:
                 self._inbox_watcher = InboxWatcher(current)
             ready = self._inbox_watcher.poll()
             if ready:
-                queued = {it.audio_path for it in self._queue.snapshot()}
+                queued = {
+                    it.audio_path for it in self._queue.snapshot()
+                    if it.status != StageStatus.DONE
+                }
                 added = 0
                 for path in ready:
                     if path in queued:
