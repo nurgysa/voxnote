@@ -38,6 +38,7 @@ class QueueItem:
     source: str = "pick"             # record | pick | inbox
     source_path: str | None = None   # archived audio in Drive sources/
     status: StageStatus = StageStatus.PENDING
+    started_at: str | None = None    # ISO timestamp, stamped on RUNNING (drives the mm:ss timer)
     nudge_delivered: bool = False
     error_message: str | None = None
     has_protocol: bool = False       # display badge: Hermes wrote protocol.md
@@ -56,6 +57,7 @@ class QueueItem:
             "source": self.source,
             "source_path": self.source_path,
             "status": self.status.value,
+            "started_at": self.started_at,
             "nudge_delivered": self.nudge_delivered,
             "error_message": self.error_message,
             "has_protocol": self.has_protocol,
@@ -80,6 +82,7 @@ class QueueItem:
             source=d.get("source") or "pick",
             source_path=d.get("source_path"),
             status=status,
+            started_at=d.get("started_at"),
             nudge_delivered=bool(d.get("nudge_delivered", False)),
             error_message=d.get("error_message"),
             has_protocol=bool(d.get("has_protocol", False)),
