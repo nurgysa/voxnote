@@ -10,6 +10,7 @@ import customtkinter as ctk
 
 from directory.store import DirectoryStore
 from logging_setup import init_logging, log_callback_exception
+from processing.inbox_watcher import InboxWatcher
 from processing.worker import ProcessingQueue
 from recorder import Recorder
 from theme import BG
@@ -234,6 +235,15 @@ class App(
         self._queue.start()
         self.protocol("WM_DELETE_WINDOW", self._on_app_close)
         self._refresh_queue_indicator()
+
+        # Inbox poll (PR-C3): a Google Drive-synced inbox/ folder where the
+        # phone drops audio. The watcher debounces on size-stability; the tick
+        # enqueues ready files (no-project). The event loop only starts after
+        # __init__ returns, so _inbox_after_id is set before _on_app_close can
+        # ever fire. inbox_dir empty → poll() is a no-op (feature off).
+        self._inbox_dir = (self._config.get("inbox_dir") or "").strip() or None
+        self._inbox_watcher = InboxWatcher(self._inbox_dir)
+        self._inbox_after_id = self.after(self._INBOX_POLL_MS, self._inbox_tick)
 
         # First-launch meetings migration check. If meetings_dir isn't
         # explicitly configured AND a legacy history folder still has
