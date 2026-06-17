@@ -214,8 +214,52 @@ def build_sources_section(dialog, parent) -> None:
     ).grid(row=2, column=3, padx=(4, 4), pady=(0, 6))
 
 
+def build_inbox_section(dialog, parent) -> None:
+    """Inbox folder picker (inbox_dir).
+
+    A Google Drive-synced inbox/ folder where the phone drops audio; the App
+    polls it and auto-enqueues new files (no project). Empty = don't watch.
+    Point this at a DIFFERENT folder than «Архив аудио»/«Встречи» — the worker
+    moves processed inbox files into the archive, so a shared folder would
+    re-scan them. No migration/stats: it's just a watched source.
+    """
+    section = section_card(dialog, parent, "Приём с телефона", row=6)
+
+    label(
+        section,
+        "Папка-приёмник аудио с телефона (Google Drive → inbox). "
+        "Пусто = не следить.",
+        anchor="w",
+    ).grid(row=0, column=0, columnspan=4, padx=4, pady=(4, 6), sticky="w")
+
+    dialog._inbox_path_var = ctk.StringVar(
+        value=(dialog._parent._config.get("inbox_dir") or ""),
+    )
+    dialog._inbox_entry = ctk.CTkEntry(
+        section, textvariable=dialog._inbox_path_var,
+        height=36, corner_radius=10,
+        border_color=BORDER, border_width=1,
+        fg_color=INPUT_BG, text_color=TEXT_PRIMARY,
+        font=ctk.CTkFont(family=FONT, size=12),
+        state="readonly",
+    )
+    dialog._inbox_entry.grid(
+        row=1, column=0, columnspan=3, padx=4, pady=6, sticky="ew",
+    )
+
+    tonal_button(
+        section, text="\U0001f4c1 Выбрать",
+        command=dialog._on_pick_inbox_folder, width=130,
+    ).grid(row=1, column=3, padx=(4, 4), pady=6)
+
+    tonal_button(
+        section, text="Очистить",
+        command=dialog._on_clear_inbox_folder, width=120,
+    ).grid(row=2, column=3, padx=(4, 4), pady=(0, 6))
+
+
 def build_dictionaries_section(dialog, parent) -> None:
-    section = section_card(dialog, parent, "Словари", row=6)
+    section = section_card(dialog, parent, "Словари", row=7)
 
     tonal_button(
         section, text="Словарь терминов",

@@ -154,6 +154,7 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_cloud_section(self, scroll_transcription)
         settings_builder.build_meetings_section(self, scroll_transcription)
         settings_builder.build_sources_section(self, scroll_transcription)
+        settings_builder.build_inbox_section(self, scroll_transcription)
         settings_builder.build_dictionaries_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
@@ -428,6 +429,26 @@ class SettingsDialog(ctk.CTkToplevel):
         self._parent._config["sources_dir"] = ""
         save_config(self._parent._config)
         self._sources_path_var.set("")
+
+    def _on_pick_inbox_folder(self) -> None:
+        """«Выбрать» for the phone inbox — native dir picker, then persist."""
+        chosen = filedialog.askdirectory(
+            title="Папка-приёмник аудио с телефона",
+            initialdir=self._inbox_path_var.get() or None,
+            parent=self,
+        )
+        if not chosen:
+            return  # user cancelled
+        normalized = os.path.abspath(chosen)
+        self._parent._config["inbox_dir"] = normalized
+        save_config(self._parent._config)
+        self._inbox_path_var.set(normalized)
+
+    def _on_clear_inbox_folder(self) -> None:
+        """«Очистить» — empty inbox_dir stops the poll (the App tick rebuilds)."""
+        self._parent._config["inbox_dir"] = ""
+        save_config(self._parent._config)
+        self._inbox_path_var.set("")
 
     def _refresh_summaries(self) -> None:
         """Mirror App's existing summary-rendering for terms.
