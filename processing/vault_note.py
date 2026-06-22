@@ -20,6 +20,33 @@ def _yaml_str(value: str) -> str:
     return '"' + value.replace("\\", "/").replace('"', '\\"') + '"'
 
 
+_WIKILINK_ILLEGAL = str.maketrans({c: " " for c in "[]|#^"})
+
+
+def _wikilink_safe(name: str) -> str:
+    """Strip characters that would break an Obsidian [[wikilink]] and collapse
+    whitespace. Returns '' when nothing usable remains."""
+    return " ".join(name.translate(_WIKILINK_ILLEGAL).split())
+
+
+def _render_relations(project_name: str | None, participants: list[str]) -> str:
+    """Inline '## Связи' section linking the project + roster people as
+    [[wikilinks]] (the Obsidian graph + GBrain are fed by inline links, not
+    frontmatter). Returns '' when there is neither a project nor any participant,
+    so the caller omits the whole section."""
+    lines: list[str] = []
+    proj = _wikilink_safe(project_name or "")
+    if proj:
+        lines.append(f"- **Проект:** [[{proj}]]")
+    people = [s for s in (_wikilink_safe(p) for p in participants) if s]
+    if people:
+        joined = ", ".join(f"[[{p}]]" for p in people)
+        lines.append(f"- **Участники:** {joined}")
+    if not lines:
+        return ""
+    return "\n## Связи\n\n" + "\n".join(lines) + "\n\n"
+
+
 def render_transcript_note(
     *,
     segments: list[dict],
@@ -42,10 +69,11 @@ def render_transcript_note(
     frontmatter = [
         "---",
         "type: meeting",
+        "tags: [meeting]",
         f"date: {date}",
         f"time: {_yaml_str(time)}",
         f"project: {project_name or ''}",
-        f"participants: [{', '.join(participants)}]",
+        f"participants: [{', '.join(_yaml_str(p) for p in participants)}]",
         f"provider: {provider}",
         f"language: {language or ''}",
         f"voxnote_id: {voxnote_id}",
@@ -55,7 +83,12 @@ def render_transcript_note(
         "",
     ]
     body = format_diarized_markdown(segments, speaker_map)
-    return "\n".join(frontmatter) + body + "\n"
+    return (
+        "\n".join(frontmatter)
+        + _render_relations(project_name, participants)
+        + body
+        + "\n"
+    )
 
 
 def write_transcript_note(

@@ -52,3 +52,51 @@ def test_write_collision_safe(tmp_path):
     p2 = vault_note.write_transcript_note(str(tmp_path), None, "m", "second")
     assert p2 == os.path.join(str(tmp_path), "m-2", "transcript.md")
     assert open(p2, encoding="utf-8").read() == "second"
+
+
+def test_render_adds_meeting_tag_and_relations_section():
+    md = vault_note.render_transcript_note(
+        segments=[{"start": 0, "end": 1, "text": "привет", "speaker": "SPEAKER_00"}],
+        title="call", project_name="AI Auditor", date="2026-06-22", time="10:00",
+        participants=["Алмас Нурлан", "Данияр Сатыбалды"],
+        provider="AssemblyAI", language="ru",
+        voxnote_id="vid1", source_path=None, nudged=True,
+    )
+    assert "tags: [meeting]" in md
+    assert 'participants: ["Алмас Нурлан", "Данияр Сатыбалды"]' in md
+    assert "## Связи" in md
+    assert "- **Проект:** [[AI Auditor]]" in md
+    assert "- **Участники:** [[Алмас Нурлан]], [[Данияр Сатыбалды]]" in md
+    # the section sits between the frontmatter and the diarized body
+    assert md.index("## Связи") < md.index("**Спикер 1:** привет")
+
+
+def test_render_no_project_no_participants_omits_relations():
+    md = vault_note.render_transcript_note(
+        segments=[], title="x", project_name=None, date="2026-06-22", time="09:00",
+        participants=[], provider="Deepgram", language=None,
+        voxnote_id="v", source_path=None, nudged=False,
+    )
+    assert "## Связи" not in md
+    assert "tags: [meeting]" in md   # the tag is unconditional
+    assert "participants: []" in md
+
+
+def test_render_project_only_when_roster_empty():
+    md = vault_note.render_transcript_note(
+        segments=[], title="x", project_name="Alpha", date="2026-06-22", time="09:00",
+        participants=[], provider="Deepgram", language=None,
+        voxnote_id="v", source_path=None, nudged=False,
+    )
+    assert "- **Проект:** [[Alpha]]" in md
+    assert "**Участники:**" not in md
+
+
+def test_render_strips_illegal_wikilink_chars():
+    md = vault_note.render_transcript_note(
+        segments=[], title="x", project_name="План#1", date="2026-06-22", time="09:00",
+        participants=["Иван|Петров"], provider="Deepgram", language=None,
+        voxnote_id="v", source_path=None, nudged=False,
+    )
+    assert "[[План 1]]" in md      # '#' -> space, collapsed
+    assert "[[Иван Петров]]" in md  # '|' -> space, collapsed
