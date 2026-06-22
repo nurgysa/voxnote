@@ -104,6 +104,25 @@ def test_loads_existing_active_items(tmp_path):
     assert len(q2.snapshot()) == 1
 
 
+def test_done_item_not_persisted_but_kept_in_memory(tmp_path):
+    """A completed item is dropped from queue.json (queue.json = active work
+    only) but stays in the in-memory snapshot for the session's live view."""
+    q = _queue(tmp_path)
+    done_id = q.enqueue("/audio/done.m4a", {})
+    pend_id = q.enqueue("/audio/pend.m4a", {})
+    q._set_status(q._items[0], StageStatus.DONE)
+
+    with open(tmp_path / "queue.json", encoding="utf-8") as f:
+        persisted_ids = [it["id"] for it in json.load(f)["items"]]
+    assert done_id not in persisted_ids   # DONE not written
+    assert pend_id in persisted_ids       # active item still written
+
+    # in-memory overlay preserved (live «Встречи» shows "just finished")
+    statuses = {it.id: it.status for it in q.snapshot()}
+    assert statuses[done_id] == StageStatus.DONE
+    assert statuses[pend_id] == StageStatus.PENDING
+
+
 # ── _process_item: happy path + archive variants ──
 
 def test_process_item_writes_note_and_copies_for_pick(tmp_path, monkeypatch):

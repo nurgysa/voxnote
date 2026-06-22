@@ -153,8 +153,15 @@ class ProcessingQueue:
             self._on_change()
 
     def _persist_locked(self) -> None:
-        # Caller holds self._lock. queue.json carries active items only.
-        store.save_active([it for it in self._items if it.auto], self._queue_path)
+        # Caller holds self._lock. queue.json carries ACTIVE items only — a
+        # finished meeting lives on disk (its transcript.md); persisting DONE
+        # here would grow queue.json without bound and leak a stale audio_path
+        # into the inbox dedup across restarts. build_view re-reads finished
+        # meetings from their folders for «Встречи».
+        store.save_active(
+            [it for it in self._items if it.auto and it.status != StageStatus.DONE],
+            self._queue_path,
+        )
 
     def _set_status(
         self, item: QueueItem, status: StageStatus, *, error_message: str | None = None
