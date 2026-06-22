@@ -103,3 +103,22 @@ def test_estimate_cost_none_when_duration_unknown():
 
 def test_estimate_cost_none_for_unknown_provider():
     assert preflight.estimate_cost("Nope", 3600.0) is None
+
+
+# ── cost_hint_suffix ──
+
+def test_cost_hint_suffix_formats_two_decimals():
+    assert preflight.cost_hint_suffix("AssemblyAI", 3600.0) == " · ~$0.17"
+
+
+def test_cost_hint_suffix_empty_when_duration_unknown():
+    assert preflight.cost_hint_suffix("AssemblyAI", None) == ""
+
+
+def test_cost_hint_suffix_empty_for_unknown_provider():
+    assert preflight.cost_hint_suffix("Nope", 3600.0) == ""
+
+
+def test_cost_hint_suffix_sub_cent_shows_less_than():
+    # a 10 s AssemblyAI clip costs ~$0.0005 — show <$0.01, not a misleading $0.00
+    assert preflight.cost_hint_suffix("AssemblyAI", 10.0) == " · ~<$0.01"
