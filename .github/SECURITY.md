@@ -15,6 +15,6 @@ Use GitHub's private reporting on this repository: **Security → Report a vulne
 Scope notes for researchers:
 
 - API keys live in `~/.voxnote/config.json` (owner-only ACL applied on Windows in frozen mode).
-- The diagnostics log bundle and Google Drive backups redact secret-named config keys deny-by-default (`gdrive/backup.py::redact_config`).
+- The diagnostics log bundle redacts secret-named config keys deny-by-default (`support_bundle.py::redact_config`).
 - The CLI / MCP surface confines file-path arguments to outside the secret store (`cli/_paths.py`).
 - Audio and transcripts are sent to the user's configured cloud providers by design — see the privacy note in `README.md`.

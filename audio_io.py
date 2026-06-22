@@ -100,9 +100,9 @@ def _get_rnnoise_model_path() -> str:
     the binary out of the repo while still giving the user a one-click
     experience (no manual install steps).
 
-    Cache directory matches the existing convention used by
-    ``gdrive/auth.py`` for its OAuth token cache:
-    ``~/.voxnote/<subsystem>/``.
+    Cache directory follows the ``~/.voxnote/<subsystem>/`` convention
+    used by other persistent app-data (e.g. ``~/.voxnote/`` for config
+    and directory).
 
     Raises:
         RuntimeError: network failure, disk full, or any other write

@@ -56,7 +56,6 @@ Briefing for engineers (human or AI) picking up this codebase. Pairs with
  └────────────────────┘                              └────────────────────┘
 
  Supporting packages:
-   gdrive/      OAuth + Drive backup (auth · client · backup)
    directory/   people/projects grounding (schema · store · context)
    processing/  meetings-by-project layout + queue (model · store · layout)
    cli/         headless CLI + MCP stdio server (app · core · mcp_server)
@@ -123,7 +122,6 @@ issues/cards. The dedup pass (`tasks/dedup.py`) can mark a task `COMMENTED`
 | File | Owner | Mutable? | Schema |
 |---|---|---|---|
 | `~/.voxnote/config.json` | `utils.save_config` | yes | see `config.example.json` |
-| `~/.voxnote/gdrive-token.json` | `gdrive.auth` | yes | OAuth token cache (secret) |
 | `~/.voxnote/directory.json` | `directory.store` | yes | people/projects directory |
 | `<meeting>/transcript.md` · `description.md` | `utils` / extract flow | one-shot | markdown |
 | `<meeting>/tasks_raw.json` | `tasks.persistence` | no | LLM extractor output |
@@ -167,8 +165,7 @@ ffmpeg must respect them:
    string composition but NOT parseability; ffmpeg-touching code needs manual
    smoke. All ffmpeg calls use argv-list form (no `shell=True`).
 4. **`requirements.txt` pins are load-bearing** (CustomTkinter / soundfile /
-   sounddevice / google-auth on Windows). Don't liberalize without a clean-VM
-   smoke.
+   sounddevice on Windows). Don't liberalize without a clean-VM smoke.
 5. **Config lives in `~/.voxnote/`, never in the bundle.** Frozen
    builds resolve config there so client updates don't wipe keys; the bundle
    ships only `config.example.json` (enforced by `scripts/package_release.py`).

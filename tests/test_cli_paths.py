@@ -45,7 +45,7 @@ def test_rejects_secret_store_dir_itself(tmp_path, monkeypatch):
 
 def test_rejects_dotdot_traversal_into_secret_store(tmp_path, monkeypatch):
     home = _fake_home(tmp_path, monkeypatch)
-    sneaky = home / ".voxnote" / ".." / ".voxnote" / "gdrive-token.json"
+    sneaky = home / ".voxnote" / ".." / ".voxnote" / "config.json"
     with pytest.raises(ValueError):
         ensure_outside_secret_store(str(sneaky))
 

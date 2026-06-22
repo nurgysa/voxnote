@@ -43,7 +43,7 @@ threshold) are gone; only what cloud paths actively use remains.
    `docs/superpowers/plans/2026-05-28-cloud-only-mvp-v5.md`.
 3. **Do not "liberalize" version pins in `requirements.txt`.** Even
    after the rip-out trimmed the heavy stack, the remaining pins
-   (CustomTkinter / soundfile / sounddevice / google-auth versions)
+   (CustomTkinter / soundfile / sounddevice versions)
    are load-bearing on Windows. Bumping them needs explicit smoke
    testing on a clean Win10 + Win11 VM.
 
@@ -116,9 +116,6 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Audio editor | `audio_cutter.py` (silence-removal button removed in the 2026-05-28 rip-out; manual trim + preview + export retained) |
 | Logging setup | `logging_setup.py` |
 | Persistent settings | dev: repo-root `config.json`; frozen: `~/.voxnote/config.json` (survives app updates — PR #92). Template: `config.example.json`. Helpers: `utils.load_config` (corrupt-JSON quarantine) + `utils.save_config` (atomic write; owner-only ACL on the secret-store dir when frozen) |
-| Google Drive auth (Phase 7.0) | `gdrive/auth.py` (`GDriveAuth` — OAuth desktop loopback via `InstalledAppFlow`; tokens at `~/.voxnote/gdrive-token.json`) |
-| Google Drive API wrapper (Phase 7.1) | `gdrive/client.py` (`DriveClient` — thin wrapper over `googleapiclient.discovery.build`; find/create folder + upload file) |
-| Google Drive backup orchestrator (Phase 7.1) | `gdrive/backup.py` (`run_backup` — composes `redact_config` + `zip_history` + `build_manifest` + `DriveClient`) |
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
 | Headless CLI + MCP server | `cli/` (`core` — pipeline glue reused by both surfaces; `app` — argparse CLI; `mcp_server` — MCP stdio server for agent CLIs, see `AGENTS.md`) |
 | Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout`, `worker` — meetings organized by project on disk + the serial auto-pipeline worker over `cli.core`; UI wiring lands in PR-2b) |
@@ -178,11 +175,8 @@ under `docs/superpowers/` and in git history.
   the class attribute `supports_mixed = False` (nova-3 lacks Kazakh);
   `Transcriber.transcribe()` raises a Russian `ProviderError` for any
   provider with that flag false.
-- **Google Drive**: auth (7.0) + manual backup (7.1) shipped. The
-  `CLIENT_ID` / `CLIENT_SECRET` constants in `gdrive/auth.py` are
-  placeholders by design — every deployment (and every fork) brings its
-  own GCP OAuth desktop client (`drive.file` scope, non-sensitive).
-  Restore (7.2), auto-schedule (7.3), audio opt-in (7.4) unstarted.
+- **Google Drive removed** (2026-06-23): the `gdrive/` package (auth,
+  client, backup) was deleted; backup/restore now lives in Hermes Desktop.
 - **Queued / deferred:**
   - Processing-queue worker + UI on top of `cli.core` (the `processing/`
     foundation is merged; the auto-pipeline wiring is not).
