@@ -27,10 +27,9 @@ def _now_iso() -> str:
 
 
 def _default_directory_path() -> Path:
-    """~/.voxnote/directory.json — beside the gdrive token cache.
+    """~/.voxnote/directory.json — in the app-data home.
 
-    USERPROFILE/HOME env lookup mirrors gdrive/auth.py and stays test-friendly
-    under monkeypatch.
+    USERPROFILE/HOME env lookup stays test-friendly under monkeypatch.
     """
     home = Path(os.environ.get("USERPROFILE") or os.environ.get("HOME") or ".")
     return home / ".voxnote" / FILENAME

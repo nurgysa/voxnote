@@ -1,9 +1,9 @@
 """Tests for utils.restrict_dir_to_owner — WS-5 P2 owner-only secret-store ACL.
 
-``~/.voxnote`` holds config.json (API keys) + gdrive-token.json. The
-codebase's ``os.chmod(..., 0o600)`` is a *silent no-op on Windows*, so the dir
-was left at default ACLs. This locks it owner-only: POSIX ``chmod 0o700``;
-Windows ``icacls`` owner-only. Best-effort — never raises.
+``~/.voxnote`` holds config.json (API keys). The codebase's
+``os.chmod(..., 0o600)`` is a *silent no-op on Windows*, so the dir was left
+at default ACLs. This locks it owner-only: POSIX ``chmod 0o700``; Windows
+``icacls`` owner-only. Best-effort — never raises.
 
 Linux-CI-safe: the POSIX branch is tested with a real chmod (skipped on
 Windows, where mode bits are ~meaningless); the Windows branch is tested by

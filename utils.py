@@ -17,7 +17,7 @@ def _default_config_path() -> str:
 
     Frozen (.exe): ``~/.voxnote/config.json`` — OUTSIDE the bundle so
     a build update never wipes the user's settings (same app-data home as
-    gdrive-token.json / directory.json). Source (dev): repo-root config.json
+    directory.json). Source (dev): repo-root config.json
     beside utils.py (unchanged).
     """
     if getattr(sys, "frozen", False):
@@ -38,8 +38,8 @@ _SECRET_DIR_NAME = ".voxnote"
 def migrate_legacy_secret_dir() -> None:
     """One-time move of ``~/.audio-transcriber`` → ``~/.voxnote``.
 
-    Keeps existing installs' config.json (API keys), gdrive-token.json,
-    directory.json, queue.json, and model cache after the rebrand. Idempotent
+    Keeps existing installs' config.json (API keys), directory.json,
+    queue.json, and model cache after the rebrand. Idempotent
     (no-op once ``~/.voxnote`` exists). Best-effort: a failed move is logged
     and swallowed so it can never block startup.
 
@@ -109,7 +109,7 @@ def restrict_dir_to_owner(path: str) -> bool:
     """Best-effort lock directory ``path`` to the current user only (WS-5 P2).
 
     Defense-in-depth for the secret store ``~/.voxnote`` (config.json
-    API keys + gdrive-token.json). POSIX: ``chmod 0o700``. Windows: ``icacls``
+    API keys). POSIX: ``chmod 0o700``. Windows: ``icacls``
     owner-only — the ``os.chmod(0o600)`` the codebase relied on is a silent
     no-op there. Never raises: a failed hardening is logged and the caller
     proceeds (availability > a best-effort ACL). Returns True on success.

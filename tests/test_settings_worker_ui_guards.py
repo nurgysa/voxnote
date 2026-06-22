@@ -44,6 +44,5 @@ def test_no_raw_after_zero_outside_helper():
 
 
 def test_workers_use_the_helper():
-    # stats(1) + gdrive sign-in(2) + backup status/success/failure(3) +
-    # log bundle(2) = 8 marshalling sites today; growth is fine.
-    assert SETTINGS.count("self._post_to_ui(") >= 8
+    # stats(1) + log bundle(2) = 3 marshalling sites today; growth is fine.
+    assert SETTINGS.count("self._post_to_ui(") >= 3

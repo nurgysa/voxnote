@@ -1,20 +1,55 @@
 """Diagnostic log bundle for the "Сохранить лог для отправки" button (D4).
 
 Zips ``logs/`` + a REDACTED ``config.json`` into a single file the user sends
-to support manually — there is NO telemetry backend (decision D4). Reuses
-``gdrive.backup.redact_config`` so the same deny-by-default secret stripping
-protects the bundled config: a log archive that leaked API keys would be a
+to support manually — there is NO telemetry backend (decision D4). Owns
+``redact_config`` directly (deny-by-default secret stripping), so the bundled
+config cannot leak API keys: a log archive that leaked credentials would be a
 worse problem than the silent crash it is meant to diagnose.
 
-Pure (stdlib + redact_config) — unit-testable on Linux CI without the dialog.
+Pure stdlib — unit-testable on Linux CI without the dialog.
 """
 from __future__ import annotations
 
+import copy
 import json
 import zipfile
 from pathlib import Path
+from typing import Any
 
-from gdrive.backup import redact_config
+REDACTION_PLACEHOLDER = "<REDACTED>"
+
+REDACTED_KEYS = (
+    "openrouter_api_key",
+    "linear_api_key",
+    "glide_api_key",
+    "assemblyai_api_key",
+    "trello_api_key",
+    "trello_token",
+    "hf_token",
+)
+
+_SECRET_NAME_HINTS = ("key", "token", "secret", "password")
+
+
+def _looks_like_secret(key_name: str) -> bool:
+    """True if ``key_name`` contains any _SECRET_NAME_HINTS substring."""
+    lowered = key_name.lower()
+    return any(hint in lowered for hint in _SECRET_NAME_HINTS)
+
+
+def redact_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy of ``config`` with all secret values replaced by
+    REDACTION_PLACEHOLDER. Input is never mutated. Deny-by-default: any top-level
+    string whose key is in REDACTED_KEYS or looks like a secret is replaced;
+    cloud_api_keys values are replaced (provider names kept)."""
+    out = copy.deepcopy(config)
+    for key, value in out.items():
+        if isinstance(value, str) and (key in REDACTED_KEYS or _looks_like_secret(key)):
+            out[key] = REDACTION_PLACEHOLDER
+    cloud_keys = out.get("cloud_api_keys")
+    if isinstance(cloud_keys, dict):
+        out["cloud_api_keys"] = {k: REDACTION_PLACEHOLDER for k in cloud_keys}
+    return out
 
 
 def build_log_bundle(config: dict, dest_zip, *, logs_dir=None) -> dict:
@@ -22,7 +57,7 @@ def build_log_bundle(config: dict, dest_zip, *, logs_dir=None) -> dict:
 
     Every file under ``logs_dir`` (app.log + rotated backups + crash dumps +
     faulthandler logs) is added under a ``logs/`` prefix; ``config.json`` is
-    redacted via ``gdrive.backup.redact_config`` before it goes in. A missing
+    redacted via ``redact_config`` before it goes in. A missing
     ``logs_dir`` still yields a valid bundle with just the config (the user can
     send their settings even before any log accrues). ``config`` is never
     mutated (redact_config deep-copies).

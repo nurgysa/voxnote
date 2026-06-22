@@ -3,9 +3,9 @@
 The MCP server exposes ``transcribe_audio(audio_path)`` where the path is a
 *model-supplied* tool argument, and the CLI accepts audio / transcript /
 tasks file paths. Without a guard an agent could point those at the secret
-store — ``~/.voxnote/{config.json,gdrive-token.json,directory.json,
-queue.json}`` — and exfiltrate credentials by having them transcribed and
-uploaded to a cloud provider.
+store — ``~/.voxnote/{config.json,directory.json,queue.json}`` — and
+exfiltrate credentials by having them transcribed and uploaded to a cloud
+provider.
 
 Policy: a **deny-list**, not an allowlist. Only paths resolving into the
 secret store are rejected; every other location stays readable, because the

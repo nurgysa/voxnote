@@ -10,7 +10,7 @@ from requirements.txt entirely), so PyInstaller never sees them — no
 need for the elaborate excludes list v4 of the plan called for.
 
 Bundles:
-  - app.py + transcriber/* + providers/* + tasks/* + gdrive/* + ui/* + utils + audio_io
+  - app.py + transcriber/* + providers/* + tasks/* + ui/* + utils + audio_io
   - vendored ffmpeg.exe + ffprobe.exe (under _internal/vendor/ffmpeg/ at runtime)
   - config.example.json (copied to _internal/config.json by build_exe.ps1
     AFTER PyInstaller runs — see step 5 of the build script for the
@@ -104,13 +104,6 @@ a = Analysis(
         "providers.deepgram",
         "providers.gladia",
         "providers.speechmatics",
-        # Google Drive backup (Phase 7.0/7.1) — googleapiclient has
-        # discovery sub-modules that PyInstaller's static analysis
-        # can miss because they're loaded by name at runtime.
-        "googleapiclient.discovery",
-        "googleapiclient.discovery_cache",
-        "googleapiclient.discovery_cache.file_cache",
-        "google_auth_oauthlib.flow",
         # Hermes outbound webhook (spec 2026-06-11) — imported only at
         # function level inside processing.worker._process_item;
         # listed explicitly so a frozen build can never miss the package.
@@ -145,22 +138,6 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
-
-# Trim googleapiclient's bundled API-discovery cache. Its PyInstaller hook
-# collects ALL 581 discovery documents — every Google API, ~94 MB — into
-# _internal/googleapiclient/discovery_cache/documents/. We only ever build the
-# Drive v3 service (gdrive/client.py: build("drive", "v3")), so keep
-# drive.v3.json and drop the other 580. build() reads the kept static doc
-# offline; were it absent it would fall back to an HTTPS discovery fetch, so
-# this is a size-only trim, not a behaviour change.
-def _keep_datum(entry):
-    dest = entry[0].replace("\\", "/")
-    if "/discovery_cache/documents/" in dest:
-        return dest.endswith("/drive.v3.json")
-    return True
-
-
-a.datas = [e for e in a.datas if _keep_datum(e)]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

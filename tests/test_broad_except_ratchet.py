@@ -36,7 +36,6 @@ BASELINE = {
     "audio_cutter.py": 1,                          # decode-failure -> status label
     "cli/app.py": 1,                               # CLI boundary -> exit codes
     "cli/core.py": 1,                              # _safe_close in finally
-    "gdrive/backup.py": 1,                         # UI callback isolation
     "processing/worker.py": 1,                     # single worker-thread boundary
     "providers/assemblyai.py": 1,                  # cancel-then-reraise
     "providers/speechmatics.py": 1,                # cancel-then-reraise
@@ -45,7 +44,7 @@ BASELINE = {
     "ui/app/main_entry.py": 2,                     # last-resort crash handler
     "ui/app/recorder_mixin.py": 1,                 # mic-open failures -> dialog
     "ui/dialogs/extract_tasks/__init__.py": 4,     # worker-thread boundaries
-    "ui/dialogs/settings.py": 3,                   # OAuth/backup/bundle workers
+    "ui/dialogs/settings.py": 1,                   # bundle worker
     "ui/widgets.py": 1,                            # validate-callback boundary
 }
 

@@ -20,12 +20,12 @@ def test_imports_ctk_tabview_or_references_it():
 
 
 def test_three_tabs_added_with_expected_names():
-    """Three tabs: Транскрипция, Интеграции, Резервная копия. We grep
+    """Three tabs: Транскрипция, Интеграции, Диагностика. We grep
     for `.add("<name>")` calls — flexible to either chained-call
     construction or post-construction tab adding."""
     source = SETTINGS_PATH.read_text(encoding="utf-8")
 
-    expected = ["Транскрипция", "Интеграции", "Резервная копия"]
+    expected = ["Транскрипция", "Интеграции", "Диагностика"]
     for name in expected:
         pattern = rf'\.add\(\s*[\'"]{re.escape(name)}[\'"]\s*\)'
         assert re.search(pattern, source), (

@@ -3,7 +3,7 @@
 Per-run controls (Diarization toggle, Speaker count) stay on the main window.
 This dialog owns the persistent cloud-only settings: language, audio
 normalization, cloud provider + API key, plus the LLM-side OpenRouter /
-Linear / Glide / Google Drive integrations. Whisper-model / GPU-device /
+Linear / Glide integrations. Whisper-model / GPU-device /
 HF-token / voice-library entries were removed in the 2026-05-28 rip-out.
 
 State model: the App owns the StringVar/BooleanVar instances; widgets here
@@ -116,7 +116,7 @@ class SettingsDialog(ctk.CTkToplevel):
 
         tab_transcription = self._tabview.add("Транскрипция")
         tab_integrations = self._tabview.add("Интеграции")
-        tab_backup = self._tabview.add("Резервная копия")
+        tab_backup = self._tabview.add("Диагностика")
 
         # Each tab wraps its content in a CTkScrollableFrame so taller
         # sections (Tab 1 has 6) don't clip when the dialog is shrunk.
@@ -165,8 +165,7 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_dedup_section(self, scroll_integrations)
         settings_builder.build_hermes_section(self, scroll_integrations)
 
-        # Tab 3 «Резервная копия» — independent housekeeping
-        settings_builder.build_gdrive_section(self, scroll_backup)
+        # Tab 3 «Диагностика» — log bundle for support
         settings_builder.build_diagnostics_section(self, scroll_backup)
 
         # Reactive banner: subscribe to the three vars whose values
@@ -466,154 +465,6 @@ class SettingsDialog(ctk.CTkToplevel):
             self._terms_summary.configure(text=preview)
         else:
             self._terms_summary.configure(text="Нет сохранённых терминов")
-
-    # ── Google Drive section (Phase 7.0) ──────────────────────────────
-
-    def _refresh_gdrive_button_state(self) -> None:
-        """Войти is enabled iff not signed in; Выйти + Сделать backup
-        iff signed in. Called after every state change so the UI
-        matches the GDriveAuth state."""
-        if self._parent._gdrive_auth.is_signed_in():
-            self._gdrive_signin_btn.configure(state="disabled")
-            self._gdrive_signout_btn.configure(state="normal")
-            self._gdrive_backup_btn.configure(state="normal")
-        else:
-            self._gdrive_signin_btn.configure(state="normal")
-            self._gdrive_signout_btn.configure(state="disabled")
-            self._gdrive_backup_btn.configure(state="disabled")
-
-    def _handle_gdrive_signin(self) -> None:
-        """Войти clicked — spawn a worker that runs sign_in() (blocks on
-        browser). Disable the button immediately so double-click can't
-        spawn two flows."""
-        self._gdrive_signin_btn.configure(state="disabled", text="Открываю браузер...")
-
-        def worker():
-            try:
-                self._parent._gdrive_auth.sign_in()
-                self._post_to_ui(self._on_gdrive_signin_success)
-            except Exception as e:   # any OAuth failure: network, user cancel, GCP misconfig
-                _logger.exception("GDrive sign-in failed: %s", e)
-                # Hoist str(e) into a plain local before the lambda — `e`
-                # is del'd at except-block exit (Python scoping rule), so
-                # `lambda: ...str(e)...` would NameError on the main thread.
-                error_msg = str(e)
-                self._post_to_ui(lambda: self._on_gdrive_signin_failure(error_msg))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_gdrive_signin_success(self) -> None:
-        """Worker → main thread: refresh state + restore button text."""
-        self._parent._on_gdrive_signed_in()
-        self._gdrive_signin_btn.configure(text="Войти через Google")
-        self._refresh_gdrive_button_state()
-
-    def _on_gdrive_signin_failure(self, error_msg: str) -> None:
-        """Worker → main thread: restore button + show error in status."""
-        self._gdrive_signin_btn.configure(text="Войти через Google")
-        self._parent._gdrive_status_var.set(f"⚠ Ошибка входа: {error_msg[:80]}")
-        self._refresh_gdrive_button_state()
-
-    def _handle_gdrive_signout(self) -> None:
-        """Выйти clicked — sync; sign_out() is fast (file delete)."""
-        self._parent._on_gdrive_signed_out()
-        self._refresh_gdrive_button_state()
-
-    # ── Phase 7.1: Сделать backup сейчас ──────────────────────────────
-
-    def _handle_gdrive_backup_now(self) -> None:
-        """Сделать backup clicked — spawn a worker that runs
-        gdrive.backup.run_backup. Disable button immediately so a
-        double-click can't trigger two parallel backups (Drive's
-        find_or_create_folder isn't atomic — concurrent runs could
-        create duplicate top folders)."""
-        self._gdrive_backup_btn.configure(
-            state="disabled", text="Backup в процессе...",
-        )
-        self._gdrive_backup_status.configure(
-            text="Запускаю...", text_color=TEXT_SECONDARY,
-        )
-
-        def worker():
-            try:
-                # Lazy imports — keep dialog construction independent
-                # of gdrive.backup's googleapiclient import chain.
-                import tempfile
-
-                from gdrive.backup import run_backup
-
-                # Status callback marshals each status string back to
-                # the Tk main thread (CTk widgets are not thread-safe).
-                def _status(msg: str) -> None:
-                    self._post_to_ui(self._gdrive_backup_status.configure, {
-                        "text": msg, "text_color": TEXT_SECONDARY,
-                    })
-
-                work_dir = tempfile.mkdtemp(prefix="gdrive-backup-")
-                result = run_backup(
-                    auth=self._parent._gdrive_auth,
-                    config=self._parent._config,
-                    history_dir=get_meetings_dir(),
-                    work_dir=work_dir,
-                    on_status=_status,
-                )
-                self._post_to_ui(lambda: self._on_gdrive_backup_success(result))
-            except Exception as e:   # network, quota, RefreshError, disk full — all surface here
-                _logger.exception("GDrive backup failed: %s", e)
-                # Hoist str(e) before lambda — Python except-scope rule
-                # (same gotcha as _handle_gdrive_signin in Phase 7.0).
-                error_msg = str(e)
-                self._post_to_ui(lambda: self._on_gdrive_backup_failure(error_msg))
-
-        threading.Thread(target=worker, daemon=True).start()
-
-    def _on_gdrive_backup_success(self, result: dict) -> None:
-        """Worker → main thread: persist new config keys + show ✓ message
-        + re-enable button."""
-        self._parent._on_gdrive_backup_succeeded(
-            root_folder_id=result["root_folder_id"],
-            snapshot_name=result["snapshot_name"],
-        )
-        n_files = len(result.get("uploaded", {}))
-        self._gdrive_backup_status.configure(
-            text=f"✓ Готово ({n_files} файла, snapshot {result['snapshot_name']})",
-            text_color=GREEN,
-        )
-        self._gdrive_backup_btn.configure(
-            state="normal", text="Сделать backup сейчас",
-        )
-
-    def _on_gdrive_backup_failure(self, error_msg: str) -> None:
-        """Worker → main thread: surface error in status + re-enable
-        button. Truncate to 100 chars so a long Drive error message
-        doesn't break dialog layout."""
-        self._gdrive_backup_status.configure(
-            text=f"✗ {error_msg[:100]}", text_color=RED,
-        )
-        self._gdrive_backup_btn.configure(
-            state="normal", text="Сделать backup сейчас",
-        )
-        # If ensure_valid_credentials() inside run_backup hit a
-        # RefreshError, GDriveAuth.ensure_valid_credentials() already
-        # called sign_out() internally — credentials gone, token file
-        # deleted. But Phase 7.0's _on_gdrive_signed_out callback only
-        # runs when the user clicks Выйти, so the top status badge +
-        # config.json (gdrive_enabled, gdrive_account_email) remain
-        # stale "signed in" until we sync them here. Codex P2 on PR #48
-        # caught this UI/config drift.
-        #
-        # is_signed_in() is the canonical post-failure check: if False,
-        # ensure_valid_credentials must have sign-out'd; call the mixin
-        # callback so the badge flips to "Не подключён" and config
-        # persists the revoked state. sign_out() inside is idempotent —
-        # safe even though the auth layer already cleared its state.
-        if not self._parent._gdrive_auth.is_signed_in():
-            self._parent._on_gdrive_signed_out()
-        # Refresh button states regardless — covers both the auth-
-        # revoked path (just synced above) and any non-auth failure
-        # (network, quota, disk full) where buttons should re-enable
-        # to allow retry.
-        self._refresh_gdrive_button_state()
 
     # ── Diagnostics: "Сохранить лог для отправки" (WS-3 / D4) ──────────
 
