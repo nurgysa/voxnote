@@ -10,7 +10,7 @@ with the cloud STT providers — using markitdown's ``[audio-transcription]``
 extra would both duplicate that competency and risk pulling heavy ML deps that
 invariant #2 forbids.
 
-Sentinel-pattern lazy load (see ``gdrive/backup.py`` /
+Sentinel-pattern lazy load (see
 [[feedback_sentinel_lazy_load_for_testable_imports]]): ``MarkItDown`` starts as
 ``None`` and is bound on first real use. This keeps markitdown off the import
 chain of dialogs that never attach a document AND lets tests swap it cleanly via

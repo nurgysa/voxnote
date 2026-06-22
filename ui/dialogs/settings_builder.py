@@ -555,7 +555,7 @@ def build_diagnostics_section(dialog, parent) -> None:
     """Diagnostics export: bundle logs/ + a redacted config.json into a
     zip the user can send to support. No telemetry backend (D4) — the
     user picks where to save and ships it themselves."""
-    section = section_card(dialog, parent, "Диагностика", row=1)
+    section = section_card(dialog, parent, "Диагностика", row=0)
     label(section, "Логи").grid(
         row=0, column=0, padx=(4, 8), pady=6, sticky="w",
     )
