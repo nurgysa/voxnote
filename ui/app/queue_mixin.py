@@ -23,6 +23,7 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
+from processing import preflight
 from processing.inbox_watcher import InboxWatcher
 from processing.model import StageStatus
 from theme import GREEN, RED, TEXT_SECONDARY
@@ -107,9 +108,11 @@ class QueueMixin:
                 f"Открой Настройки → Транскрибация (cloud API) и вставь ключ.",
             )
             return
+        info = preflight.probe(audio_path)
+        hint = preflight.cost_hint_suffix(provider, info.get("duration_s"))
         self._queue.enqueue(audio_path, self._build_options(source))
         self._lbl_status.configure(
-            text=f"Добавлено в очередь: {os.path.basename(audio_path)}",
+            text=f"Добавлено в очередь: {os.path.basename(audio_path)}{hint}",
             text_color=GREEN,
         )
         self._refresh_queue_indicator()
