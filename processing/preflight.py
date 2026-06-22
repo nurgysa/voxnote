@@ -142,3 +142,12 @@ def estimate_cost(provider: str, duration_s: float | None) -> float | None:
     if rate is None:
         return None
     return rate * (duration_s / 3600.0)
+
+
+def cost_hint_suffix(provider: str, duration_s: float | None) -> str:
+    """' · ~$X.XX' for an at-enqueue status-line hint, or '' when the cost is
+    unknown (duration unmeasurable or provider not in the rate table)."""
+    cost = estimate_cost(provider, duration_s)
+    if cost is None:
+        return ""
+    return f" · ~${cost:.2f}"
