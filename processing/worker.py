@@ -84,7 +84,12 @@ class ProcessingQueue:
         if had_done:
             self._items = [it for it in self._items if it.status != StageStatus.DONE]
         if interrupted or had_done:
-            store.save_active([it for it in self._items if it.auto], queue_path)
+            # Same predicate as _persist_locked: persist active work only, so
+            # both save sites enforce the queue.json invariant at the call site.
+            store.save_active(
+                [it for it in self._items if it.auto and it.status != StageStatus.DONE],
+                queue_path,
+            )
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
