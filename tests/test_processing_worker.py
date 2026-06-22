@@ -587,3 +587,48 @@ def test_forget_refuses_to_evict_running(tmp_path):
     q._set_status(q._items[0], StageStatus.RUNNING)
     q.forget(item_id)
     assert len(q.snapshot()) == 1  # a live job must not be evicted
+
+
+def test_process_item_links_roster_participants(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    proj = Project(name="AI Auditor", id="p1")
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        resolve_project=lambda pid: proj if pid == "p1" else None,
+        resolve_participants=lambda pid: (
+            ["Алмас Нурлан", "Данияр Сатыбалды"] if pid == "p1" else []
+        ),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(_audio(tmp_path), {"provider": "AssemblyAI", "project_id": "p1"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        note = f.read()
+    assert "## Связи" in note
+    assert "- **Проект:** [[AI Auditor]]" in note
+    assert "[[Алмас Нурлан]], [[Данияр Сатыбалды]]" in note
+    assert 'participants: ["Алмас Нурлан", "Данияр Сатыбалды"]' in note
+
+
+def test_process_item_defaults_to_no_participants(tmp_path, monkeypatch):
+    """Without an injected resolve_participants the worker renders an empty roster
+    — backward compatibility for existing construction sites."""
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    q = _queue(  # _queue() does NOT pass resolve_participants → default applies
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"AssemblyAI": "k"}},
+    )
+    q.enqueue(_audio(tmp_path), {"provider": "AssemblyAI", "source": "record"})
+    q._process_item(q._items[0])
+    live = q.snapshot()[0]
+    assert live.status == StageStatus.DONE
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        note = f.read()
+    assert "participants: []" in note
+    assert "**Участники:**" not in note
