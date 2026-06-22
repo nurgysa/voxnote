@@ -36,7 +36,6 @@ BASELINE = {
     "audio_cutter.py": 1,                          # decode-failure -> status label
     "cli/app.py": 1,                               # CLI boundary -> exit codes
     "cli/core.py": 1,                              # _safe_close in finally
-    "gdrive/backup.py": 1,                         # UI callback isolation
     "processing/worker.py": 1,                     # single worker-thread boundary
     "providers/assemblyai.py": 1,                  # cancel-then-reraise
     "providers/speechmatics.py": 1,                # cancel-then-reraise
