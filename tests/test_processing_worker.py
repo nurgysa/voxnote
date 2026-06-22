@@ -562,6 +562,18 @@ def test_forget_drops_item_and_persists(tmp_path):
         assert json.load(f)["items"] == []
 
 
+def test_forget_drops_errored_item(tmp_path):
+    """«✕ Убрать» in «Встречи» relies on forget evicting an ERROR item (not
+    only DONE). Pins the backend contract the UI dismiss depends on."""
+    q = _queue(tmp_path)
+    item_id = q.enqueue("/audio/a.m4a", {})
+    q._set_status(q._items[0], StageStatus.ERROR, error_message="boom")
+    q.forget(item_id)
+    assert q.snapshot() == []
+    with open(tmp_path / "queue.json", encoding="utf-8") as f:
+        assert json.load(f)["items"] == []
+
+
 def test_forget_ignores_unknown_id(tmp_path):
     q = _queue(tmp_path)
     q.enqueue("/audio/a.m4a", {})

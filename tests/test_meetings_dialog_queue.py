@@ -62,3 +62,10 @@ def test_meetings_preserves_legacy_pinned_strings():
 def test_meetings_delete_forgets_queue_item():
     # Deleting a meeting must also evict its lingering active item (no ghost row).
     assert "_queue.forget(" in _MEET
+
+
+def test_meetings_dismiss_error_wired_to_forget():
+    # A stuck ERROR item can be cleared from the queue, distinct from retry.
+    assert "def _dismiss" in _MEET
+    assert "✕ Убрать" in _MEET
+    assert "_dismiss(it)" in _MEET  # ERROR-row button wired to the dismiss handler
