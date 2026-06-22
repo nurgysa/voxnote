@@ -20,6 +20,7 @@ thread of its own — ProcessingQueue owns that.
 from __future__ import annotations
 
 import os
+import threading
 import tkinter as tk
 from tkinter import messagebox
 
@@ -108,14 +109,42 @@ class QueueMixin:
                 f"Открой Настройки → Транскрибация (cloud API) и вставь ключ.",
             )
             return
-        info = preflight.probe(audio_path)
-        hint = preflight.cost_hint_suffix(provider, info.get("duration_s"))
         self._queue.enqueue(audio_path, self._build_options(source))
-        self._lbl_status.configure(
-            text=f"Добавлено в очередь: {os.path.basename(audio_path)}{hint}",
-            text_color=GREEN,
-        )
+        base_text = f"Добавлено в очередь: {os.path.basename(audio_path)}"
+        self._lbl_status.configure(text=base_text, text_color=GREEN)
         self._refresh_queue_indicator()
+        # Append a rough cost estimate once probed. An .m4a needs ffmpeg (a
+        # subprocess that can stall on a Drive-synced placeholder), so probe off
+        # the Tk thread — a passive hint must never freeze the UI.
+        self._append_cost_hint_async(audio_path, provider, base_text)
+
+    def _append_cost_hint_async(
+        self, audio_path: str, provider: str, base_text: str
+    ) -> None:
+        """Probe `audio_path` on a daemon thread and append a cost hint to the
+        status line. Off-thread because probing an .m4a shells out to ffmpeg,
+        which can stall on a Drive-synced placeholder; a hint must not block the
+        Tk thread. No-op when the cost is unknown."""
+        def work() -> None:
+            info = preflight.probe(audio_path)
+            hint = preflight.cost_hint_suffix(provider, info.get("duration_s"))
+            if not hint:
+                return
+            try:
+                self.after(0, lambda: self._apply_cost_hint(base_text, hint))
+            except tk.TclError:
+                pass  # window torn down before the probe finished
+
+        threading.Thread(target=work, name="cost-hint-probe", daemon=True).start()
+
+    def _apply_cost_hint(self, base_text: str, hint: str) -> None:
+        """Tk thread: append `hint` only if the status line still shows
+        `base_text` (a newer status message takes precedence)."""
+        try:
+            if self._lbl_status.cget("text") == base_text:
+                self._lbl_status.configure(text=f"{base_text}{hint}")
+        except tk.TclError:
+            pass
 
     def _safe_after_refresh(self) -> None:
         """ProcessingQueue on_change fires on the worker daemon thread; during
