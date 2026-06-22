@@ -16,7 +16,7 @@ Mixin contract: relies on App providing ``self._config`` (mutable dict),
 ``self._denoise_var``, ``self._cloud_provider_var``,
 ``self._cloud_api_key_var``, ``self._cloud_api_keys`` (dict), the
 ``self._linear_*_var`` / ``self._glide_*_var`` / ``self._openrouter_*_var``
-/ ``self._appearance_var`` / ``self._gdrive_*`` families,
+/ ``self._appearance_var`` families,
 ``self._audio_path``, ``self._lbl_file``, and
 the dialog refs ``self._settings_dialog`` / ``self._cutter`` (used by
 the live appearance-mode switch).
@@ -80,72 +80,6 @@ class SettingsMixin:
     def _on_trello_enabled_changed(self) -> None:
         """Persist the Trello-backend enabled flag (opt-in, spec D5)."""
         self._config["trello_enabled"] = bool(self._trello_enabled_var.get())
-        save_config(self._config)
-
-    # ── Google Drive (Phase 7.0) ────────────────────────────────────
-
-    def _compute_gdrive_status_text(self) -> str:
-        """Status badge text shown in the Settings dialog.
-
-        Three states:
-          - Signed in + email known   → "✓ Подключён к user@example.com"
-          - Signed in + email unknown → "✓ Подключён"  (e.g. userinfo
-            lookup failed during sign_in — token is still valid)
-          - Not signed in             → "Не подключён"
-        """
-        if not self._gdrive_auth.is_signed_in():
-            return "Не подключён"
-        email = self._gdrive_auth.get_account_email()
-        if email:
-            return f"✓ Подключён к {email}"
-        return "✓ Подключён"
-
-    def _on_gdrive_signed_in(self) -> None:
-        """Called from the Settings dialog after a successful sign-in.
-
-        Updates the bound Vars + persists email + enabled flag to config.
-        The dialog's worker thread routes here via self.after(0, ...) so
-        this runs on the Tk main thread (safe to touch Vars + save).
-        """
-        email = self._gdrive_auth.get_account_email() or ""
-        self._gdrive_account_email_var.set(email)
-        self._gdrive_status_var.set(self._compute_gdrive_status_text())
-        self._gdrive_enabled_var.set(True)
-        self._config["gdrive_account_email"] = email
-        self._config["gdrive_enabled"] = True
-        save_config(self._config)
-
-    def _on_gdrive_signed_out(self) -> None:
-        """Called from the Settings dialog Выйти button handler.
-
-        Mirrors _on_gdrive_signed_in in reverse: empty email, disable
-        flag, persist. Also calls sign_out() on the auth instance so
-        the token file is removed from disk.
-        """
-        self._gdrive_auth.sign_out()
-        self._gdrive_account_email_var.set("")
-        self._gdrive_status_var.set(self._compute_gdrive_status_text())
-        self._gdrive_enabled_var.set(False)
-        self._config["gdrive_account_email"] = ""
-        self._config["gdrive_enabled"] = False
-        save_config(self._config)
-
-    def _on_gdrive_backup_succeeded(
-        self,
-        *,
-        root_folder_id: str,
-        snapshot_name: str,
-    ) -> None:
-        """Called from the Settings dialog after a successful backup.
-
-        Persists two config keys:
-          * gdrive_root_folder_id — cached so the NEXT backup skips
-            the find_or_create_folder round-trip
-          * gdrive_last_backup — ISO snapshot name, used by the
-            Phase 7.3 scheduler's "is overdue?" check
-        """
-        self._config["gdrive_root_folder_id"] = root_folder_id
-        self._config["gdrive_last_backup"] = snapshot_name
         save_config(self._config)
 
     def _on_cloud_provider_changed(self, value: str) -> None:

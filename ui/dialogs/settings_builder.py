@@ -41,7 +41,6 @@ from ui.widgets import (
     card,
     label,
     option_menu,
-    primary_button,
     text_entry,
     tonal_button,
 )
@@ -550,70 +549,6 @@ def build_dedup_section(dialog, parent) -> None:
         border_color=BORDER, corner_radius=4,
         checkbox_height=20, checkbox_width=20,
     ).grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
-
-
-def build_gdrive_section(dialog, parent) -> None:
-    """Google Drive backup: sign-in/out + status badge.
-
-    Phase 7.0 surface only — no backup-now button (7.1), no
-    frequency dropdown (7.3), no audio opt-in (7.4). Adding those
-    widgets later just extends this method.
-
-    Threading lives on the class: SettingsDialog._handle_gdrive_signin
-    runs sign_in() in a daemon thread and routes results back to the Tk
-    loop via dialog.after(0, ...); this builder only creates the widgets
-    and sets their initial state.
-    """
-    section = section_card(dialog, parent, "Google Drive", row=0)
-
-    # Status row — badge bound to the App's _gdrive_status_var.
-    label(section, "Статус").grid(
-        row=0, column=0, padx=(4, 8), pady=6, sticky="w",
-    )
-    dialog._gdrive_status_label = ctk.CTkLabel(
-        section,
-        textvariable=dialog._parent._gdrive_status_var,
-        anchor="w",
-        text_color=TEXT_PRIMARY,
-        font=ctk.CTkFont(family=FONT, size=12),
-    )
-    dialog._gdrive_status_label.grid(
-        row=0, column=1, columnspan=2, padx=4, pady=6, sticky="ew",
-    )
-
-    # Action row — Войти + Выйти (one of them disabled at any time).
-    dialog._gdrive_signin_btn = primary_button(
-        section, text="Войти через Google",
-        command=dialog._handle_gdrive_signin, width=180,
-    )
-    dialog._gdrive_signin_btn.grid(
-        row=1, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-    )
-
-    dialog._gdrive_signout_btn = tonal_button(
-        section, text="Выйти",
-        command=dialog._handle_gdrive_signout, width=100,
-    )
-    dialog._gdrive_signout_btn.grid(row=1, column=2, padx=(4, 4), pady=6, sticky="e")
-
-    # Backup-now row (Phase 7.1) — button + status label. Status is
-    # local (not bound to a parent Var) because backup status is a
-    # transient dialog-only concern; persistence of
-    # gdrive_last_backup happens on success via the mixin callback.
-    dialog._gdrive_backup_btn = tonal_button(
-        section, text="Сделать backup сейчас",
-        command=dialog._handle_gdrive_backup_now, width=200,
-    )
-    dialog._gdrive_backup_btn.grid(
-        row=2, column=0, columnspan=2, padx=4, pady=6, sticky="w",
-    )
-    dialog._gdrive_backup_status = label(section, "", anchor="w")
-    dialog._gdrive_backup_status.grid(
-        row=2, column=2, padx=(8, 4), pady=6, sticky="ew",
-    )
-
-    # Initial button enabled-state reflects current sign-in state.
-    dialog._refresh_gdrive_button_state()
 
 
 def build_diagnostics_section(dialog, parent) -> None:

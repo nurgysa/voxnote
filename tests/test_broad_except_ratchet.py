@@ -45,7 +45,7 @@ BASELINE = {
     "ui/app/main_entry.py": 2,                     # last-resort crash handler
     "ui/app/recorder_mixin.py": 1,                 # mic-open failures -> dialog
     "ui/dialogs/extract_tasks/__init__.py": 4,     # worker-thread boundaries
-    "ui/dialogs/settings.py": 3,                   # OAuth/backup/bundle workers
+    "ui/dialogs/settings.py": 1,                   # bundle worker
     "ui/widgets.py": 1,                            # validate-callback boundary
 }
 

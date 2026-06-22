@@ -246,28 +246,6 @@ def build_ui(app):
         value=bool(app._config.get("trello_enabled", False)),
     )
 
-    # Google Drive (Phase 7.0). GDriveAuth instance + 3 Vars for the
-    # Settings dialog to bind. load_tokens() at startup is safe even
-    # when no token exists yet — returns False and leaves the instance
-    # unsigned. Cost: one stat() on the token file (negligible).
-    #
-    # Import is local to keep app startup independent of Google libs
-    # when the user hasn't enabled GDrive yet — sign_in() does the
-    # heavy InstalledAppFlow import lazily; constructor + load_tokens
-    # only touch stdlib + requests (already a top-level dep).
-    from gdrive.auth import GDriveAuth
-    app._gdrive_auth = GDriveAuth()
-    app._gdrive_auth.load_tokens()
-    app._gdrive_enabled_var = ctk.BooleanVar(
-        value=bool(app._config.get("gdrive_enabled", False)),
-    )
-    app._gdrive_account_email_var = ctk.StringVar(
-        value=app._gdrive_auth.get_account_email() or "",
-    )
-    app._gdrive_status_var = ctk.StringVar(
-        value=app._compute_gdrive_status_text(),
-    )
-
     # Appearance mode (light/dark/system). The actual ctk.set_appearance_mode
     # call already happened above with the saved value; this StringVar
     # just drives the Settings dialog dropdown and the change callback.
