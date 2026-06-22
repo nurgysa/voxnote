@@ -74,3 +74,8 @@ def test_save_mixin_has_no_dead_transcriber_ref():
     # the App can't be imported on Linux CI (sounddevice/PortAudio).
     src = Path("ui/app/save_mixin.py").read_text(encoding="utf-8")
     assert "_transcriber" not in src
+
+
+def test_app_wires_resolve_participants_from_directory():
+    assert "resolve_participants=" in _INIT
+    assert "people_for_project(" in _INIT
