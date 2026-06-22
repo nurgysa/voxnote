@@ -76,8 +76,20 @@ class ProcessingQueue:
                 "Обработка прервана (приложение было перезапущено). "
                 "Нажми «Повторить», чтобы запустить заново."
             )
-        if interrupted:
-            store.save_active([it for it in self._items if it.auto], queue_path)
+        # DONE items in a loaded queue are legacy (pre-pruning): a finished
+        # meeting belongs to disk, not the active queue. Drop them so the active
+        # list and queue.json hold active work only and no stale audio_path
+        # survives a restart.
+        had_done = any(it.status == StageStatus.DONE for it in self._items)
+        if had_done:
+            self._items = [it for it in self._items if it.status != StageStatus.DONE]
+        if interrupted or had_done:
+            # Same predicate as _persist_locked: persist active work only, so
+            # both save sites enforce the queue.json invariant at the call site.
+            store.save_active(
+                [it for it in self._items if it.auto and it.status != StageStatus.DONE],
+                queue_path,
+            )
         self._lock = threading.Lock()
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
@@ -153,8 +165,15 @@ class ProcessingQueue:
             self._on_change()
 
     def _persist_locked(self) -> None:
-        # Caller holds self._lock. queue.json carries active items only.
-        store.save_active([it for it in self._items if it.auto], self._queue_path)
+        # Caller holds self._lock. queue.json carries ACTIVE items only — a
+        # finished meeting lives on disk (its transcript.md); persisting DONE
+        # here would grow queue.json without bound and leak a stale audio_path
+        # into the inbox dedup across restarts. build_view re-reads finished
+        # meetings from their folders for «Встречи».
+        store.save_active(
+            [it for it in self._items if it.auto and it.status != StageStatus.DONE],
+            self._queue_path,
+        )
 
     def _set_status(
         self, item: QueueItem, status: StageStatus, *, error_message: str | None = None
