@@ -371,7 +371,14 @@ class MeetingsDialog(ctk.CTkToplevel):
                 font=ctk.CTkFont(family=FONT, size=12),
                 fg_color=BLUE_SURFACE, hover_color=SURFACE_BRIGHT, text_color="#8AB4F8",
                 command=lambda i=item.id: self._retry(i),
-            ).grid(row=0, column=col, rowspan=2, padx=(8, 8), pady=6)
+            ).grid(row=0, column=col, rowspan=2, padx=(8, 4), pady=6)
+            col += 1
+            ctk.CTkButton(
+                row, text="✕ Убрать", width=100, height=32, corner_radius=16,
+                font=ctk.CTkFont(family=FONT, size=12),
+                fg_color="transparent", hover_color=BORDER, text_color=RED,
+                command=lambda it=item: self._dismiss(it),
+            ).grid(row=0, column=col, rowspan=2, padx=(0, 8), pady=6)
 
     # ── live poll ──
     def _tick(self):
@@ -402,6 +409,14 @@ class MeetingsDialog(ctk.CTkToplevel):
 
     def _retry(self, item_id):
         self._queue.retry(item_id)
+        self._render()
+
+    def _dismiss(self, item):
+        # Clear a stuck ERROR item from the queue. forget() drops any non-RUNNING
+        # item; no folder is deleted — an ERROR normally has none, and a rare
+        # late-failure's transcript.md on disk should survive as a DONE history
+        # row (build_view reverts to it once the active item is forgotten).
+        self._queue.forget(item.id)
         self._render()
 
     def _delete(self, item):
