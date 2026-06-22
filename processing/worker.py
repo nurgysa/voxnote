@@ -76,7 +76,14 @@ class ProcessingQueue:
                 "Обработка прервана (приложение было перезапущено). "
                 "Нажми «Повторить», чтобы запустить заново."
             )
-        if interrupted:
+        # DONE items in a loaded queue are legacy (pre-pruning): a finished
+        # meeting belongs to disk, not the active queue. Drop them so the active
+        # list and queue.json hold active work only and no stale audio_path
+        # survives a restart.
+        had_done = any(it.status == StageStatus.DONE for it in self._items)
+        if had_done:
+            self._items = [it for it in self._items if it.status != StageStatus.DONE]
+        if interrupted or had_done:
             store.save_active([it for it in self._items if it.auto], queue_path)
         self._lock = threading.Lock()
         self._wake = threading.Event()

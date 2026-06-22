@@ -431,6 +431,52 @@ def test_loads_reconciles_interrupted_running_to_error(tmp_path):
     assert q.snapshot()[0].status == StageStatus.PENDING
 
 
+def test_load_drops_legacy_done_and_rewrites(tmp_path):
+    """A queue.json written before pruning may carry DONE items; loading drops
+    them (active list = active work only) and rewrites the file without them."""
+    from processing.model import QueueItem
+    from processing.store import save_active
+
+    qp = tmp_path / "queue.json"
+    save_active(
+        [
+            QueueItem(id="d", audio_path="/a.m4a", title="a", created_at="t",
+                      auto=True, status=StageStatus.DONE),
+            QueueItem(id="p", audio_path="/b.m4a", title="b", created_at="t",
+                      auto=True, status=StageStatus.PENDING),
+        ],
+        path=qp,
+    )
+    q = _queue(tmp_path, queue_path=str(qp))
+
+    assert [it.id for it in q.snapshot()] == ["p"]          # DONE dropped in memory
+    with open(qp, encoding="utf-8") as f:                   # file rewritten without it
+        assert [it["id"] for it in json.load(f)["items"]] == ["p"]
+
+
+def test_load_keeps_error_drops_done(tmp_path):
+    """ERROR items survive a reload (retry/crash-resume intact); DONE does not."""
+    from processing.model import QueueItem
+    from processing.store import save_active
+
+    qp = tmp_path / "queue.json"
+    save_active(
+        [
+            QueueItem(id="e", audio_path="/a.m4a", title="a", created_at="t",
+                      auto=True, status=StageStatus.ERROR, error_message="boom"),
+            QueueItem(id="d", audio_path="/b.m4a", title="b", created_at="t",
+                      auto=True, status=StageStatus.DONE),
+        ],
+        path=qp,
+    )
+    q = _queue(tmp_path, queue_path=str(qp))
+
+    live = q.snapshot()
+    assert [it.id for it in live] == ["e"]
+    assert live[0].status == StageStatus.ERROR
+    assert live[0].error_message == "boom"
+
+
 def test_process_item_moves_audio_for_inbox(tmp_path, monkeypatch):
     _patch_happy(monkeypatch)
     _sandbox_home(tmp_path, monkeypatch)
