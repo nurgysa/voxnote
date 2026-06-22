@@ -84,3 +84,22 @@ def test_save_failure_leaves_previous_file_intact(tmp_path, monkeypatch):
     s2.load()
     assert [p.full_name for p in s2.people()] == ["Good"]
     assert not (tmp_path / ".directory.json.tmp").exists()
+
+
+def test_people_for_project_returns_sorted_members(tmp_path):
+    s = _fresh(tmp_path)
+    pr = Project(name="Alpha")
+    s.upsert_project(pr)
+    s.upsert_person(Person(full_name="Данияр", project_ids=[pr.id]))
+    s.upsert_person(Person(full_name="Алмас", project_ids=[pr.id]))
+    s.upsert_person(Person(full_name="Чужой", project_ids=[]))
+    names = [p.full_name for p in s.people_for_project(pr.id)]
+    assert names == ["Алмас", "Данияр"]  # sorted by full_name; non-member excluded
+
+
+def test_people_for_project_empty_for_falsy_or_unknown(tmp_path):
+    s = _fresh(tmp_path)
+    s.upsert_person(Person(full_name="A", project_ids=["p1"]))
+    assert s.people_for_project(None) == []
+    assert s.people_for_project("") == []
+    assert s.people_for_project("nope") == []

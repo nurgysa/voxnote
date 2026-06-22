@@ -55,12 +55,14 @@ class ProcessingQueue:
         meetings_dir: str,
         config_loader: Callable[[], dict],
         resolve_project: Callable[[str | None], object | None],
+        resolve_participants: Callable[[str | None], list[str]] | None = None,
         queue_path: str | None = None,
         on_change: Callable[[], None] | None = None,
     ) -> None:
         self._meetings_dir = meetings_dir
         self._config_loader = config_loader
         self._resolve_project = resolve_project
+        self._resolve_participants = resolve_participants or (lambda _pid: [])
         self._queue_path = queue_path
         self._on_change = on_change
         self._items: list[QueueItem] = store.load_active(queue_path)
@@ -276,7 +278,7 @@ class ProcessingQueue:
                 project_name=getattr(project, "name", None),
                 date=date,
                 time=time_str,
-                participants=[],
+                participants=self._resolve_participants(item.project_id),
                 provider=provider,
                 language=out.language,
                 voxnote_id=item.id,

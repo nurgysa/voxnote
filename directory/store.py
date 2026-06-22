@@ -72,6 +72,16 @@ class DirectoryStore:
     def get_project(self, project_id: str) -> Project | None:
         return self._projects.get(project_id)
 
+    def people_for_project(self, project_id: str | None) -> list[Person]:
+        """People whose project_ids include project_id, sorted by full_name for a
+        stable note. Empty list for a falsy or unknown id."""
+        if not project_id:
+            return []
+        return sorted(
+            (p for p in self._people.values() if project_id in p.project_ids),
+            key=lambda p: p.full_name,
+        )
+
     # ── writes ──
     def upsert_person(self, person: Person) -> None:
         person.updated_at = _now_iso()

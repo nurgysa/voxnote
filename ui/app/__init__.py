@@ -230,6 +230,9 @@ class App(
             resolve_project=lambda pid: (
                 self._dir_store.get_project(pid) if pid else None
             ),
+            resolve_participants=lambda pid: [
+                p.full_name for p in self._dir_store.people_for_project(pid)
+            ],
             on_change=self._safe_after_refresh,
         )
         self._queue.start()
