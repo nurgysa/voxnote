@@ -100,3 +100,28 @@ def test_render_strips_illegal_wikilink_chars():
     )
     assert "[[План 1]]" in md      # '#' -> space, collapsed
     assert "[[Иван Петров]]" in md  # '|' -> space, collapsed
+
+
+def test_wikilink_safe_all_illegal_returns_empty():
+    assert vault_note._wikilink_safe("###") == ""
+    assert vault_note._wikilink_safe("[|]^") == ""
+
+
+def test_render_drops_all_illegal_participant_from_relations():
+    md = vault_note.render_transcript_note(
+        segments=[], title="x", project_name="Alpha", date="2026-06-22", time="09:00",
+        participants=["[|]"], provider="Deepgram", language=None,
+        voxnote_id="v", source_path=None, nudged=False,
+    )
+    # an all-illegal participant reduces to '' and is dropped; the valid project stays
+    assert "- **Проект:** [[Alpha]]" in md
+    assert "**Участники:**" not in md
+
+
+def test_render_collapses_consecutive_illegal_chars():
+    md = vault_note.render_transcript_note(
+        segments=[], title="x", project_name="Plan##Two", date="2026-06-22", time="09:00",
+        participants=[], provider="Deepgram", language=None,
+        voxnote_id="v", source_path=None, nudged=False,
+    )
+    assert "[[Plan Two]]" in md  # consecutive '##' collapses to a single space
