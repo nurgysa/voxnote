@@ -103,3 +103,30 @@ def test_people_for_project_empty_for_falsy_or_unknown(tmp_path):
     assert s.people_for_project(None) == []
     assert s.people_for_project("") == []
     assert s.people_for_project("nope") == []
+
+
+def test_identifiers_for_model_groups_by_person_filtering_model(tmp_path):
+    s = _fresh(tmp_path)
+    a = Person(full_name="Алмас")
+    b = Person(full_name="Данияр")
+    c = Person(full_name="Чужой")
+    s.upsert_person(a)
+    s.upsert_person(b)
+    s.upsert_person(c)
+    s.add_voiceprint(a.id, Voiceprint(identifier="a1", model="m-x"))
+    s.add_voiceprint(a.id, Voiceprint(identifier="a2", model="m-x"))
+    s.add_voiceprint(b.id, Voiceprint(identifier="b1", model="m-x"))
+    s.add_voiceprint(c.id, Voiceprint(identifier="c1", model="OTHER"))  # wrong model
+    assert s.identifiers_for_model("m-x") == [
+        ("Алмас", ["a1", "a2"]),
+        ("Данияр", ["b1"]),
+    ]  # sorted by full_name; Чужой omitted (no m-x voiceprint)
+
+
+def test_identifiers_for_model_empty_when_none_match(tmp_path):
+    s = _fresh(tmp_path)
+    p = Person(full_name="A")
+    s.upsert_person(p)
+    s.add_voiceprint(p.id, Voiceprint(identifier="i", model="m-x"))
+    assert s.identifiers_for_model("OTHER") == []
+    assert s.identifiers_for_model("m-x") == [("A", ["i"])]

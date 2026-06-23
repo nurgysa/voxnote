@@ -2,8 +2,8 @@
 
 One combined file ~/.voxnote/directory.json holding
 {"people": [...], "projects": [...]}. Atomic write (tmp + os.replace),
-mirroring tasks/persistence.py. Lives outside history/ and config.json so
-voiceprint biometrics never ride the Google Drive backup.
+mirroring tasks/persistence.py. Lives under ~/.voxnote (outside the vault) so
+voiceprint biometrics stay local — backup/restore is Hermes Desktop's job.
 """
 from __future__ import annotations
 
@@ -114,6 +114,23 @@ class DirectoryStore:
             person.voiceprints = person.voiceprints[-VOICEPRINT_CAP:]
         person.updated_at = _now_iso()
         self._save()
+
+    def identifiers_for_model(self, model: str) -> list[tuple[str, list[str]]]:
+        """(full_name, [identifier, ...]) for every person holding >=1 voiceprint
+        of `model`, sorted by full_name. This is the payload the queue worker
+        passes as speaker_diarization_config.speakers. People without a
+        matching-model voiceprint are omitted (their ids would be ignored
+        server-side anyway); identifier order within a person is preserved."""
+        result: list[tuple[str, list[str]]] = []
+        for person in sorted(self._people.values(), key=lambda p: p.full_name):
+            ids = [
+                vp.identifier
+                for vp in person.voiceprints
+                if vp.model == model and vp.identifier
+            ]
+            if ids:
+                result.append((person.full_name, ids))
+        return result
 
     # ── persistence ──
     def _save(self) -> None:
