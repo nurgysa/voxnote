@@ -42,17 +42,17 @@ def test_add_voiceprint_caps_at_five_dropping_oldest(tmp_path):
     p = Person(full_name="A")
     s.upsert_person(p)
     for i in range(6):
-        s.add_voiceprint(p.id, Voiceprint(vector=[float(i)]))
+        s.add_voiceprint(p.id, Voiceprint(identifier=f"id{i}", model="m"))
     vps = s.get_person(p.id).voiceprints
     assert len(vps) == 5
-    assert vps[0].vector == [1.0]   # oldest (0.0) evicted
-    assert vps[-1].vector == [5.0]
+    assert vps[0].identifier == "id1"   # oldest (id0) evicted
+    assert vps[-1].identifier == "id5"
 
 
 def test_add_voiceprint_unknown_person_raises(tmp_path):
     s = _fresh(tmp_path)
     with pytest.raises(DirectoryError):
-        s.add_voiceprint("nope", Voiceprint(vector=[1.0]))
+        s.add_voiceprint("nope", Voiceprint(identifier="id1", model="m"))
 
 
 def test_malformed_file_raises_on_load(tmp_path):
