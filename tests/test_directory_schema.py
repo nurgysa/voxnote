@@ -24,17 +24,31 @@ def test_person_autogenerates_distinct_ids():
 
 
 def test_voiceprint_roundtrip():
-    vp = Voiceprint(vector=[0.1, 0.2, 0.3], source_meeting="2026-05-30_x")
+    vp = Voiceprint(
+        identifier="sp-id-1", model="m-x", source_meeting="2026-05-30_x",
+    )
     vp2 = Voiceprint.from_dict(vp.to_dict())
-    assert vp2.vector == [0.1, 0.2, 0.3]
+    assert vp2.identifier == "sp-id-1"
+    assert vp2.model == "m-x"
+    assert vp2.provider == "speechmatics"
     assert vp2.source_meeting == "2026-05-30_x"
 
 
 def test_person_roundtrip_with_voiceprints():
-    p = Person(full_name="A", voiceprints=[Voiceprint(vector=[1.0, 2.0])])
+    p = Person(full_name="A", voiceprints=[Voiceprint(identifier="id1", model="m")])
     p2 = Person.from_dict(p.to_dict())
     assert len(p2.voiceprints) == 1
-    assert p2.voiceprints[0].vector == [1.0, 2.0]
+    assert p2.voiceprints[0].identifier == "id1"
+
+
+def test_voiceprint_from_dict_ignores_legacy_vector():
+    # Pre-Phase-B records held {"vector": [...]} and no identifier; they must
+    # load without error (identifier/model fall back to "").
+    vp = Voiceprint.from_dict({"vector": [0.1, 0.2], "source_meeting": "old"})
+    assert vp.identifier == ""
+    assert vp.model == ""
+    assert vp.source_meeting == "old"
+    assert not hasattr(vp, "vector")
 
 
 def test_project_roundtrip():

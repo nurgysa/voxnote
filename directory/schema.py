@@ -20,15 +20,22 @@ def _new_id() -> str:
 
 @dataclass
 class Voiceprint:
-    """One ECAPA voice embedding enrolled for a person (Part B fills these)."""
+    """One enrolled voiceprint = an opaque Speechmatics speaker identifier, tied
+    to the model that issued it (cross-model identifiers are ignored server-side).
+    A person accumulates several across meetings — different voice tonalities —
+    and the worker passes them all on identify. (Voice-ID Phase B fills these.)"""
 
-    vector: list[float]
+    identifier: str
+    model: str
+    provider: str = "speechmatics"
     enrolled_at: str = field(default_factory=_now_iso)
     source_meeting: str = ""
 
     def to_dict(self) -> dict:
         return {
-            "vector": list(self.vector),
+            "identifier": self.identifier,
+            "model": self.model,
+            "provider": self.provider,
             "enrolled_at": self.enrolled_at,
             "source_meeting": self.source_meeting,
         }
@@ -36,7 +43,9 @@ class Voiceprint:
     @classmethod
     def from_dict(cls, d: dict) -> Voiceprint:
         return cls(
-            vector=list(d.get("vector", [])),
+            identifier=d.get("identifier", ""),
+            model=d.get("model", ""),
+            provider=d.get("provider", "speechmatics"),
             enrolled_at=d.get("enrolled_at") or _now_iso(),
             source_meeting=d.get("source_meeting", ""),
         )

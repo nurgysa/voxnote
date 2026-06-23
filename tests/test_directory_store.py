@@ -42,17 +42,17 @@ def test_add_voiceprint_caps_at_five_dropping_oldest(tmp_path):
     p = Person(full_name="A")
     s.upsert_person(p)
     for i in range(6):
-        s.add_voiceprint(p.id, Voiceprint(vector=[float(i)]))
+        s.add_voiceprint(p.id, Voiceprint(identifier=f"id{i}", model="m"))
     vps = s.get_person(p.id).voiceprints
     assert len(vps) == 5
-    assert vps[0].vector == [1.0]   # oldest (0.0) evicted
-    assert vps[-1].vector == [5.0]
+    assert vps[0].identifier == "id1"   # oldest (id0) evicted
+    assert vps[-1].identifier == "id5"
 
 
 def test_add_voiceprint_unknown_person_raises(tmp_path):
     s = _fresh(tmp_path)
     with pytest.raises(DirectoryError):
-        s.add_voiceprint("nope", Voiceprint(vector=[1.0]))
+        s.add_voiceprint("nope", Voiceprint(identifier="id1", model="m"))
 
 
 def test_malformed_file_raises_on_load(tmp_path):
@@ -103,3 +103,30 @@ def test_people_for_project_empty_for_falsy_or_unknown(tmp_path):
     assert s.people_for_project(None) == []
     assert s.people_for_project("") == []
     assert s.people_for_project("nope") == []
+
+
+def test_identifiers_for_model_groups_by_person_filtering_model(tmp_path):
+    s = _fresh(tmp_path)
+    a = Person(full_name="Алмас")
+    b = Person(full_name="Данияр")
+    c = Person(full_name="Чужой")
+    s.upsert_person(a)
+    s.upsert_person(b)
+    s.upsert_person(c)
+    s.add_voiceprint(a.id, Voiceprint(identifier="a1", model="m-x"))
+    s.add_voiceprint(a.id, Voiceprint(identifier="a2", model="m-x"))
+    s.add_voiceprint(b.id, Voiceprint(identifier="b1", model="m-x"))
+    s.add_voiceprint(c.id, Voiceprint(identifier="c1", model="OTHER"))  # wrong model
+    assert s.identifiers_for_model("m-x") == [
+        ("Алмас", ["a1", "a2"]),
+        ("Данияр", ["b1"]),
+    ]  # sorted by full_name; Чужой omitted (no m-x voiceprint)
+
+
+def test_identifiers_for_model_empty_when_none_match(tmp_path):
+    s = _fresh(tmp_path)
+    p = Person(full_name="A")
+    s.upsert_person(p)
+    s.add_voiceprint(p.id, Voiceprint(identifier="i", model="m-x"))
+    assert s.identifiers_for_model("OTHER") == []
+    assert s.identifiers_for_model("m-x") == [("A", ["i"])]
