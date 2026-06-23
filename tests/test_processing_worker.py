@@ -669,7 +669,7 @@ def test_voiceid_on_sets_participants_and_writes_sidecar(tmp_path, monkeypatch):
         resolve_known_speakers=lambda: [("Айбек Нурланов", ["known"])],
     )
     item_id = q.enqueue(_audio(tmp_path), {"provider": "Speechmatics", "diarize": True})
-    q._process_item(q.snapshot()[0])
+    q._process_item(q._items[0])
 
     # known speakers + enroll passed to the job
     assert capture["enroll_speakers"] is True
@@ -683,6 +683,11 @@ def test_voiceid_on_sets_participants_and_writes_sidecar(tmp_path, monkeypatch):
         "label": "SPEAKER_1", "identifier": "new-id",
         "sample_text": "кто", "first_start": 2.0}]
     assert sc["note_meta"]["voxnote_id"] == item_id
+    # participants rendered in transcript.md (voice-ID name present)
+    live = q.snapshot()[0]
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        note = f.read()
+    assert "Айбек Нурланов" in note
 
 
 def test_voiceid_off_uses_roster_and_no_sidecar(tmp_path, monkeypatch):
@@ -706,8 +711,13 @@ def test_voiceid_off_uses_roster_and_no_sidecar(tmp_path, monkeypatch):
         resolve_known_speakers=lambda: [("X", ["i"])],
     )
     item_id = q.enqueue(_audio(tmp_path), {"provider": "Speechmatics", "diarize": True})
-    q._process_item(q.snapshot()[0])
+    q._process_item(q._items[0])
 
     assert capture.get("enroll_speakers") is False
     from utils import load_voiceid_sidecar
     assert load_voiceid_sidecar(item_id, base_dir=str(tmp_path / ".voxnote" / "segments")) is None
+    # roster fallback rendered in transcript.md (when voiceid off)
+    live = q.snapshot()[0]
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        note = f.read()
+    assert "Ростер Человек" in note
