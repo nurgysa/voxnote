@@ -29,6 +29,8 @@ class TranscribeOutput:
     provider: str
     diarized: bool
     segments: list[dict] = field(default_factory=list)
+    speaker_identifiers: dict | None = None
+    model: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -37,6 +39,8 @@ class TranscribeOutput:
             "provider": self.provider,
             "diarized": self.diarized,
             "segments": self.segments,
+            "speaker_identifiers": self.speaker_identifiers,
+            "model": self.model,
         }
 
 
@@ -70,6 +74,8 @@ def run_transcribe(
     num_speakers: int | None = None,
     min_speakers: int | None = None,
     max_speakers: int | None = None,
+    enroll_speakers: bool = False,
+    known_speakers: list[dict] | None = None,
     on_status=None,
 ) -> TranscribeOutput:
     """Transcribe one audio file via a cloud provider.
@@ -98,6 +104,8 @@ def run_transcribe(
         num_speakers=num_speakers,
         min_speakers=min_speakers,
         max_speakers=max_speakers,
+        enroll_speakers=enroll_speakers,
+        known_speakers=known_speakers,
         on_status=on_status,
     )
     segments = transcriber.last_segments or []
@@ -108,6 +116,8 @@ def run_transcribe(
         provider=provider,
         diarized=diarized,
         segments=segments,
+        speaker_identifiers=getattr(transcriber, "last_speaker_identifiers", None),
+        model=getattr(transcriber, "last_model", None),
     )
 
 
