@@ -310,3 +310,41 @@ def test_submit_single_language_does_not_leak_mixed_keys(fake_audio):
         f"language_identification_config must NOT appear in single-lang mode: "
         f"{submitted_config}"
     )
+
+
+# ── speaker-ID (enroll_speakers + known_speakers) ──────────────────────
+
+
+def test_build_config_enroll_adds_get_speakers_and_diarization():
+    cfg = _build_config(TranscriptionOptions(enroll_speakers=True))
+    tc = cfg["transcription_config"]
+    # speaker-ID implies diarization even if diarize wasn't set explicitly
+    assert tc["diarization"] == "speaker"
+    sdc = tc["speaker_diarization_config"]
+    assert sdc["get_speakers"] is True
+    assert "speakers" not in sdc          # none known yet
+
+
+def test_build_config_known_speakers_maps_to_speakers_array():
+    cfg = _build_config(TranscriptionOptions(
+        enroll_speakers=True,
+        known_speakers=[
+            {"label": "Айбек Нурланов", "identifiers": ["id1", "id2"]},
+            {"label": "Bob", "identifiers": ["b1"]},
+        ],
+    ))
+    sdc = cfg["transcription_config"]["speaker_diarization_config"]
+    assert sdc["get_speakers"] is True
+    assert sdc["speakers"] == [
+        {"label": "Айбек Нурланов", "speaker_identifiers": ["id1", "id2"]},
+        {"label": "Bob", "speaker_identifiers": ["b1"]},
+    ]
+
+
+def test_build_config_no_enroll_has_no_speaker_diarization_config():
+    cfg = _build_config(TranscriptionOptions(diarize=True, language="ru"))
+    assert "speaker_diarization_config" not in cfg["transcription_config"]
+
+
+def test_speechmatics_supports_speaker_id_true():
+    assert SpeechmaticsProvider.supports_speaker_id is True

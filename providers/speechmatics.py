@@ -48,6 +48,7 @@ class SpeechmaticsProvider(TranscriptionProvider):
     display_name = "Speechmatics"
     supports_diarization = True
     supports_mixed = True  # KZ in multilingual model + language_identification_config
+    supports_speaker_id = True  # get_speakers + speaker_diarization_config.speakers
 
     def __init__(self, api_key: str):
         self._api_key = require_key(api_key, "Speechmatics")
@@ -215,6 +216,19 @@ def _build_config(options: TranscriptionOptions) -> dict:
 
     if options.diarize:
         transcription_config["diarization"] = "speaker"
+
+    if options.enroll_speakers:
+        # Speaker identification requires diarization; force it on so an
+        # enroll/identify run still produces speaker-labelled segments.
+        transcription_config["diarization"] = "speaker"
+        sdc: dict = {"get_speakers": True}
+        if options.known_speakers:
+            sdc["speakers"] = [
+                {"label": s["label"], "speaker_identifiers": s["identifiers"]}
+                for s in options.known_speakers
+            ]
+        transcription_config["speaker_diarization_config"] = sdc
+
     if options.hotwords:
         transcription_config["additional_vocab"] = [
             {"content": w} for w in options.hotwords if w
