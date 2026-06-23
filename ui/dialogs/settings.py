@@ -156,6 +156,7 @@ class SettingsDialog(ctk.CTkToplevel):
         settings_builder.build_sources_section(self, scroll_transcription)
         settings_builder.build_inbox_section(self, scroll_transcription)
         settings_builder.build_dictionaries_section(self, scroll_transcription)
+        settings_builder.build_voiceid_section(self, scroll_transcription)
 
         # Tab 2 «Интеграции» — LLM-side optional extras
         settings_builder.build_openrouter_section(self, scroll_integrations)

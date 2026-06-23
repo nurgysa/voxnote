@@ -79,3 +79,10 @@ def test_save_mixin_has_no_dead_transcriber_ref():
 def test_app_wires_resolve_participants_from_directory():
     assert "resolve_participants=" in _INIT
     assert "people_for_project(" in _INIT
+
+
+def test_app_injects_resolve_known_speakers():
+    src = Path("ui/app/__init__.py").read_text(encoding="utf-8")
+    assert "resolve_known_speakers=lambda" in src
+    assert "latest_voiceprint_model" in src
+    assert "identifiers_for_model" in src

@@ -233,6 +233,9 @@ class App(
             resolve_participants=lambda pid: [
                 p.full_name for p in self._dir_store.people_for_project(pid)
             ],
+            resolve_known_speakers=lambda: self._dir_store.identifiers_for_model(
+                self._dir_store.latest_voiceprint_model() or ""
+            ),
             on_change=self._safe_after_refresh,
         )
         self._queue.start()

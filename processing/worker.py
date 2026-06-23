@@ -56,6 +56,7 @@ class ProcessingQueue:
         config_loader: Callable[[], dict],
         resolve_project: Callable[[str | None], object | None],
         resolve_participants: Callable[[str | None], list[str]] | None = None,
+        resolve_known_speakers: Callable[[], list[tuple[str, list[str]]]] | None = None,
         queue_path: str | None = None,
         on_change: Callable[[], None] | None = None,
     ) -> None:
@@ -63,6 +64,7 @@ class ProcessingQueue:
         self._config_loader = config_loader
         self._resolve_project = resolve_project
         self._resolve_participants = resolve_participants or (lambda _pid: [])
+        self._resolve_known_speakers = resolve_known_speakers or (lambda: [])
         self._queue_path = queue_path
         self._on_change = on_change
         self._items: list[QueueItem] = store.load_active(queue_path)
@@ -229,6 +231,12 @@ class ProcessingQueue:
                 raise ValueError(reason)
             denoise = preflight.should_denoise(duration_s, bool(opts.get("denoise")))
 
+            voiceid_on = bool(cfg.get("voiceid_enabled")) and provider == "Speechmatics"
+            known_speakers = [
+                {"label": name, "identifiers": ids}
+                for name, ids in (self._resolve_known_speakers() if voiceid_on else [])
+            ]
+
             out = core.run_transcribe(
                 audio_path,
                 provider=provider,
@@ -240,7 +248,18 @@ class ProcessingQueue:
                 num_speakers=opts.get("num_speakers"),
                 min_speakers=opts.get("min_speakers"),
                 max_speakers=opts.get("max_speakers"),
+                enroll_speakers=voiceid_on,
+                known_speakers=known_speakers or None,
             )
+
+            voiceid_pending: list[dict] = []
+            identified: list[str] = []
+            if voiceid_on:
+                from processing.voiceid import partition_speakers
+                known_names = {s["label"] for s in known_speakers}
+                identified, voiceid_pending = partition_speakers(
+                    out.segments, out.speaker_identifiers or {}, known_names,
+                )
 
             date, time_str, hhmm = _parse_created(item.created_at)
             base = "_".join(p for p in (date, hhmm, _slug(item.title)) if p) or item.id
@@ -278,7 +297,7 @@ class ProcessingQueue:
                 project_name=getattr(project, "name", None),
                 date=date,
                 time=time_str,
-                participants=self._resolve_participants(item.project_id),
+                participants=(identified or self._resolve_participants(item.project_id)),
                 provider=provider,
                 language=out.language,
                 voxnote_id=item.id,
@@ -296,6 +315,23 @@ class ProcessingQueue:
             # store.build_view reads the project back from disk.
             utils.save_speakers(folder, opts.get("project_id"), [], {})
             utils.save_segments_sidecar(item.id, out.segments)
+
+            if voiceid_on and voiceid_pending:
+                utils.save_voiceid_sidecar(item.id, {
+                    "model": out.model,
+                    "pending": voiceid_pending,
+                    "note_meta": {
+                        "title": item.title,
+                        "project_name": getattr(project, "name", None),
+                        "date": date,
+                        "time": time_str,
+                        "provider": provider,
+                        "language": out.language,
+                        "voxnote_id": item.id,
+                        "source_path": source_path or audio_path,
+                        "nudged": hermes_cfg.enabled,
+                    },
+                })
 
             if hermes_cfg.enabled:
                 result = emit_audio_transcribed_event(
