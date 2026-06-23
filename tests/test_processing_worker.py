@@ -632,3 +632,82 @@ def test_process_item_defaults_to_no_participants(tmp_path, monkeypatch):
         note = f.read()
     assert "participants: []" in note
     assert "**Участники:**" not in note
+
+
+# ── Voice-ID integration ──
+
+class _VOut:
+    """run_transcribe output carrying speaker-ID fields (PR-1)."""
+    text = "hi"
+    language = "ru"
+    def __init__(self, segments, speaker_identifiers, model="m-x"):
+        self.segments = segments
+        self.speaker_identifiers = speaker_identifiers
+        self.model = model
+
+
+def test_voiceid_on_sets_participants_and_writes_sidecar(tmp_path, monkeypatch):
+    _sandbox_home(tmp_path, monkeypatch)
+    monkeypatch.setattr("processing.preflight.probe",
+                        lambda p: {"duration_s": 60.0, "size_bytes": 1000})
+    capture = {}
+
+    def _fake(*a, **k):
+        capture.update(k)
+        return _VOut(
+            segments=[{"speaker": "Айбек Нурланов", "text": "привет", "start": 0.0},
+                      {"speaker": "SPEAKER_1", "text": "кто", "start": 2.0}],
+            speaker_identifiers={"Айбек Нурланов": ["known"], "S1": ["new-id"]},
+        )
+    monkeypatch.setattr("cli.core.run_transcribe", _fake)
+
+    q = _queue(
+        tmp_path,
+        config_loader=lambda: {"cloud_provider": "Speechmatics",
+                               "cloud_api_keys": {"Speechmatics": "k"},
+                               "voiceid_enabled": True, "meetings_dir": str(tmp_path / "m")},
+        resolve_known_speakers=lambda: [("Айбек Нурланов", ["known"])],
+    )
+    item_id = q.enqueue(_audio(tmp_path), {"provider": "Speechmatics", "diarize": True})
+    q._process_item(q.snapshot()[0])
+
+    # known speakers + enroll passed to the job
+    assert capture["enroll_speakers"] is True
+    assert capture["known_speakers"] == [
+        {"label": "Айбек Нурланов", "identifiers": ["known"]}]
+    # sidecar holds the pending new voice + model
+    from utils import load_voiceid_sidecar
+    sc = load_voiceid_sidecar(item_id, base_dir=str(tmp_path / ".voxnote" / "segments"))
+    assert sc["model"] == "m-x"
+    assert sc["pending"] == [{
+        "label": "SPEAKER_1", "identifier": "new-id",
+        "sample_text": "кто", "first_start": 2.0}]
+    assert sc["note_meta"]["voxnote_id"] == item_id
+
+
+def test_voiceid_off_uses_roster_and_no_sidecar(tmp_path, monkeypatch):
+    _sandbox_home(tmp_path, monkeypatch)
+    monkeypatch.setattr("processing.preflight.probe",
+                        lambda p: {"duration_s": 60.0, "size_bytes": 1000})
+    capture = {}
+
+    def _fake(*a, **k):
+        capture.update(k)
+        return _VOut(segments=[{"speaker": "SPEAKER_1", "text": "x", "start": 0.0}],
+                     speaker_identifiers={"S1": ["i"]})
+    monkeypatch.setattr("cli.core.run_transcribe", _fake)
+
+    q = _queue(
+        tmp_path,
+        config_loader=lambda: {"cloud_provider": "Speechmatics",
+                               "cloud_api_keys": {"Speechmatics": "k"},
+                               "voiceid_enabled": False, "meetings_dir": str(tmp_path / "m")},
+        resolve_participants=lambda pid: ["Ростер Человек"],
+        resolve_known_speakers=lambda: [("X", ["i"])],
+    )
+    item_id = q.enqueue(_audio(tmp_path), {"provider": "Speechmatics", "diarize": True})
+    q._process_item(q.snapshot()[0])
+
+    assert capture.get("enroll_speakers") is False
+    from utils import load_voiceid_sidecar
+    assert load_voiceid_sidecar(item_id, base_dir=str(tmp_path / ".voxnote" / "segments")) is None
