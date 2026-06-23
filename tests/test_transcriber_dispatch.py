@@ -125,3 +125,49 @@ def test_denoise_tempfile_cleaned_on_provider_error(monkeypatch):
             "a.wav", denoise_audio=True, cloud_provider="Fake", cloud_api_key="k",
         )
     assert not os.path.exists(tmp.name), "denoised tempfile must be cleaned in finally"
+
+
+def test_transcribe_threads_speaker_id_and_caches(monkeypatch, tmp_path):
+    import transcriber as tmod
+    from providers.base import TranscriptionResult
+
+    captured = {}
+
+    class FakeProvider:
+        supports_mixed = True
+        supports_speaker_id = True
+        def transcribe(self, path, opts, on_status=None, on_progress=None,
+                       cancel_event=None):
+            captured["enroll"] = opts.enroll_speakers
+            captured["known"] = opts.known_speakers
+            return TranscriptionResult(
+                segments=[{"start": 0.0, "end": 1.0, "text": "hi",
+                           "speaker": "Айбек Нурланов"}],
+                language="ru",
+                speaker_identifiers={"Айбек Нурланов": ["id-b"]},
+                model="m-x",
+            )
+
+    import providers
+    monkeypatch.setattr(providers, "get_provider", lambda *a, **k: FakeProvider())
+
+    audio = tmp_path / "a.wav"
+    audio.write_bytes(b"\x00" * 16)
+
+    t = tmod.Transcriber()
+    t.transcribe(
+        str(audio), diarize=True, cloud_provider="Speechmatics",
+        cloud_api_key="k", enroll_speakers=True,
+        known_speakers=[{"label": "Айбек Нурланов", "identifiers": ["id-b"]}],
+    )
+    assert captured["enroll"] is True
+    assert captured["known"] == [{"label": "Айбек Нурланов", "identifiers": ["id-b"]}]
+    assert t.last_speaker_identifiers == {"Айбек Нурланов": ["id-b"]}
+    assert t.last_model == "m-x"
+
+
+def test_last_speaker_identifiers_default_none():
+    import transcriber as tmod
+    t = tmod.Transcriber()
+    assert t.last_speaker_identifiers is None
+    assert t.last_model is None

@@ -52,6 +52,45 @@ def test_run_transcribe_without_speaker_is_not_diarized(monkeypatch):
     assert out.diarized is False
 
 
+def test_run_transcribe_forwards_speaker_id_and_exposes_fields(monkeypatch):
+    import cli.core as core
+
+    captured = {}
+
+    class FakeTranscriber:
+        last_segments = [{"start": 0.0, "end": 1.0, "text": "hi",
+                          "speaker": "Айбек Нурланов"}]
+        last_speaker_identifiers = {"Айбек Нурланов": ["id-b"]}
+        last_model = "m-x"
+        def transcribe(self, audio_path, **kw):
+            captured.update(kw)
+            return "Айбек Нурланов: hi"
+
+    # run_transcribe does `from transcriber import Transcriber` locally.
+    import transcriber
+    monkeypatch.setattr(transcriber, "Transcriber", lambda: FakeTranscriber())
+    # Path-confinement guard: run_transcribe calls ensure_outside_secret_store.
+    monkeypatch.setattr(core, "ensure_outside_secret_store", lambda p: None)
+
+    out = core.run_transcribe(
+        "meeting.wav", provider="Speechmatics", api_key="k", diarize=True,
+        enroll_speakers=True,
+        known_speakers=[{"label": "Айбек Нурланов", "identifiers": ["id-b"]}],
+    )
+    assert captured["enroll_speakers"] is True
+    assert captured["known_speakers"] == [
+        {"label": "Айбек Нурланов", "identifiers": ["id-b"]}]
+    assert out.speaker_identifiers == {"Айбек Нурланов": ["id-b"]}
+    assert out.model == "m-x"
+
+
+def test_transcribe_output_speaker_fields_default_none():
+    from cli.core import TranscribeOutput
+    o = TranscribeOutput(text="t", language=None, provider="P", diarized=False)
+    assert o.speaker_identifiers is None
+    assert o.model is None
+
+
 def test_run_send_maps_statuses(monkeypatch):
     from tasks.schema import Task, TaskStatus
 

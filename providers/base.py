@@ -39,6 +39,11 @@ class TranscriptionOptions:
     num_speakers: int | None = None    # Exact speaker count, when known.
     min_speakers: int | None = None    # Lower bound (when num_speakers None).
     max_speakers: int | None = None    # Upper bound (when num_speakers None).
+    enroll_speakers: bool = False      # Ask the provider to return per-speaker
+                                       # identifiers (Speechmatics get_speakers).
+    known_speakers: list[dict] = field(default_factory=list)
+    # Each: {"label": str, "identifiers": list[str]} — pre-enrolled speakers to
+    # label by name. Providers without speaker-ID ignore both fields.
 
 
 @dataclass
@@ -53,6 +58,11 @@ class TranscriptionResult:
     segments: list[dict]
     language: str | None = None        # Detected language code (if returned).
     raw: dict | None = None            # Original API response (for debugging).
+    speaker_identifiers: dict[str, list[str]] | None = None
+    # Provider speaker label -> its identifier blob(s), when the provider was
+    # asked to return them (enroll_speakers). None when not requested/supported.
+    model: str | None = None           # Acoustic model the provider used, when
+                                       # known (identifiers are tied to it).
 
 
 class ProviderError(RuntimeError):
@@ -93,6 +103,11 @@ class TranscriptionProvider(ABC):
     #: Class attribute (not a method) to mirror ``supports_diarization``;
     #: static introspectable capability.
     supports_mixed: bool = False
+
+    #: True when the provider can identify pre-enrolled speakers by name
+    #: (maps enroll_speakers / known_speakers to a native speaker-ID API).
+    #: Default False; providers opt in. Mirrors supports_diarization.
+    supports_speaker_id: bool = False
 
     @abstractmethod
     def transcribe(
