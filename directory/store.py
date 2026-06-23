@@ -132,6 +132,20 @@ class DirectoryStore:
                 result.append((person.full_name, ids))
         return result
 
+    def latest_voiceprint_model(self) -> str | None:
+        """The model of the most-recently-enrolled voiceprint across all people,
+        or None when nobody has a model-bearing voiceprint. The worker filters
+        known speakers by this (enroll + identify share the provider's stable
+        default model; if it ever changes, the newest voiceprint reflects it)."""
+        best_at = ""
+        best_model: str | None = None
+        for person in self._people.values():
+            for vp in person.voiceprints:
+                if vp.model and vp.enrolled_at >= best_at:
+                    best_at = vp.enrolled_at
+                    best_model = vp.model
+        return best_model
+
     # ── persistence ──
     def _save(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)

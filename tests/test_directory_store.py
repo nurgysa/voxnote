@@ -130,3 +130,20 @@ def test_identifiers_for_model_empty_when_none_match(tmp_path):
     s.add_voiceprint(p.id, Voiceprint(identifier="i", model="m-x"))
     assert s.identifiers_for_model("OTHER") == []
     assert s.identifiers_for_model("m-x") == [("A", ["i"])]
+
+
+def test_latest_voiceprint_model_returns_newest(tmp_path):
+    s = _fresh(tmp_path)
+    p = Person(full_name="A")
+    s.upsert_person(p)
+    s.add_voiceprint(p.id, Voiceprint(
+        identifier="i1", model="old", enrolled_at="2026-01-01T00:00:00"))
+    s.add_voiceprint(p.id, Voiceprint(
+        identifier="i2", model="new", enrolled_at="2026-06-01T00:00:00"))
+    assert s.latest_voiceprint_model() == "new"
+
+
+def test_latest_voiceprint_model_none_when_empty(tmp_path):
+    s = _fresh(tmp_path)
+    s.upsert_person(Person(full_name="A"))  # no voiceprints
+    assert s.latest_voiceprint_model() is None
