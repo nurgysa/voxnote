@@ -551,6 +551,34 @@ def build_dedup_section(dialog, parent) -> None:
     ).grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
 
 
+def build_voiceid_section(dialog, parent) -> None:
+    """Voice-ID on/off — pre-fill transcript.md participants with recognised
+    speakers (Speechmatics speaker identification). Default off; the queue worker
+    reads config.get("voiceid_enabled", False)."""
+    section = section_card(dialog, parent, "Распознавание говорящих", row=8)
+
+    dialog._voiceid_enabled_var = ctk.BooleanVar(
+        value=bool(dialog._parent._config.get("voiceid_enabled", False)),
+    )
+
+    def _on_toggled() -> None:
+        dialog._parent._config["voiceid_enabled"] = bool(
+            dialog._voiceid_enabled_var.get(),
+        )
+        save_config(dialog._parent._config)
+
+    ctk.CTkCheckBox(
+        section,
+        text="Узнавать говорящих по голосу (работает с провайдером Speechmatics)",
+        variable=dialog._voiceid_enabled_var,
+        command=_on_toggled,
+        font=ctk.CTkFont(family=FONT, size=13),
+        text_color=TEXT_PRIMARY, fg_color=BLUE, hover_color=BLUE_DIM,
+        border_color=BORDER, corner_radius=4,
+        checkbox_height=20, checkbox_width=20,
+    ).grid(row=0, column=0, columnspan=2, padx=4, pady=6, sticky="w")
+
+
 def build_diagnostics_section(dialog, parent) -> None:
     """Diagnostics export: bundle logs/ + a redacted config.json into a
     zip the user can send to support. No telemetry backend (D4) — the
