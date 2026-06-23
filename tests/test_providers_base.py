@@ -75,3 +75,31 @@ def test_transcribe_blocks_mixed_for_unsupported_cloud_provider(monkeypatch):
             cloud_provider="TestUnsupported",
             cloud_api_key="x",
         )
+
+
+def test_options_speaker_id_defaults():
+    from providers.base import TranscriptionOptions
+    o = TranscriptionOptions()
+    assert o.enroll_speakers is False
+    assert o.known_speakers == []
+
+
+def test_options_known_speakers_is_per_instance():
+    # default_factory, not a shared mutable
+    from providers.base import TranscriptionOptions
+    a = TranscriptionOptions()
+    a.known_speakers.append({"label": "X", "identifiers": ["i"]})
+    b = TranscriptionOptions()
+    assert b.known_speakers == []
+
+
+def test_result_speaker_id_fields_default_none():
+    from providers.base import TranscriptionResult
+    r = TranscriptionResult(segments=[])
+    assert r.speaker_identifiers is None
+    assert r.model is None
+
+
+def test_provider_supports_speaker_id_flag_default_false():
+    from providers.base import TranscriptionProvider
+    assert TranscriptionProvider.supports_speaker_id is False
