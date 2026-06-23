@@ -56,6 +56,8 @@ class Transcriber:
         # Cached for SRT/VTT export by the save dialog — mirrors the prior
         # local path's behavior verbatim. Populated by _transcribe_via_cloud.
         self.last_segments: list[dict] | None = None
+        self.last_speaker_identifiers: dict[str, list[str]] | None = None
+        self.last_model: str | None = None
 
     def transcribe(
         self,
@@ -66,6 +68,8 @@ class Transcriber:
         num_speakers: int | None = None,
         min_speakers: int | None = None,
         max_speakers: int | None = None,
+        enroll_speakers: bool = False,
+        known_speakers: list[dict] | None = None,
         denoise_audio: bool = False,
         cloud_provider: str | None = None,
         cloud_api_key: str | None = None,
@@ -84,6 +88,12 @@ class Transcriber:
             hotwords: Comma-separated terms/names to bias recognition.
             num_speakers / min_speakers / max_speakers: Speaker count hints.
                 AssemblyAI honours these; other providers may ignore.
+            enroll_speakers: If True, ask the provider to return per-speaker
+                identifiers (Speechmatics get_speakers). Cached as
+                ``last_speaker_identifiers`` after the run.
+            known_speakers: Pre-enrolled speakers to label by name. Each
+                entry: ``{"label": str, "identifiers": list[str]}``.
+                Providers without speaker-ID ignore this.
             denoise_audio: If True, run RNNoise via ffmpeg before upload
                 (uses `audio_io.ensure_wav(denoise=True)`).
             cloud_provider: Display name from `providers.PROVIDERS` (e.g.
@@ -133,6 +143,8 @@ class Transcriber:
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
+            enroll_speakers=enroll_speakers,
+            known_speakers=known_speakers,
             cloud_provider=cloud_provider,
             cloud_api_key=cloud_api_key,
             denoise_audio=denoise_audio,
@@ -151,6 +163,8 @@ class Transcriber:
         num_speakers: int | None,
         min_speakers: int | None,
         max_speakers: int | None,
+        enroll_speakers: bool = False,
+        known_speakers: list[dict] | None = None,
         cloud_provider: str,
         cloud_api_key: str,
         denoise_audio: bool = False,
@@ -191,6 +205,8 @@ class Transcriber:
             num_speakers=num_speakers,
             min_speakers=min_speakers,
             max_speakers=max_speakers,
+            enroll_speakers=enroll_speakers,
+            known_speakers=known_speakers or [],
         )
 
         try:
@@ -210,6 +226,8 @@ class Transcriber:
 
         # Cache for SRT/VTT export by the save dialog.
         self.last_segments = result.segments
+        self.last_speaker_identifiers = result.speaker_identifiers
+        self.last_model = result.model
 
         if on_progress:
             on_progress(100.0)
