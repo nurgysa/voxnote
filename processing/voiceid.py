@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import re
 
-_ANON_RE = re.compile(r"^SPEAKER_\d+$")
+_ANON_RE = re.compile(r"^SPEAKER_")
 
 
 def _normalise_raw_label(raw: str) -> str:

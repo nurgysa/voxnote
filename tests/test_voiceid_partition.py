@@ -54,9 +54,10 @@ def test_uu_label_treated_as_unknown():
     # Speechmatics may emit "UU" (unattributable); _to_segments normalised it to
     # "SPEAKER_UU". It carries an identifier → surfaces as a pending voice.
     segments = [_seg("SPEAKER_UU", "mumble", 0.0)]
-    _, pending = partition_speakers(
+    participants, pending = partition_speakers(
         segments, {"UU": ["uu-id"]}, known_names=set(),
     )
+    assert participants == []
     assert pending == [{
         "label": "SPEAKER_UU", "identifier": "uu-id",
         "sample_text": "mumble", "first_start": 0.0,
