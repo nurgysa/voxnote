@@ -99,11 +99,20 @@ class SpeechmaticsProvider(TranscriptionProvider):
         if on_progress:
             on_progress(100.0)
 
-        segments = _to_segments(payload, want_diarization=options.diarize)
+        known_labels = frozenset(
+            s["label"] for s in options.known_speakers if s.get("label")
+        )
+        segments = _to_segments(
+            payload,
+            want_diarization=options.diarize or options.enroll_speakers,
+            known_labels=known_labels,
+        )
         return TranscriptionResult(
             segments=segments,
             language=_extract_language(payload),
             raw=payload,
+            speaker_identifiers=_parse_speaker_identifiers(payload),
+            model=_extract_model(payload),
         )
 
     # ------------------------- HTTP primitives -------------------------
@@ -253,7 +262,9 @@ def _extract_language(payload: dict) -> str | None:
     return str(lang) if lang else None
 
 
-def _to_segments(payload: dict, want_diarization: bool) -> list[dict]:
+def _to_segments(
+    payload: dict, want_diarization: bool, known_labels: frozenset | None = None,
+) -> list[dict]:
     """Convert Speechmatics json-v2 response → internal segment shape.
 
     The response is a flat list of items typed as ``word`` or
@@ -270,11 +281,14 @@ def _to_segments(payload: dict, want_diarization: bool) -> list[dict]:
 
     Speakers come as ``"S1"``, ``"S2"``… — we re-prefix to ``SPEAKER_1``
     so the «Спикер N» rewrite path treats them identically to pyannote
-    output.
+    output. Labels in ``known_labels`` (real names from speaker-ID) are
+    kept verbatim instead.
     """
     items = payload.get("results") or []
     if not items:
         return []
+
+    known = known_labels or frozenset()
 
     segments: list[dict] = []
     cur_tokens: list[str] = []
@@ -297,7 +311,7 @@ def _to_segments(payload: dict, want_diarization: bool) -> list[dict]:
             "text": text,
         }
         if want_diarization and cur_speaker:
-            seg["speaker"] = _normalise_speaker(cur_speaker)
+            seg["speaker"] = _normalise_speaker(cur_speaker, known)
         segments.append(seg)
         cur_tokens = []
         seg_start = None
@@ -340,8 +354,36 @@ def _to_segments(payload: dict, want_diarization: bool) -> list[dict]:
     return segments
 
 
-def _normalise_speaker(label: str) -> str:
-    """Speechmatics uses ``S1``/``S2``/...; rewrite to ``SPEAKER_1``."""
+def _normalise_speaker(label: str, known_labels: frozenset = frozenset()) -> str:
+    """Speechmatics uses ``S1``/``S2``; rewrite to ``SPEAKER_1`` so the «Спикер N»
+    path treats them like pyannote output. A label we asked to identify (in
+    ``known_labels``) is a real name — keep it verbatim. ``UU`` and any other
+    non-S\\d label fall through to the anonymous bucket unchanged."""
+    if label in known_labels:
+        return label
     if label.startswith("S") and label[1:].isdigit():
         return f"SPEAKER_{label[1:]}"
     return f"SPEAKER_{label}"
+
+
+def _parse_speaker_identifiers(payload: dict) -> dict[str, list[str]] | None:
+    """Top-level ``speakers`` array (present only when get_speakers was set) →
+    {label: [identifier, ...]}. None when absent."""
+    speakers = payload.get("speakers")
+    if not speakers:
+        return None
+    out: dict[str, list[str]] = {}
+    for sp in speakers:
+        label = sp.get("label")
+        ids = sp.get("speaker_identifiers") or []
+        if label:
+            out[label] = list(ids)
+    return out or None
+
+
+def _extract_model(payload: dict) -> str | None:
+    """Acoustic model echoed in metadata (identifiers are tied to it).
+    Falls back to the deprecated operating_point."""
+    cfg = (payload.get("metadata") or {}).get("transcription_config") or {}
+    model = cfg.get("model") or cfg.get("operating_point")
+    return str(model) if model else None

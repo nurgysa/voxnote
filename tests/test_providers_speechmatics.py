@@ -348,3 +348,90 @@ def test_build_config_no_enroll_has_no_speaker_diarization_config():
 
 def test_speechmatics_supports_speaker_id_true():
     assert SpeechmaticsProvider.supports_speaker_id is True
+
+
+# ── Task 3: named labels verbatim + identifiers/model parsing ─────────
+
+
+def test_normalise_speaker_keeps_known_label_verbatim():
+    known = frozenset({"Айбек Нурланов"})
+    assert _normalise_speaker("Айбек Нурланов", known) == "Айбек Нурланов"
+    # still anonymises the S-labels and UU when not in the known set
+    assert _normalise_speaker("S1", known) == "SPEAKER_1"
+    assert _normalise_speaker("UU", known) == "SPEAKER_UU"
+
+
+def test_normalise_speaker_default_arg_unchanged():
+    # back-compat: no known_labels behaves exactly as before
+    assert _normalise_speaker("S3") == "SPEAKER_3"
+    assert _normalise_speaker("UU") == "SPEAKER_UU"
+
+
+def test_to_segments_named_speaker_passes_through():
+    payload = {"results": [
+        _word("Привет", 0.0, 0.4, "Айбек Нурланов"),
+        _word("мир",    0.5, 0.8, "Айбек Нурланов"),
+        _word("Как",    1.2, 1.4, "S1"),
+    ]}
+    segs = _to_segments(
+        payload, want_diarization=True,
+        known_labels=frozenset({"Айбек Нурланов"}),
+    )
+    assert segs[0]["speaker"] == "Айбек Нурланов"   # verbatim, NOT SPEAKER_*
+    assert segs[1]["speaker"] == "SPEAKER_1"         # unknown still normalised
+
+
+def test_parse_speaker_identifiers_reads_top_level_array():
+    from providers.speechmatics import _parse_speaker_identifiers
+    payload = {"speakers": [
+        {"label": "S1", "speaker_identifiers": ["id-a"]},
+        {"label": "Айбек Нурланов", "speaker_identifiers": ["id-b", "id-c"]},
+    ]}
+    assert _parse_speaker_identifiers(payload) == {
+        "S1": ["id-a"],
+        "Айбек Нурланов": ["id-b", "id-c"],
+    }
+
+
+def test_parse_speaker_identifiers_absent_is_none():
+    from providers.speechmatics import _parse_speaker_identifiers
+    assert _parse_speaker_identifiers({"results": []}) is None
+
+
+def test_extract_model_from_metadata():
+    from providers.speechmatics import _extract_model
+    assert _extract_model(
+        {"metadata": {"transcription_config": {"model": "m-x"}}}
+    ) == "m-x"
+    # operating_point fallback + absent
+    assert _extract_model(
+        {"metadata": {"transcription_config": {"operating_point": "enhanced"}}}
+    ) == "enhanced"
+    assert _extract_model({"metadata": {}}) is None
+
+
+def test_transcribe_surfaces_identifiers_and_model(fake_audio):
+    submit_resp = MagicMock(status_code=200, ok=True,
+                            json=MagicMock(return_value={"id": "j1"}))
+    poll_resp = MagicMock(status_code=200, ok=True,
+                          json=MagicMock(return_value={"job": {"status": "done"}}))
+    transcript_resp = MagicMock(status_code=200, ok=True, json=MagicMock(
+        return_value={
+            "results": [_word("Привет", 0.0, 0.4, "Айбек Нурланов")],
+            "metadata": {"transcription_config": {"model": "m-x"}},
+            "speakers": [
+                {"label": "Айбек Нурланов", "speaker_identifiers": ["id-b"]},
+            ],
+        }))
+    p = SpeechmaticsProvider("good-key")
+    with patch("providers._common.requests.post", return_value=submit_resp), \
+         patch("providers._common.requests.get",
+               side_effect=[poll_resp, transcript_resp]):
+        result = p.transcribe(fake_audio, TranscriptionOptions(
+            diarize=True,
+            enroll_speakers=True,
+            known_speakers=[{"label": "Айбек Нурланов", "identifiers": ["id-b"]}],
+        ))
+    assert result.segments[0]["speaker"] == "Айбек Нурланов"
+    assert result.speaker_identifiers == {"Айбек Нурланов": ["id-b"]}
+    assert result.model == "m-x"
