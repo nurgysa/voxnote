@@ -668,6 +668,18 @@ def load_voiceid_sidecar(
         return None
 
 
+def delete_voiceid_sidecar(voxnote_id: str, *, base_dir: str | None = None) -> None:
+    """Remove the Voice-ID sidecar for ``voxnote_id`` once every pending voice is
+    resolved (the «🆕 новые голоса» badge then clears). Idempotent — a missing
+    file is a no-op, not an error."""
+    target_dir = base_dir or _segments_sidecar_dir()
+    path = os.path.join(target_dir, f"{voxnote_id}.voiceid.json")
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def plural_ru(n: int, one: str, few: str, many: str) -> str:
     """Russian plural word form for ``n``: 1 встреча / 2 встречи / 5 встреч.
 

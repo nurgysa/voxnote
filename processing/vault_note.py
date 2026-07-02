@@ -110,3 +110,16 @@ def write_transcript_note(
         f.write(content)
     os.replace(tmp, path)
     return path
+
+
+def overwrite_transcript_note(meeting_folder: str, content: str) -> str:
+    """Atomically overwrite ``<meeting_folder>/transcript.md`` with ``content``
+    (UTF-8). The Voice-ID retroactive re-render reuses an existing meeting folder,
+    so — unlike write_transcript_note — this never creates a new collision-safe
+    folder. Returns the transcript.md path."""
+    path = os.path.join(meeting_folder, "transcript.md")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        f.write(content)
+    os.replace(tmp, path)
+    return path
