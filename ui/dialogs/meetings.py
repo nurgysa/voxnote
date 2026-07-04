@@ -42,10 +42,12 @@ from ui.dialogs.meetings_view import (
     group_by_project,
     queue_position,
 )
+from ui.dialogs.voice_bind import VoiceBindDialog
 from utils import (
     delete_history_entry,
     get_meetings_dir,
     open_in_explorer,
+    plural_ru,
     save_transcript,
 )
 
@@ -252,7 +254,16 @@ class MeetingsDialog(ctk.CTkToplevel):
         return NO_PROJECT_LABEL
 
     def _sig(self, rows) -> tuple:
-        return tuple((r.id, r.status.value) for r in rows)
+        return tuple(
+            (
+                r.id,
+                r.status.value,
+                r.has_protocol,
+                r.has_tasks,
+                r.pending_voices_count,
+            )
+            for r in rows
+        )
 
     def _matches(self, item, query: str) -> bool:
         if not query:
@@ -335,6 +346,22 @@ class MeetingsDialog(ctk.CTkToplevel):
                     text_color=TEXT_SECONDARY,
                 ).grid(row=0, column=badge_col, padx=(8, 0), sticky="w")
                 badge_col += 1
+        if item.pending_voices_count:
+            n = item.pending_voices_count
+            word = plural_ru(n, "новый голос", "новых голоса", "новых голосов")
+            ctk.CTkButton(
+                meta,
+                text=f"🆕 {n} {word}",
+                width=0,
+                height=24,
+                corner_radius=12,
+                font=ctk.CTkFont(family=FONT, size=11, weight="bold"),
+                fg_color=BLUE_SURFACE,
+                hover_color=SURFACE_BRIGHT,
+                text_color="#8AB4F8",
+                command=lambda it=item: self._bind_voices(it),
+            ).grid(row=0, column=badge_col, padx=(8, 0), sticky="w")
+            badge_col += 1
 
         if item.status == StageStatus.ERROR and item.error_message:
             ctk.CTkLabel(
@@ -397,6 +424,17 @@ class MeetingsDialog(ctk.CTkToplevel):
         self._after_id = self.after(self._TICK_MS, self._tick)
 
     # ── actions ──
+    def _bind_voices(self, item):
+        store = getattr(self._app, "_dir_store", None)
+        if store is None:
+            messagebox.showerror(
+                "Новые голоса",
+                "Справочник людей не загружен",
+                parent=self,
+            )
+            return
+        VoiceBindDialog(self, item, store, on_applied=lambda: self._render())
+
     def _view(self, item):
         MeetingViewerDialog(self, item, self._on_load_to_main)
 

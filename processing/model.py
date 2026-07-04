@@ -43,6 +43,7 @@ class QueueItem:
     error_message: str | None = None
     has_protocol: bool = False       # display badge: Hermes wrote protocol.md
     has_tasks: bool = False          # display badge: Hermes wrote tasks.md
+    pending_voices_count: int = 0    # display badge: Voice-ID sidecar pending voices
 
     def to_dict(self) -> dict:
         return {
@@ -62,6 +63,7 @@ class QueueItem:
             "error_message": self.error_message,
             "has_protocol": self.has_protocol,
             "has_tasks": self.has_tasks,
+            "pending_voices_count": self.pending_voices_count,
         }
 
     @classmethod
@@ -70,6 +72,10 @@ class QueueItem:
             status = StageStatus(d.get("status") or "pending")
         except ValueError:
             status = StageStatus.PENDING
+        try:
+            pending_voices_count = int(d.get("pending_voices_count") or 0)
+        except (TypeError, ValueError):
+            pending_voices_count = 0
         return cls(
             id=d["id"],
             audio_path=d.get("audio_path", ""),
@@ -87,4 +93,5 @@ class QueueItem:
             error_message=d.get("error_message"),
             has_protocol=bool(d.get("has_protocol", False)),
             has_tasks=bool(d.get("has_tasks", False)),
+            pending_voices_count=pending_voices_count,
         )

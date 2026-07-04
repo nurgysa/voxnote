@@ -18,13 +18,19 @@ def test_queue_item_round_trips():
         error_message=None,
         has_protocol=True,
         has_tasks=False,
+        pending_voices_count=2,
     )
     restored = QueueItem.from_dict(item.to_dict())
     assert restored == item
 
 
 def test_from_dict_tolerates_missing_and_bad_values():
-    restored = QueueItem.from_dict({"id": "z", "status": "bogus"})
+    restored = QueueItem.from_dict({
+        "id": "z",
+        "status": "bogus",
+        "pending_voices_count": "not-an-int",
+    })
+
     assert restored.id == "z"
     assert restored.status is StageStatus.PENDING
     assert restored.auto is False
@@ -35,6 +41,7 @@ def test_from_dict_tolerates_missing_and_bad_values():
     assert restored.nudge_delivered is False
     assert restored.has_protocol is False
     assert restored.has_tasks is False
+    assert restored.pending_voices_count == 0
 
 
 def test_status_serializes_to_plain_string():

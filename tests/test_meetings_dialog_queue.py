@@ -69,3 +69,16 @@ def test_meetings_dismiss_error_wired_to_forget():
     assert "def _dismiss" in _MEET
     assert "✕ Убрать" in _MEET
     assert "_dismiss(it)" in _MEET  # ERROR-row button wired to the dismiss handler
+
+
+def test_meetings_voiceid_badge_wired_to_bind_dialog():
+    assert "VoiceBindDialog" in _MEET
+    assert "pending_voices_count" in _MEET
+    assert "🆕" in _MEET and "нов" in _MEET
+    assert "def _bind_voices" in _MEET
+    assert "self._render()" in _MEET
+
+
+def test_meetings_signature_tracks_voiceid_badge_changes():
+    # The live poll must notice when the sidecar appears/disappears.
+    assert "r.pending_voices_count" in _MEET

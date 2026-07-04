@@ -109,6 +109,13 @@ class DirectoryStore:
         person = self._people.get(person_id)
         if person is None:
             raise DirectoryError(f"add_voiceprint: unknown person {person_id!r}")
+        for existing in person.voiceprints:
+            if (
+                existing.identifier == vp.identifier
+                and existing.model == vp.model
+                and existing.source_meeting == vp.source_meeting
+            ):
+                return
         person.voiceprints.append(vp)
         if len(person.voiceprints) > VOICEPRINT_CAP:
             person.voiceprints = person.voiceprints[-VOICEPRINT_CAP:]

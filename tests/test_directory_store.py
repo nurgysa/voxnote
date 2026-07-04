@@ -49,6 +49,16 @@ def test_add_voiceprint_caps_at_five_dropping_oldest(tmp_path):
     assert vps[-1].identifier == "id5"
 
 
+def test_add_voiceprint_is_idempotent_for_same_identifier_model_and_source(tmp_path):
+    s = _fresh(tmp_path)
+    p = Person(full_name="A")
+    s.upsert_person(p)
+    vp = Voiceprint(identifier="id1", model="m", source_meeting="meeting-1")
+    s.add_voiceprint(p.id, vp)
+    s.add_voiceprint(p.id, vp)
+    assert [v.identifier for v in s.get_person(p.id).voiceprints] == ["id1"]
+
+
 def test_add_voiceprint_unknown_person_raises(tmp_path):
     s = _fresh(tmp_path)
     with pytest.raises(DirectoryError):
