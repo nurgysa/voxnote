@@ -14,13 +14,15 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 from processing.model import QueueItem, StageStatus
-from utils import load_speakers
+from utils import load_speakers, load_voiceid_sidecar
 
 FILENAME = "queue.json"
 _SKIP_DIRS = {"recordings"}
+_SAFE_VOXNOTE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 
 def _default_queue_path() -> Path:
@@ -70,6 +72,46 @@ def hermes_badges_from_folder(folder: str) -> dict:
     }
 
 
+def read_voxnote_id(folder: str) -> str | None:
+    """Read ``voxnote_id`` from transcript.md frontmatter.
+
+    Voice-ID sidecars are keyed by this stable id, while «Встречи» rows are
+    keyed by folder path. Missing/malformed frontmatter simply means no badge.
+    """
+    path = os.path.join(folder, "transcript.md")
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            in_frontmatter = False
+            for raw in f:
+                line = raw.strip()
+                if line == "---":
+                    if not in_frontmatter:
+                        in_frontmatter = True
+                        continue
+                    break
+                if in_frontmatter and line.startswith("voxnote_id:"):
+                    value = line.split(":", 1)[1].strip().strip('"\'')
+                    if not value or ".." in value or not _SAFE_VOXNOTE_ID_RE.match(value):
+                        return None
+                    return value
+
+        return None
+    except OSError:
+        return None
+
+
+def pending_voices_count_from_folder(folder: str) -> int:
+    """Count unresolved Voice-ID sidecar entries for a meeting folder."""
+    voxnote_id = read_voxnote_id(folder)
+    if not voxnote_id:
+        return 0
+    payload = load_voiceid_sidecar(voxnote_id)
+    pending = payload.get("pending") if isinstance(payload, dict) else None
+    return len(pending) if isinstance(pending, list) else 0
+
+
 def is_meeting_folder(folder: str) -> bool:
     """True if the folder holds meeting artifacts (so it is a meeting, not a
     project container). VoxNote writes transcript.md; legacy meetings may also
@@ -95,6 +137,7 @@ def _row_from_folder(folder: str) -> QueueItem:
         status=meeting_status_from_folder(folder),
         has_protocol=badges["has_protocol"],
         has_tasks=badges["has_tasks"],
+        pending_voices_count=pending_voices_count_from_folder(folder),
     )
 
 
@@ -136,6 +179,10 @@ def build_view(meetings_dir: str, active: list[QueueItem]) -> list[QueueItem]:
             else None
         )
         if key is not None and key in index:
+            disk_row = rows[index[key]]
+            item.has_protocol = disk_row.has_protocol
+            item.has_tasks = disk_row.has_tasks
+            item.pending_voices_count = disk_row.pending_voices_count
             rows[index[key]] = item
         else:
             rows.append(item)

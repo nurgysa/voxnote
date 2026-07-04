@@ -7,8 +7,11 @@ from processing.store import (
     is_meeting_folder,
     load_active,
     meeting_status_from_folder,
+    pending_voices_count_from_folder,
+    read_voxnote_id,
     save_active,
 )
+from utils import save_voiceid_sidecar
 
 
 def test_save_then_load_round_trips(tmp_path):
@@ -65,6 +68,41 @@ def test_hermes_badges_reflect_files(tmp_path):
     }
 
 
+def test_read_voxnote_id_from_transcript_frontmatter(tmp_path):
+    (tmp_path / "transcript.md").write_text(
+        "---\n"
+        "type: meeting\n"
+        "voxnote_id: smoke-123\n"
+        "---\n\n"
+        "body",
+        encoding="utf-8",
+    )
+    assert read_voxnote_id(str(tmp_path)) == "smoke-123"
+
+
+def test_read_voxnote_id_rejects_path_traversal(tmp_path):
+    (tmp_path / "transcript.md").write_text(
+        "---\nvoxnote_id: ../../outside\n---\n\nbody",
+        encoding="utf-8",
+    )
+    assert read_voxnote_id(str(tmp_path)) is None
+
+
+def test_pending_voices_count_from_voiceid_sidecar(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("USERPROFILE", str(home))
+    folder = tmp_path / "meeting"
+    folder.mkdir()
+    (folder / "transcript.md").write_text(
+        "---\nvoxnote_id: vid-pr5\n---\n\nbody", encoding="utf-8"
+    )
+    save_voiceid_sidecar(
+        "vid-pr5",
+        {"pending": [{"label": "SPEAKER_1"}, {"label": "SPEAKER_2"}]},
+    )
+    assert pending_voices_count_from_folder(str(folder)) == 2
+
+
 def test_is_meeting_folder(tmp_path):
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -105,6 +143,43 @@ def test_build_view_finds_root_and_project_meetings(tmp_path):
     assert by_title["2026-06-02_kitng"].has_protocol is True
     assert by_title["2026-06-02_kitng"].has_tasks is False
     assert all(r.auto is False for r in rows)
+
+
+def test_build_view_marks_pending_voice_badge_count(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("USERPROFILE", str(home))
+    folder = tmp_path / "Kitng" / "2026-07-03_voiceid"
+    _meeting(folder)
+    (folder / "transcript.md").write_text(
+        "---\nvoxnote_id: vid-pr5\n---\n\nhi", encoding="utf-8"
+    )
+    save_voiceid_sidecar("vid-pr5", {"pending": [{"label": "SPEAKER_1"}]})
+
+    rows = build_view(str(tmp_path), active=[])
+    assert len(rows) == 1
+    assert rows[0].pending_voices_count == 1
+
+
+def test_build_view_merges_pending_voice_badge_into_active_row(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    monkeypatch.setenv("USERPROFILE", str(home))
+    folder = tmp_path / "2026-07-03_voiceid"
+    _meeting(folder)
+    (folder / "transcript.md").write_text(
+        "---\nvoxnote_id: vid-active\n---\n\nhi", encoding="utf-8"
+    )
+    save_voiceid_sidecar("vid-active", {"pending": [{"label": "SPEAKER_1"}]})
+    active = [QueueItem(
+        id="active",
+        audio_path="",
+        title="active",
+        created_at="2026-07-03T10:00:00",
+        meeting_folder=str(folder),
+    )]
+
+    rows = build_view(str(tmp_path), active=active)
+    assert len(rows) == 1
+    assert rows[0].pending_voices_count == 1
 
 
 def test_build_view_skips_recordings_dir(tmp_path):
