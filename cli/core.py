@@ -198,6 +198,31 @@ def run_protocol(
         _safe_close(openrouter)
 
 
+def run_process_meeting(
+    *,
+    note_path: str,
+    model: str,
+    openrouter_key: str,
+    write: bool = False,
+) -> dict:
+    """Process a saved VoxNote transcript.md into protocol/tasks drafts."""
+    from tasks.long_meeting import process_meeting_note, write_meeting_outputs
+    from tasks.openrouter_client import OpenRouterClient
+
+    openrouter = OpenRouterClient(openrouter_key)
+    try:
+        result = process_meeting_note(
+            note_path,
+            model=model,
+            openrouter_client=openrouter,
+        )
+        if write:
+            result = write_meeting_outputs(result)
+        return result
+    finally:
+        _safe_close(openrouter)
+
+
 def list_containers(*, backend_name: str, config: dict) -> list[dict]:
     """Return ``[{id, label}]`` for a backend's containers (teams/tables/boards).
 

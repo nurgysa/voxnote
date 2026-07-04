@@ -37,6 +37,7 @@ Invoke `python -m cli <command>` from the repo root. Structured output with
 | `transcribe <audio> [--provider --language ru\|kk\|en\|mixed\|auto --diarize --hotwords --denoise --json --save]` | Audio → transcript |
 | `extract-tasks (--transcript F \| --stdin) [--backend --container-id --model --json]` | Transcript → tasks |
 | `protocol (--transcript F \| --stdin) [--model --speakers --meeting-date --json]` | Transcript → 5-block MoM |
+| `process-meeting --note-path F [--model --write --json]` | Saved VoxNote `transcript.md` → review-only `protocol.md` / `tasks.md` drafts |
 | `list-containers --backend linear\|glide\|trello [--json]` | Discover a `--container-id` |
 | `send --backend X --container-id Y (--tasks F \| --stdin) [--retry-failed --json]` | Tasks → backend |
 | `pipeline <audio> [--backend --container-id --send ...]` | All of the above, one JSON object |
@@ -51,6 +52,10 @@ python -m cli pipeline meeting.m4a --provider AssemblyAI --language mixed \
 # piping between steps
 python -m cli transcribe meeting.m4a --json
 echo "<transcript text>" | python -m cli extract-tasks --stdin --backend trello --json
+
+# Mini-AGI / Hermes downstream: saved transcript → local review drafts
+python -m cli process-meeting --note-path "path/to/transcript.md" --json
+python -m cli process-meeting --note-path "path/to/transcript.md" --write --json
 ```
 
 ## 2. MCP server (typed tools)
