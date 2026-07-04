@@ -341,3 +341,20 @@ def process_meeting_note(
         "tasks_markdown": tasks_md,
         "written": [],
     }
+
+
+def _write_text_atomic(path: Path, content: str) -> None:
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(content, encoding="utf-8")
+    tmp.replace(path)
+
+
+def write_meeting_outputs(result: dict) -> dict:
+    folder = Path(result["history_folder"])
+    protocol_path = folder / "protocol.md"
+    tasks_path = folder / "tasks.md"
+    _write_text_atomic(protocol_path, result["protocol_markdown"])
+    _write_text_atomic(tasks_path, result["tasks_markdown"])
+    out = dict(result)
+    out["written"] = [str(protocol_path), str(tasks_path)]
+    return out
