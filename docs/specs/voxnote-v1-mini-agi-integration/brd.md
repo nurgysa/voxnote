@@ -104,7 +104,7 @@ V1 is successful when these conditions are true:
 - a desktop audio file can be queued and transcribed into the correct Obsidian meeting folder;
 - a phone recording can arrive through Drive inbox and be processed without manual file surgery;
 - long recordings are preflighted before expensive transcription starts;
-- raw audio is archived to Drive Sources, not stored in the vault;
+- raw audio is archived under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`, not stored in the vault or dumped in `Sources` root;
 - transcript.md includes project, provider, language and source path metadata;
 - GBrain can recall the transcript after import;
 - Hermes can use transcript.md as the downstream handoff for protocol.md and tasks.md;
@@ -128,7 +128,7 @@ In scope for V1:
 - stable-file detection before enqueue;
 - transcription and diarization;
 - transcript.md writing into 30 Meetings;
-- audio archiving to Drive Sources;
+- audio archiving under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`;
 - best-effort audio.transcribed nudge to Hermes;
 - queue and history view;
 - clear error states and manual retry;

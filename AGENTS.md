@@ -15,7 +15,8 @@ operator tools, not the Mini-AGI production downstream path.
 
 > **Desktop queue (Mini-AGI / Hermes-native flow):** VoxNote's own processing
 > queue runs **transcribe-only** — it writes a diarized `transcript.md` into the
-> Obsidian vault, archives the audio to Google Drive `sources/`, and fires a
+> Obsidian vault, archives the audio under Google Drive
+> `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`, and fires a
 > best-effort `audio.transcribed` nudge (§4). **Hermes** then owns the
 > downstream queue: transcript interpretation, protocol/tasks drafts, approval,
 > tracker sends, and GBrain enrichment. The `extract-tasks` / `protocol` /
@@ -185,7 +186,7 @@ VoxNote  →  POST /webhooks/audio-transcribed  →  Hermes Agent
     "path": "C:/Users/.../meeting.m4a",
     "history_folder": "C:/Users/.../<meeting-folder>",
     "note_path": "C:/Users/.../30 Meetings/<project>/<meeting>/transcript.md",
-    "source_path": "G:/My Drive/.../sources/2026-06-14_1000_meeting.m4a"
+    "source_path": "G:/My Drive/.../Sources/Audio/VoxNote/Meetings/2026-06-14/2026-06-14_1000_meeting.m4a"
   },
   "project": { "id": "p1", "name": "Kitng" },
   "transcript": {
@@ -210,7 +211,7 @@ VoxNote  →  POST /webhooks/audio-transcribed  →  Hermes Agent
 Key fields for Hermes routing: `event_type`, `routing_hint`,
 `transcript.raw`, `meta.provider`, `meta.language`, `audio.history_folder`,
 `audio.note_path` (the vault `transcript.md`), `audio.source_path` (the archived
-audio in Drive `sources/`), and `project` (`{id, name}`, or `null` outside a
+audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`), and `project` (`{id, name}`, or `null` outside a
 queue run).
 
 ### 4.2 Config / env reference

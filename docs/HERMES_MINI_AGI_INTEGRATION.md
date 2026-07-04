@@ -10,7 +10,7 @@ Operating formula:
 audio or voice source
 → VoxNote transcription and diarization
 → transcript.md in Obsidian
-→ raw audio archived in Drive Sources
+→ raw audio archived under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`
 → audio.transcribed nudge to Hermes
 → Hermes protocol, tasks, approvals, tracker delivery and memory enrichment
 ```
@@ -26,7 +26,7 @@ VoxNote owns:
 - diarization;
 - transcript.md creation;
 - source_path metadata;
-- raw audio archive into Drive Sources;
+- raw audio archive under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`;
 - best-effort audio.transcribed event;
 - local queue and meetings view.
 
@@ -340,7 +340,7 @@ Before any real audio smoke:
 - use approved non-sensitive or sanitized content;
 - confirm provider choice;
 - confirm estimated cost is acceptable;
-- confirm raw audio should be archived in Drive Sources;
+- confirm raw audio should be archived under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`;
 - confirm Hermes route side effects are draft-only unless explicitly approved;
 - for long meetings, prefer `audio.note_path` / transcript.md as Hermes' downstream source instead of relying only on a large event `transcript.raw`.
 

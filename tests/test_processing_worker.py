@@ -158,7 +158,8 @@ def test_process_item_writes_note_and_copies_for_pick(tmp_path, monkeypatch):
     assert os.path.isfile(os.path.join(live.meeting_folder, "speakers.json"))
     assert os.path.isfile(audio)
     assert live.source_path and os.path.isfile(live.source_path)
-    assert os.path.dirname(live.source_path) == str(sources_dir)
+    expected_archive_root = os.path.join(str(sources_dir), "Audio", "VoxNote", "Meetings")
+    assert os.path.dirname(os.path.dirname(live.source_path)) == expected_archive_root
     assert load_segments_sidecar(live.id) == [{"speaker": "A", "text": "hi"}]
     assert not os.path.isfile(os.path.join(live.meeting_folder, "segments.json"))
 
