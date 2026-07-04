@@ -206,7 +206,8 @@ A reusable route prompt template is stored in this skill directory under templat
 For repo changes:
 
 ```bash
-python -m pytest -q tests/test_hermes_skill.py tests/test_cli_mcp.py tests/test_hermes_webhook_schema.py tests/test_hermes_webhook_client.py tests/test_processing_worker.py
+python -m pytest -q tests/test_hermes_synthetic_smoke.py tests/test_hermes_skill.py tests/test_cli_mcp.py tests/test_hermes_webhook_schema.py tests/test_hermes_webhook_client.py tests/test_processing_worker.py
+python scripts/hermes_synthetic_smoke.py
 python -m ruff check .
 ```
 
