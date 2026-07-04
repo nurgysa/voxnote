@@ -267,6 +267,35 @@ def _cmd_protocol(args) -> int:
     return EXIT_OK
 
 
+def _cmd_process_meeting(args) -> int:
+    cfg = config.merged_config()
+    openrouter_key = config.resolve(
+        args.openrouter_key, "OPENROUTER_API_KEY", cfg.get("openrouter_api_key"),
+    )
+    if not openrouter_key:
+        raise ValueError(
+            "No OpenRouter key. Pass --openrouter-key or VOXNOTE_OPENROUTER_API_KEY."
+        )
+    ensure_outside_secret_store(args.note_path)
+    result = core.run_process_meeting(
+        note_path=args.note_path,
+        model=args.model or core.DEFAULT_MODEL,
+        openrouter_key=openrouter_key,
+        write=args.write,
+    )
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    else:
+        if result.get("written"):
+            for path in result["written"]:
+                print(f"Written: {path}")
+        else:
+            print(result["protocol_markdown"])
+            print("\n---\n")
+            print(result["tasks_markdown"])
+    return EXIT_OK
+
+
 def _cmd_list_containers(args) -> int:
     containers = core.list_containers(
         backend_name=args.backend, config=config.merged_config(),
@@ -415,6 +444,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--speakers", help="Comma-separated participant names.")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=_cmd_protocol)
+
+    # process-meeting
+    p = sub.add_parser(
+        "process-meeting",
+        help="Process an existing VoxNote transcript.md into protocol/tasks drafts.",
+    )
+    p.add_argument("--note-path", required=True, help="Path to VoxNote transcript.md.")
+    p.add_argument("--model", help=f"OpenRouter model (default {core.DEFAULT_MODEL}).")
+    p.add_argument("--openrouter-key", help="OpenRouter API key (else env/config).")
+    p.add_argument(
+        "--write",
+        action="store_true",
+        help="Write protocol.md and tasks.md beside transcript.md.",
+    )
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=_cmd_process_meeting)
 
     # list-containers
     p = sub.add_parser("list-containers", help="List a backend's teams/tables/boards.")
