@@ -28,13 +28,33 @@ def test_build_chunk_messages_marks_transcript_as_untrusted():
 
 
 def test_parse_chunk_response_accepts_minimal_schema():
-    raw = json.dumps({
-        "topics": [{"title": "Water sensor", "evidence": "speaker discussed heavy metals"}],
-        "decisions": [{"text": "Explore modular sensor", "evidence": "we want to build", "confidence": "medium"}],
-        "tasks": [{"title": "Draft concept", "owner": None, "deadline": None, "evidence": "need concept"}],
-        "open_questions": ["Who owns lab validation?"],
-        "uncertainties": ["Speaker names are generic"],
-    })
+    raw = json.dumps(
+        {
+            "topics": [
+                {
+                    "title": "Water sensor",
+                    "evidence": "speaker discussed heavy metals",
+                }
+            ],
+            "decisions": [
+                {
+                    "text": "Explore modular sensor",
+                    "evidence": "we want to build",
+                    "confidence": "medium",
+                }
+            ],
+            "tasks": [
+                {
+                    "title": "Draft concept",
+                    "owner": None,
+                    "deadline": None,
+                    "evidence": "need concept",
+                }
+            ],
+            "open_questions": ["Who owns lab validation?"],
+            "uncertainties": ["Speaker names are generic"],
+        }
+    )
 
     parsed = parse_chunk_response(raw)
 

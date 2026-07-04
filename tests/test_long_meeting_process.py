@@ -25,23 +25,55 @@ source_path: "G:/Drive/source.m4a"
 def test_process_meeting_note_calls_llm_for_chunks_and_synthesis(tmp_path):
     client = Mock()
     client.complete.side_effect = [
-        {"content": json.dumps({
-            "topics": [{"title": "Concept", "evidence": "draft the concept"}],
-            "decisions": [],
-            "tasks": [{"title": "Draft concept", "owner": None, "deadline": None, "evidence": "draft the concept"}],
-            "open_questions": ["Who owns lab validation?"],
-            "uncertainties": [],
-        })},
-        {"content": json.dumps({
-            "meeting_map": [{"topic": "Concept", "summary": "Discussed concept drafting"}],
-            "decisions": [],
-            "tasks": [{"title": "Draft concept", "owner": None, "deadline": None, "evidence": "draft the concept"}],
-            "open_questions": ["Who owns lab validation?"],
-            "uncertainties": [],
-        })},
+        {
+            "content": json.dumps(
+                {
+                    "topics": [{"title": "Concept", "evidence": "draft the concept"}],
+                    "decisions": [],
+                    "tasks": [
+                        {
+                            "title": "Draft concept",
+                            "owner": None,
+                            "deadline": None,
+                            "evidence": "draft the concept",
+                        }
+                    ],
+                    "open_questions": ["Who owns lab validation?"],
+                    "uncertainties": [],
+                }
+            )
+        },
+        {
+            "content": json.dumps(
+                {
+                    "meeting_map": [
+                        {
+                            "topic": "Concept",
+                            "summary": "Discussed concept drafting",
+                        }
+                    ],
+                    "decisions": [],
+                    "tasks": [
+                        {
+                            "title": "Draft concept",
+                            "owner": None,
+                            "deadline": None,
+                            "evidence": "draft the concept",
+                        }
+                    ],
+                    "open_questions": ["Who owns lab validation?"],
+                    "uncertainties": [],
+                }
+            )
+        },
     ]
 
-    out = process_meeting_note(_note(tmp_path), model="test/model", openrouter_client=client, max_chars=4000)
+    out = process_meeting_note(
+        _note(tmp_path),
+        model="test/model",
+        openrouter_client=client,
+        max_chars=4000,
+    )
 
     assert out["chunks"] == 1
     assert "protocol_markdown" in out

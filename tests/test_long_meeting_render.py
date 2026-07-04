@@ -1,15 +1,34 @@
-from tasks.long_meeting import render_protocol_markdown, render_tasks_markdown
-
+from tasks.long_meeting import (
+    render_protocol_markdown,
+    render_tasks_markdown,
+)
 
 RESULT = {
     "meeting_map": [{"topic": "Sensor", "summary": "Discussed modular water sensor."}],
-    "decisions": [{"text": "Draft concept", "confidence": "high", "evidence": "we want to build"}],
-    "tasks": [{"title": "Write one-page concept", "owner": "Dias", "deadline": None, "evidence": "need concept"}],
+    "decisions": [
+        {
+            "text": "Draft concept",
+            "confidence": "high",
+            "evidence": "we want to build",
+        }
+    ],
+    "tasks": [
+        {
+            "title": "Write one-page concept",
+            "owner": "Dias",
+            "deadline": None,
+            "evidence": "need concept",
+        }
+    ],
     "open_questions": ["Who owns lab validation?"],
     "uncertainties": ["Speaker names are generic."],
 }
 
-META = {"date": "2026-07-04", "provider": "AssemblyAI", "source_path": "G:/Drive/source.m4a"}
+META = {
+    "date": "2026-07-04",
+    "provider": "AssemblyAI",
+    "source_path": "G:/Drive/source.m4a",
+}
 
 
 def test_render_protocol_markdown_has_expected_sections():
