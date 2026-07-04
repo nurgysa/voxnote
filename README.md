@@ -6,9 +6,9 @@
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](docs/CLIENT_SETUP.md)
 
 VoxNote is a Windows desktop app for cloud speech-to-text, speaker diarization,
-meeting transcript management, and optional LLM-based meeting follow-up. It is
-cloud-only: transcription and diarization run through managed HTTPS APIs, so no
-GPU or local ML stack is required.
+and durable meeting transcript management. It is cloud-only: transcription and
+diarization run through managed HTTPS APIs, so no GPU or local ML stack is
+required.
 
 The app is built for Kazakh, Russian, and English code-switching meetings. Its
 core Mini-AGI use case is realistic 1-3 hour meetings, calls, consultations, and
@@ -60,6 +60,23 @@ two directions:
 Mini-AGI is not a fixed closed toolkit. It grows through new services, apps,
 agents, integrations, and business verticals as real workflows appear.
 
+## Queue boundary
+
+VoxNote owns the **transcription queue** only:
+
+```text
+audio file / recording / inbox
+→ VoxNote queue
+→ provider preflight
+→ cloud STT + diarization
+→ transcript.md + segments/speakers/source_path
+→ audio.transcribed nudge
+```
+
+The queue ends at `transcript.md`. It does not own protocol generation, task
+creation, tracker sends, GBrain enrichment, or long-meeting reasoning. Those are
+Hermes / Mini-AGI responsibilities.
+
 ## Features
 
 - **Cloud transcription:** AssemblyAI, Deepgram, Gladia, and Speechmatics.
@@ -67,13 +84,10 @@ agents, integrations, and business verticals as real workflows appear.
   naming or directory grounding where available.
 - **Kazakh + Russian + English code-switching:** AssemblyAI Universal handles
   language switches inside one recording.
-- **Optional LLM task extraction:** OpenRouter-backed extraction to local task
-  files or task tracker backends.
-- **Optional meeting protocol:** `protocol.md` in a 5-block meeting-minutes
-  format.
-- **Long-meeting downstream drafts:** `process-meeting` turns a saved
-  `transcript.md` into review-only `protocol.md` and `tasks.md` drafts.
-- **Document grounding:** attached PDF/DOCX/PPTX/XLSX files can be converted to
+- **Manual/legacy LLM commands:** OpenRouter-backed `extract-tasks`, `protocol`,
+  `pipeline`, and `process-meeting` remain available for standalone/operator
+  use, but they are not the Mini-AGI production downstream path.
+- **Document attachments:** attached PDF/DOCX/PPTX/XLSX files can be converted to
   Markdown with Microsoft markitdown and used as LLM context.
 - **Microphone recording** and built-in **Audio Cutter**.
 - **Meeting history** with search and project-based folders.
@@ -128,7 +142,7 @@ committed.
 | Service | Purpose | Where to get it |
 |---|---|---|
 | **AssemblyAI** | transcription + diarization | <https://www.assemblyai.com> |
-| **OpenRouter** | optional task extraction + meeting protocol | <https://openrouter.ai/keys> |
+| **OpenRouter** | optional manual/legacy LLM commands, not required for Mini-AGI Hermes-native downstream | <https://openrouter.ai/keys> |
 | Linear / Trello / Glide | optional task delivery | each service's settings/API page |
 
 A secret-free template is available at [`config.example.json`](config.example.json).
@@ -211,9 +225,14 @@ and `audio.source_path`. The request is signed with HMAC-SHA256 in
 
 Delivery is best-effort: if Hermes is unavailable, transcription still succeeds.
 
-### Long meeting downstream drafts
+### Long meeting downstream
 
-For a saved VoxNote meeting transcript, generate review-only downstream drafts:
+Mini-AGI production downstream is Hermes-native: Hermes reads `audio.note_path`,
+performs staged reasoning with its own model/context, owns the downstream queue,
+and writes or sends only after human approval.
+
+VoxNote's `process-meeting` command remains an optional CLI fallback/reference
+for standalone operators:
 
 ```bash
 python -m cli process-meeting --note-path "path/to/transcript.md" --json
@@ -257,4 +276,4 @@ ffmpeg build invoked as a separate process, are listed in
 - [FFmpeg](https://ffmpeg.org/) - audio processing, GPLv3 build invoked as a separate process.
 - [markitdown](https://github.com/microsoft/markitdown) - document-to-Markdown conversion, MIT.
 - AssemblyAI, Deepgram, Gladia, and Speechmatics - cloud STT APIs.
-- [OpenRouter](https://openrouter.ai/) - LLM routing for tasks and meeting protocols.
+- [OpenRouter](https://openrouter.ai/) - LLM routing for optional manual/legacy commands.

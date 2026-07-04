@@ -10,16 +10,18 @@ This repo ships a **headless transcription pipeline** you can drive two ways:
 Pipeline (full chain, available to CLI/MCP callers): **transcribe → extract
 tasks → generate protocol → send to a task backend** (Linear / Glide / Trello).
 Cloud STT (AssemblyAI / Deepgram / Gladia / Speechmatics); KZ+RU+EN
-code-switching; OpenRouter for tasks + protocol.
+code-switching. OpenRouter-backed task/protocol commands are manual/legacy
+operator tools, not the Mini-AGI production downstream path.
 
 > **Desktop queue (Mini-AGI / Hermes-native flow):** VoxNote's own processing
 > queue runs **transcribe-only** — it writes a diarized `transcript.md` into the
 > Obsidian vault, archives the audio to Google Drive `sources/`, and fires a
 > best-effort `audio.transcribed` nudge (§4). **Hermes** then owns the
-> downstream: protocol, task extraction, human approval, and sending to
-> trackers. The `extract-tasks` / `protocol` / `send` commands below remain
-> available for manual or agent-driven use — they are simply not what the
-> desktop auto-pipeline runs.
+> downstream queue: transcript interpretation, protocol/tasks drafts, approval,
+> tracker sends, and GBrain enrichment. The `extract-tasks` / `protocol` /
+> `send` / `process-meeting` commands below remain available for manual or
+> agent-driven standalone use — they are not what the desktop auto-pipeline runs
+> and not the preferred Mini-AGI production path.
 
 For repo *development* conventions (invariants, test/lint contract, module map)
 see **`CLAUDE.md`** — this file is only about *consuming the tool*.
