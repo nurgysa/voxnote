@@ -95,6 +95,20 @@ Important fields:
 
 Delivery is best-effort. transcript.md is the durable handoff.
 
+### Long meeting downstream processing
+
+After long-meeting transcription, Hermes should call `process-meeting` using
+`audio.note_path` as the source of truth:
+
+```bash
+python -m cli process-meeting --note-path "path/to/transcript.md" --json
+python -m cli process-meeting --note-path "path/to/transcript.md" --write --json
+```
+
+The command is approval-safe: dry-run is the default, `--write` creates only
+local `protocol.md` and `tasks.md` drafts beside `transcript.md`, and it never
+sends tracker tasks.
+
 ### Hermes skill
 
 The bundled skill lives at:

@@ -71,6 +71,8 @@ agents, integrations, and business verticals as real workflows appear.
   files or task tracker backends.
 - **Optional meeting protocol:** `protocol.md` in a 5-block meeting-minutes
   format.
+- **Long-meeting downstream drafts:** `process-meeting` turns a saved
+  `transcript.md` into review-only `protocol.md` and `tasks.md` drafts.
 - **Document grounding:** attached PDF/DOCX/PPTX/XLSX files can be converted to
   Markdown with Microsoft markitdown and used as LLM context.
 - **Microphone recording** and built-in **Audio Cutter**.
@@ -208,6 +210,18 @@ and `audio.source_path`. The request is signed with HMAC-SHA256 in
 `X-Webhook-Signature`; Hermes validates the signature.
 
 Delivery is best-effort: if Hermes is unavailable, transcription still succeeds.
+
+### Long meeting downstream drafts
+
+For a saved VoxNote meeting transcript, generate review-only downstream drafts:
+
+```bash
+python -m cli process-meeting --note-path "path/to/transcript.md" --json
+python -m cli process-meeting --note-path "path/to/transcript.md" --write --json
+```
+
+`--write` creates `protocol.md` and `tasks.md` next to `transcript.md`. It does
+not send tracker tasks.
 
 Configuration via `~/.voxnote/config.json` or environment variables:
 

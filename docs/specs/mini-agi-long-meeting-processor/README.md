@@ -10,7 +10,7 @@ tags:
   - meetings
   - hermes
   - spec-seed
-status: seed
+status: planned-v0
 created: 2026-07-04
 source_specs:
   - docs/specs/voxnote-v1-mini-agi-integration/brd.md
