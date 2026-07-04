@@ -24,25 +24,26 @@ source_notes:
 
 # Tasks - VoxNote V1 Mini-AGI Integration
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/PRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/specs/voxnote-v1-mini-agi-integration/requirements]]
 - [[10 Projects/VoxNote/Product Clarity/specs/voxnote-v1-mini-agi-integration/design]]
 
-## Вердикт
+## Verdict
 
-Главная работа не в переписывании VoxNote, а в доведении существующей интеграции до управляемого Mini-AGI workflow.
+The main work is not rewriting VoxNote. It is turning the existing integration into a controlled Mini-AGI workflow.
 
-Порядок:
+Order:
 
 ```text
 spec accepted
 → repo docs and skill tightened
 → active Hermes profile configured
 → synthetic webhook and MCP checks
-→ short real-audio smoke with approval
+→ short technical real-audio smoke with approval
+→ long-meeting evaluation on 60–180 minute material
 → backup scope
 ```
 
@@ -465,7 +466,7 @@ Objective: verify Hermes accepts an audio.transcribed event before spending STT 
 Command pattern:
 
 ```bash
-hermes webhook test audio-transcribed --payload '{"event_type":"audio.transcribed","version":"1.1","source":"voxnote","routing_hint":"obsidian_inbox","audio":{"filename":"synthetic.m4a","path":null,"history_folder":null,"note_path":"C:/Users/nurgisa/Documents/Obsidian Vault/30 Meetings/Synthetic/transcript.md","source_path":"G:/Мой диск/Nurgisa Brain Stack/Sources/synthetic.m4a"},"project":null,"transcript":{"raw":"Synthetic transcript for route test.","segments":[]},"analysis":{"summary":null,"tasks":[],"ideas":[],"decisions":[],"protocol":null},"meta":{"provider":"test","language":"ru","created_at":"2026-07-03T00:00:00Z"}}'
+hermes webhook test audio-transcribed --payload '{"event_type":"audio.transcribed","version":"1.1","source":"voxnote","routing_hint":"obsidian_inbox","audio":{"filename":"synthetic.m4a","path":null,"history_folder":null,"note_path":"C:/Users/nurgisa/Documents/Obsidian Vault/30 Meetings/Synthetic/transcript.md","source_path":"G:/My Drive/Mini-AGI/Sources/synthetic.m4a"},"project":null,"transcript":{"raw":"Synthetic transcript for route test.","segments":[]},"analysis":{"summary":null,"tasks":[],"ideas":[],"decisions":[],"protocol":null},"meta":{"provider":"test","language":"ru","created_at":"2026-07-03T00:00:00Z"}}'
 ```
 
 Acceptance:
@@ -474,23 +475,24 @@ Acceptance:
 - no external tracker send happens unless route explicitly allows it;
 - no secrets appear in output.
 
-## Wave 4 Real short-audio smoke test
+## Wave 4 Technical real-audio smoke test
 
-Run only after explicit approval for API cost and content sensitivity.
+Run only after explicit approval for API cost and content sensitivity. This wave proves runtime plumbing only; it does **not** validate VoxNote's long-meeting product value.
 
-### Task 4.1 Prepare safe audio sample
+### Task 4.1 Prepare safe short audio sample
 
-Objective: use a short non-sensitive sample.
+Objective: use a short non-sensitive sample to verify provider/runtime path cheaply.
 
 Acceptance:
 
 - sample contains no secrets, credentials, private client data or sensitive legal content;
 - duration is short enough for low-cost smoke;
-- user approves provider and cost.
+- user approves provider and cost;
+- success is treated as technical readiness only, not product validation.
 
-### Task 4.2 Run VoxNote queue smoke
+### Task 4.2 Run VoxNote queue technical smoke
 
-Objective: verify real end-to-end queue path.
+Objective: verify real end-to-end queue path on cheap audio.
 
 Manual flow:
 
@@ -526,9 +528,82 @@ Acceptance:
 - new transcript is found;
 - result points to the meeting folder or transcript note.
 
-## Wave 5 Final review and backup
+## Wave 5 Long-meeting evaluation
 
-### Task 5.1 Full automated verification
+Run after Wave 4 proves runtime plumbing. This is the real product-value check for Mini-AGI.
+
+### Task 5.1 Select realistic long meeting material
+
+Objective: choose one real or sanitized meeting-style audio file in the 60–180 minute target range.
+
+Acceptance:
+
+- duration is between 60 and 180 minutes;
+- content is approved for the selected STT provider;
+- expected project/context is known;
+- provider, cost risk and sensitivity are explicitly approved;
+- this is not a toy mini-meeting or short demo clip.
+
+### Task 5.2 Run long meeting through VoxNote queue
+
+Objective: prove VoxNote can create a durable transcript.md from realistic long material.
+
+Acceptance:
+
+- preflight runs before upload;
+- no automatic retry occurs on failure;
+- transcript.md exists and is readable;
+- transcript.md preserves full transcript content, not only a summary;
+- source_path is recorded;
+- raw audio stays outside the vault;
+- nudge failure, if any, does not lose the transcript.
+
+### Task 5.3 Run Hermes downstream dry-run
+
+Objective: evaluate whether Mini-AGI can turn the long transcript into useful working artifacts.
+
+Expected downstream shape:
+
+```text
+transcript.md
+→ staged/chunked Hermes processing
+→ meeting map
+→ decisions
+→ tasks draft
+→ protocol draft
+→ approval gate
+```
+
+Acceptance:
+
+- Hermes prefers note_path/transcript.md over only event transcript.raw;
+- protocol.md and tasks.md are drafts until approval;
+- important decisions are captured;
+- tasks are not spammy and include owner/deadline/uncertainty when available;
+- open questions and follow-ups are separated from confirmed commitments;
+- no tracker send happens without explicit approval.
+
+### Task 5.4 Evaluate usefulness
+
+Objective: decide whether VoxNote is actually useful for Mini-AGI long-meeting workflows.
+
+Evaluation questions:
+
+- Did the transcript preserve enough context from a 1–3 hour meeting?
+- Did Hermes produce a protocol/tasks draft that is faster or better than manual processing?
+- Were decisions, risks and open questions recoverable?
+- Was the result usable in Obsidian/GBrain later?
+- Which failure mode blocks product value: STT quality, diarization, long transcript processing, routing, or approval workflow?
+
+Acceptance:
+
+- outcome is recorded as pass / partial / fail;
+- blockers become specific tasks, not vague “improve VoxNote” work;
+- no new feature coding begins until the evaluation result is understood.
+
+## Wave 6 Final review and backup
+
+### Task 6.1 Full automated verification
 
 Command:
 
@@ -543,7 +618,7 @@ Expected:
 - all tests pass;
 - ruff passes.
 
-### Task 5.2 Review repo diff
+### Task 6.2 Review repo diff
 
 Command:
 
@@ -560,7 +635,7 @@ Acceptance:
 - no config.json, logs, secrets or local state;
 - untracked unrelated docs remain untouched unless explicitly included.
 
-### Task 5.3 Review vault diff
+### Task 6.3 Review vault diff
 
 Command:
 
@@ -575,7 +650,7 @@ Acceptance:
 - only BRD, PRD and spec files are in VoxNote Product Clarity scope;
 - unrelated vault changes remain unstaged.
 
-### Task 5.4 Prepare backup scope after approval
+### Task 6.4 Prepare backup scope after approval
 
 Objective: stage only VoxNote Product Clarity files.
 
@@ -605,7 +680,8 @@ This task plan is done when:
 - repo skill and docs are updated if approved;
 - active Hermes profile can see VoxNote skill, MCP and webhook route if activation is approved;
 - synthetic route test passes;
-- real short-audio smoke passes if approved;
+- short real-audio smoke passes if approved;
+- long-meeting evaluation on 60–180 minute material is recorded as pass, partial or fail;
 - GBrain can recall the resulting transcript artifact;
 - all code changes pass pytest and ruff;
 - vault and repo backup scopes are narrow and verified.

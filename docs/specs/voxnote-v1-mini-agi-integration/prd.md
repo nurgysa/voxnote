@@ -22,18 +22,18 @@ source_notes:
 
 # PRD - VoxNote V1
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/README]]
 - [[10 Projects/Mini-AGI/Operating Model/Product Clarity to Spec Workflow]]
 - [[10 Projects/Mini-AGI/Mini-AGI - V1 Roadmap]]
 
-## Вердикт
+## Verdict
 
-VoxNote V1 должен стать голосовым и аудио-входом Mini-AGI, а не самостоятельным оркестратором задач.
+VoxNote V1 should become the voice and audio intake layer for Mini-AGI, not an independent task orchestrator.
 
-Продуктовый контракт V1:
+V1 product contract:
 
 ```text
 record or choose audio or phone Drive inbox
@@ -45,27 +45,27 @@ record or choose audio or phone Drive inbox
 → Hermes creates protocol, tasks, approvals and tracker actions
 ```
 
-Главное требование: VoxNote должен надёжно превращать важное аудио в долговечный Markdown-артефакт, который Hermes и GBrain могут дальше использовать без ручной пересборки контекста.
+The primary requirement: VoxNote must reliably turn important audio into a durable Markdown artifact that Hermes and GBrain can use later without manual context reconstruction.
 
 ## Product objective
 
-VoxNote V1 должен закрыть один продуктовый сценарий:
+VoxNote V1 should cover one product scenario:
 
 ```text
-Любая важная запись превращается в diarized transcript.md в Obsidian, с понятной ссылкой на raw audio и безопасной границей между VoxNote и Hermes.
+Any important recording becomes a diarized transcript.md in Obsidian, with a clear raw-audio reference and a safe boundary between VoxNote and Hermes.
 ```
 
-VoxNote отвечает за capture and transcription.
+VoxNote owns capture and transcription.
 
-Hermes отвечает за interpretation and action.
+Hermes owns interpretation and action.
 
-Это разделение защищает Mini-AGI от scope creep, двойной генерации задач, лишнего LLM spend и неясных approval boundaries.
+This separation protects Mini-AGI from scope creep, duplicate task generation, unnecessary LLM spend and unclear approval boundaries.
 
 ## Users and actors
 
 Primary user:
 
-- Nurgisa как оператор Mini-AGI.
+- Nurgisa as the Mini-AGI operator.
 
 System actors:
 
@@ -163,6 +163,21 @@ Acceptance:
 - tracker sends are not performed by VoxNote in Hermes-native queue mode;
 - transcript content is treated as untrusted input downstream.
 
+### US-007 Long meeting intake and handoff
+
+As the Mini-AGI operator, I can process real 1–3 hour meetings, calls, consultations and project discussions into durable transcript.md artifacts that Hermes can later convert into protocol/tasks without losing context.
+
+Acceptance:
+
+- 60–180 minute audio is treated as a first-class V1 target, not an edge case;
+- long audio is preflighted before provider upload;
+- provider limits, file-size risk and cost risk are visible before expensive work;
+- no automatic retry is used for failed long jobs;
+- transcript.md remains readable for long meetings and preserves the full transcript as source of truth;
+- audio.note_path and audio.source_path are present when available;
+- Hermes downstream is expected to process long transcript through staged or chunked workflow, not one naive prompt;
+- raw audio is not stored in the vault.
+
 ## Primary workflows
 
 ### Workflow A Desktop chosen file
@@ -202,6 +217,7 @@ Phone saves audio to Drive inbox
 VoxNote transcript.md exists
 → Hermes reads note_path or scans meeting folder
 → Hermes treats transcript as untrusted meeting content
+→ for long transcripts, Hermes processes in stages instead of one naive prompt
 → Hermes creates protocol.md
 → Hermes drafts tasks.md
 → Hermes asks for human approval
@@ -309,9 +325,9 @@ event_type: audio.transcribed
 version: 1.1
 source: voxnote
 routing_hint: obsidian_inbox
-transcript.raw: full transcript text
+transcript.raw: transcript text when safe and practical for the event payload
 transcript.segments: segments when available
-audio.note_path: transcript.md path
+audio.note_path: preferred durable source for long meetings
 audio.source_path: Drive Sources path when available
 project: id and name when known
 meta: provider, language, created_at

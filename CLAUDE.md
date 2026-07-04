@@ -17,7 +17,7 @@ needed; transcription is HTTPS calls.
 
 Open source (MIT) and public since 2026-06-10. End users get the
 PyInstaller zip from GitHub Releases; support is GitHub Issues. The user
-setup guide is `docs/CLIENT_SETUP.md` (Russian).
+setup guide is `docs/CLIENT_SETUP.md` (English).
 
 Earlier history (pre-2026-05-28): targeted ASUS ROG Strix G15, GTX 1650 Ti
 (4 GB VRAM), faster-whisper + pyannote locally. Many architectural ghosts
@@ -119,7 +119,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
 | Headless CLI + MCP server | `cli/` (`core` — pipeline glue reused by both surfaces; `app` — argparse CLI; `mcp_server` — MCP stdio server for agent CLIs, see `AGENTS.md`) |
 | Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout`, `worker` — meetings organized by project on disk + the serial auto-pipeline worker over `cli.core`; UI wiring lands in PR-2b) |
-| Diagnostics log bundle | `support_bundle.py` (`build_log_bundle` — zips `logs/` + key-redacted config; wired to «Сохранить лог для отправки» in Settings) |
+| Diagnostics log bundle | `support_bundle.py` (`build_log_bundle` — zips `logs/` + key-redacted config; wired to the Settings diagnostics log-bundle action) |
 | Build + release packaging | `scripts/build_exe.ps1` (PyInstaller onedir + size guard) → `scripts/package_release.py` (zips via Python `zipfile` with forward-slash arcnames; guards abort on: secrets/state in bundle, missing markitdown, missing ffmpeg GPL license, scipy / pandas-tests bloat, backslash entries) |
 
 ## Branch + PR workflow
@@ -159,21 +159,21 @@ under `docs/superpowers/` and in git history.
   `docs/superpowers/specs/2026-06-04-audit-remediation-design.md`.
 - **Improvement audit complete** (2026-06-10 → 06-13, PRs #130–#147):
   post-open-source hardening pass — requests CVE bump + community files
-  (#130/#131), extract close-data-loss guard + STT-key «Проверить»
+  (#130/#131), extract close-data-loss guard + STT-key check button
   (#132/#133), the widget-tree split of both dialog god-objects into
   builder modules (#134–#136), provider transport dedup into
   `providers/_common.py` (#137/#138), scipy ghost-pin removal + bare-
-  `except` ratchet guard (#139/#140), UX polish (terminology → «Встречи»,
+  `except` ratchet guard (#139/#140), UX polish (terminology -> Meetings,
   async Settings stats, dedup checkbox, per-model cost forecast —
   #141–#144), and the outbound Hermes `audio.transcribed` webhook +
   Settings toggle (#146/#147).
 - **Mixed-language is live behavior** (not history): Settings'
-  `"Смешанный (KZ+RU+EN)"` maps to the `"mixed"` language sentinel and
+  mixed-language option maps to the `"mixed"` language sentinel and
   cloud providers branch on `options.language == "mixed"` — Gladia
   `code_switching: true`, AssemblyAI `speech_model: universal`,
   Speechmatics `language_identification_config`. Deepgram opts out via
   the class attribute `supports_mixed = False` (nova-3 lacks Kazakh);
-  `Transcriber.transcribe()` raises a Russian `ProviderError` for any
+  `Transcriber.transcribe()` raises a provider error for any
   provider with that flag false.
 - **Google Drive removed** (2026-06-23): the `gdrive/` package (auth,
   client, backup) was deleted; backup/restore now lives in Hermes Desktop.

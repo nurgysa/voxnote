@@ -1,47 +1,48 @@
-# Шаблон протокола встречи (5-block MoM)
+# Meeting protocol template (5-block MoM)
 
-**Версия:** v1.0 (Task 5 of MVP v5 plan, 2026-05-28)
-**Источник:** Tauri SaaS spec §7.9, embedded in `tasks/protocol_template.py`
+**Version:** v1.0 (Task 5 of MVP v5 plan, 2026-05-28)
+**Source:** Tauri SaaS spec section 7.9, embedded in `tasks/protocol_template.py`
 
-Этот документ описывает шаблон, по которому VoxNote генерирует
-`<history>/<run>/protocol.md` после клика «Извлечь задачи» в Extract dialog.
+This document describes the template VoxNote uses to generate
+`<history>/<run>/protocol.md` after the user runs task extraction in the Extract
+dialog.
 
-## Зачем 5 блоков
+## Why five blocks
 
-Стандарт Minutes of Meeting (MoM) — пять структурных секций, каждая из
-которых отвечает на одну вопрос-категорию:
+The Minutes of Meeting (MoM) format is split into five structural sections, each
+answering one category of questions:
 
-1. **Метаданные** — кто, когда, что за встреча. (Контекст для будущего читателя.)
-2. **Повестка дня** — какие темы обсуждались. (Скелет встречи.)
-3. **Ключевые тезисы и решения** — что именно сказали и о чём договорились. (Содержание.)
-4. **План действий** — кто что делает к какому сроку. (Actionable выход.)
-5. **Следующая встреча и материалы** — куда идём дальше. (Continuity.)
+1. **Metadata** - who, when, and what type of meeting. This gives future readers context.
+2. **Agenda** - what topics were discussed. This is the meeting skeleton.
+3. **Key theses and decisions** - what was said and what was agreed. This is the substance.
+4. **Action plan** - who does what and by when. This is the actionable output.
+5. **Next meeting and materials** - where the work continues. This preserves continuity.
 
-Этот разрез — индустриальный стандарт; протокол в 5 блоков читается одинаково
-вне зависимости от типа встречи (Sprint Planning / 1-on-1 / Customer Call / …).
+This structure is intentionally generic. The same five-block protocol can be
+read across different meeting types, such as Sprint Planning, 1-on-1, Customer
+Call, or Interview.
 
-## Как заполняются блоки
+## How blocks are filled
 
-| Блок | Источник содержания | Placeholder в шаблоне |
+| Block | Content source | Template placeholder |
 |---|---|---|
-| 1. Метаданные | `meeting_type` + `participants` от LLM; `meeting_date` от UI (значение из формы) | `{meeting_type}` / `{meeting_date}` / `{participants}` |
-| 2. Повестка дня | LLM извлекает из первых 5-10 минут транскрипта | `{agenda}` |
-| 3. Ключевые тезисы и решения | LLM анализирует весь транскрипт, выделяет решения жирным (`**...**`) | `{theses_and_decisions}` |
-| 4. План действий | LLM ищет фразы типа «Иван, сделай X к четвергу» → формат `- @Исполнитель: задача (срок)` | `{action_items}` |
-| 5. Следующая встреча и материалы | **Не извлекается в v1.0** — статичная подсказка «добавьте вручную» (см. ниже) | (нет placeholder'а) |
+| 1. Metadata | `meeting_type` and `participants` from the LLM; `meeting_date` from the UI form | `{meeting_type}` / `{meeting_date}` / `{participants}` |
+| 2. Agenda | The LLM extracts topics from the beginning and overall structure of the transcript | `{agenda}` |
+| 3. Key theses and decisions | The LLM analyzes the transcript and marks decisions in bold | `{theses_and_decisions}` |
+| 4. Action plan | The LLM extracts action items such as owner, task and deadline | `{action_items}` |
+| 5. Next meeting and materials | Static v1.0 reminder to add the next meeting/materials manually | no placeholder |
 
-Блок 5 оставлен статичным в v1.0 по двум причинам:
+Block 5 is static in v1.0 for two reasons:
 
-- LLM-извлечение «когда следующая встреча» добавляет отдельный API-вызов
-  (стоимость + латентность) ради ~10% случаев, когда дата реально звучит
-  в транскрипте.
-- Spec §7.9 (Tauri) описывает Phase 2 `next_meeting` pass с frontmatter-
-  полями `{date, topic, confidence}` — переносим эту работу туда, чтобы
-  не делать половину сейчас.
+- extracting the next meeting date would require an additional LLM pass for a
+  relatively rare case;
+- the original spec describes a later Phase 2 `next_meeting` pass with
+  `{date, topic, confidence}` fields, which should be implemented deliberately
+  instead of half-implemented here.
 
-## Структура `Placeholders` dataclass
+## `Placeholders` dataclass structure
 
-`tasks/protocol_template.py` определяет frozen-dataclass с **6 полями**:
+`tasks/protocol_template.py` defines a frozen dataclass with six fields:
 
 ```python
 @dataclass(frozen=True)
@@ -54,83 +55,83 @@ class Placeholders:
     action_items: str
 ```
 
-«5 блоков, 6 полей» — Метаданные распилена на 3 атомарных поля, чтобы
-`meeting_date` шёл напрямую из UI (где пользователь обычно его уже знает),
-без обращения к LLM. Остальные 5 полей — однозначное соответствие блокам.
+The template has five blocks but six fields because Metadata is split into three
+atomic fields. `meeting_date` comes directly from the UI when the user already
+knows it; the rest of the fields map to the remaining protocol sections.
 
-## Контракт LLM
+## LLM contract
 
-`tasks/protocol_generator.py` отправляет в OpenRouter:
+`tasks/protocol_generator.py` sends the following to OpenRouter:
 
-- **System message** (~1.5 KB, кешируется через Anthropic prompt-cache) —
-  инструкция в виде «верни ровно 5 H2-секций в указанном порядке».
-- **User message** (динамический) — `meeting_date` + `speakers` + `lang_label`
-  + сам транскрипт между `=== ТРАНСКРИПТ ===` маркерами.
+- **System message** of about 1.5 KB, designed to be cache-friendly, instructing
+  the model to return exactly five H2 sections in the required order.
+- **User message** containing `meeting_date`, `speakers`, `lang_label`, and the
+  transcript text between transcript boundary markers.
 
-LLM возвращает markdown вида:
+The LLM returns Markdown like this:
 
 ```markdown
 ## meeting_type
 Sprint Planning
 
 ## participants
-Иван, Анна, ...
+Ivan, Anna, ...
 
 ## agenda
 - ...
 - ...
 
 ## theses_and_decisions
-**Решение:** ...
+**Decision:** ...
 
 ## action_items
-- @Иван: ... (срок 2026-06-04)
+- @Ivan: ... (deadline 2026-06-04)
 ```
 
-Парсер (`parse_llm_response`) разбивает по regex `^## (\w+)\n(.*?)(?=\n##|\Z)`
-и наполняет `Placeholders`. Если хоть один из 5 обязательных блоков
-отсутствует — `ProtocolGenerationError` с диагностикой «найдено / не
-хватает», чтобы пользователь мог попробовать другую модель.
+The parser (`parse_llm_response`) splits the response with the regex
+`^## (\w+)\n(.*?)(?=\n##|\Z)` and fills `Placeholders`. If any required block is
+missing, it raises `ProtocolGenerationError` with diagnostics so the user can try
+another model or rerun extraction.
 
-## Параметры LLM
+## LLM parameters
 
-- `model`: выбирается в Extract dialog (пользовательский dropdown).
-  Рекомендуем `anthropic/claude-sonnet-4.5` или `anthropic/claude-haiku-4.5`.
-- `temperature`: **0.3** — чуть выше `tasks/extractor.py` default 0.2,
-  потому что формулировка протокола выигрывает от лёгкой вариативности
-  при сохранении верности транскрипту.
-- `json_mode`: **False** — вывод markdown, не JSON.
-- `timeout`: 60 сек (стандарт OpenRouterClient).
+- `model`: selected in the Extract dialog. Use the repository defaults unless a
+  deliberate model change is being tested.
+- `temperature`: **0.3**. This is slightly higher than the task extractor default
+  of 0.2 because protocol wording benefits from light variation while staying
+  grounded in the transcript.
+- `json_mode`: **False**. The output is Markdown, not JSON.
+- `timeout`: 60 seconds, using the standard `OpenRouterClient` timeout.
 
-Типичная стоимость на 30-минутную встречу с Sonnet 4.5: ~$0.01-0.02
-(зависит от плотности диалога).
+Cost depends on model, transcript length and provider pricing. Verify current
+pricing before long or sensitive runs.
 
-## Регенерация
+## Regeneration
 
-В v1.0 при недовольстве протоколом пользователь:
+In v1.0, if the user dislikes the protocol:
 
-1. Нажимает «Извлечь задачи» ещё раз — пересчитывается полностью.
-2. Опционально меняет модель в dropdown'е перед повтором.
+1. Run task extraction again; the protocol is recomputed completely.
+2. Optionally choose a different model before rerunning.
 
-Phase 2 (post-MVP) добавит per-block регенерацию через `Placeholders`
-объект — например, «перегенерируй только action_items другой моделью».
-Дизайн `ProtocolResult.placeholders` уже эту возможность поддерживает.
+Phase 2 can add per-block regeneration through the `Placeholders` object, for
+example regenerating only `action_items` with another model. The
+`ProtocolResult.placeholders` design already supports that direction.
 
-## Изменение шаблона
+## Changing the template
 
-Если нужно отредактировать структуру:
+If the structure needs to change:
 
-1. Меняй `MOM_5_BLOCK_TEMPLATE` константу в `tasks/protocol_template.py`.
-2. Если добавляешь/убираешь поля — также правишь `Placeholders` dataclass
-   + system prompt в `_SYSTEM_PROMPT` (`tasks/protocol_generator.py`) +
+1. Edit the `MOM_5_BLOCK_TEMPLATE` constant in `tasks/protocol_template.py`.
+2. If fields are added or removed, also update the `Placeholders` dataclass, the
+   system prompt in `_SYSTEM_PROMPT` (`tasks/protocol_generator.py`), and the
    `_REQUIRED_BLOCKS` tuple.
-3. Тест `test_template_declares_all_six_placeholders` ловит расхождение
-   между dataclass-полями и `{name}`-плейсхолдерами в шаблоне.
-4. Тест `test_template_has_five_block_structure` следит за наличием 5 H2
-   секций (case-insensitive marker scan).
-5. Любой add/remove поля в Placeholders → обязательно обнови этот документ.
+3. `test_template_declares_all_six_placeholders` catches mismatches between the
+   dataclass fields and `{name}` placeholders in the template.
+4. `test_template_has_five_block_structure` checks that the template keeps five
+   H2 sections using a case-insensitive marker scan.
+5. Any field add/remove in `Placeholders` must update this document.
 
-Spec §7.9 описывает 10 type-specific seeded templates (Standup,
-Customer Call, Sprint Retro, …) которые приедут в Phase 2 как файлы
-`<vault>/.voxnote/protocol_templates/<Type>.md`. В v1.0 один
-универсальный 5-block skeleton покрывает все типы встреч.
+The original spec describes 10 type-specific seeded templates such as Standup,
+Customer Call, and Sprint Retro. Those can later live under
+`<vault>/.voxnote/protocol_templates/<Type>.md`. In v1.0, one universal 5-block
+skeleton covers all meeting types.
