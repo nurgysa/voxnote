@@ -217,3 +217,83 @@ def parse_synthesis_response(raw: str) -> dict:
         if not isinstance(data[key], list):
             raise LongMeetingError(f"Synthesis LLM response key must be a list: {key}")
     return data
+
+
+def _bullet_items(items: list, *, key: str | None = None) -> str:
+    if not items:
+        return "- *(none captured)*"
+    lines = []
+    for item in items:
+        if isinstance(item, dict):
+            text = str(
+                item.get(key or "text")
+                or item.get("title")
+                or item.get("topic")
+                or ""
+            ).strip()
+            extra = []
+            if item.get("summary") and key == "topic":
+                extra.append(str(item["summary"]))
+            if item.get("confidence"):
+                extra.append(f"confidence: {item['confidence']}")
+            if item.get("owner"):
+                extra.append(f"owner: {item['owner']}")
+            if item.get("deadline"):
+                extra.append(f"deadline: {item['deadline']}")
+            if item.get("evidence"):
+                extra.append(f"evidence: {item['evidence']}")
+            suffix = f" ({'; '.join(extra)})" if extra else ""
+            lines.append(f"- {text}{suffix}" if text else "- *(empty item)*")
+        else:
+            lines.append(f"- {item}")
+    return "\n".join(lines)
+
+
+def render_protocol_markdown(result: dict, *, meta: dict[str, str]) -> str:
+    return "\n".join([
+        "# Meeting Protocol Draft",
+        "",
+        "> Draft generated from VoxNote transcript. Review before use.",
+        "",
+        "## Source",
+        "",
+        f"- Date: {meta.get('date') or ''}",
+        f"- Provider: {meta.get('provider') or ''}",
+        f"- Source path: {meta.get('source_path') or ''}",
+        "",
+        "## Meeting Map",
+        "",
+        _bullet_items(result.get("meeting_map", []), key="topic"),
+        "",
+        "## Decisions",
+        "",
+        _bullet_items(result.get("decisions", []), key="text"),
+        "",
+        "## Open Questions",
+        "",
+        _bullet_items(result.get("open_questions", [])),
+        "",
+        "## Uncertainties",
+        "",
+        _bullet_items(result.get("uncertainties", [])),
+        "",
+    ])
+
+
+def render_tasks_markdown(result: dict, *, meta: dict[str, str]) -> str:
+    return "\n".join([
+        "# Candidate Tasks",
+        "",
+        "> Draft - not sent. Human approval is required before tracker creation.",
+        "",
+        "## Source",
+        "",
+        f"- Date: {meta.get('date') or ''}",
+        f"- Provider: {meta.get('provider') or ''}",
+        f"- Source path: {meta.get('source_path') or ''}",
+        "",
+        "## Tasks",
+        "",
+        _bullet_items(result.get("tasks", []), key="title"),
+        "",
+    ])
