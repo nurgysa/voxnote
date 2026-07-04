@@ -23,16 +23,16 @@ source_notes:
 
 # Design - VoxNote V1 Mini-AGI Integration
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/PRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/specs/voxnote-v1-mini-agi-integration/requirements]]
 - [[10 Projects/Mini-AGI/Operating Model/Product Clarity to Spec Workflow]]
 
-## Вердикт
+## Verdict
 
-Кодовая база уже содержит большую часть нужной архитектуры. V1 design не требует переписать VoxNote. Он требует закрепить и активировать существующий boundary:
+The codebase already contains most of the required architecture. The V1 design does not require a VoxNote rewrite. It requires locking in and activating the existing boundary:
 
 ```text
 VoxNote emits durable transcript artifacts.
@@ -42,7 +42,7 @@ Obsidian stores durable text.
 Drive stores raw sources.
 ```
 
-Самый важный design decision: transcript.md is the durable handoff. Webhook is only a nudge.
+The most important design decision: transcript.md is the durable handoff. Webhook is only a nudge.
 
 ## Current code anchors
 

@@ -23,24 +23,24 @@ source_notes:
 
 # Requirements - VoxNote V1 Mini-AGI Integration
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/PRD - VoxNote V1]]
 - [[10 Projects/VoxNote/README]]
 - [[10 Projects/Mini-AGI/Operating Model/Product Clarity to Spec Workflow]]
 
-## Вердикт
+## Verdict
 
-VoxNote V1 должен быть входом голосового и аудио-контекста в Mini-AGI.
+VoxNote V1 should be the voice and audio context intake layer for Mini-AGI.
 
-Система считается правильно спроектированной, если VoxNote создаёт надёжный transcript.md, архивирует raw audio вне vault, отправляет только best-effort nudge в Hermes и не забирает у Hermes downstream reasoning, approval and tracker actions.
+The system is correctly designed when VoxNote creates a reliable transcript.md, archives raw audio outside the vault, sends only a best-effort Hermes nudge, and does not take over Hermes-owned downstream reasoning, approval or tracker actions.
 
 ## Scope
 
-Этот requirements файл покрывает V1 integration contract между VoxNote, Hermes, Obsidian, GBrain and Drive.
+This requirements file covers the V1 integration contract between VoxNote, Hermes, Obsidian, GBrain and Drive.
 
-Он не покрывает standalone SaaS, новый hosted backend, полный UI redesign или локальный GPU transcription stack.
+It does not cover a standalone SaaS product, a new hosted backend, a full UI redesign or a local GPU transcription stack.
 
 ## Functional requirements
 

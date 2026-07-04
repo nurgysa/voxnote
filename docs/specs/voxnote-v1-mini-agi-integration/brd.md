@@ -20,17 +20,17 @@ source_notes:
 
 # BRD - VoxNote V1
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/README]]
 - [[10 Projects/Mini-AGI/Operating Model/Product Clarity to Spec Workflow]]
 - [[10 Projects/Mini-AGI/Mini-AGI - V1 Roadmap]]
 
-## Вердикт
+## Verdict
 
-VoxNote подходит как первый benchmark для нового Product Clarity workflow.
+VoxNote is a good first benchmark for the new Product Clarity workflow.
 
-Но его надо оценивать не как обычный SaaS, а как open-source Mini-AGI capability:
+It should not be evaluated as a generic SaaS product. It should be evaluated as an open-source Mini-AGI capability:
 
 ```text
 voice/audio source
@@ -40,26 +40,26 @@ voice/audio source
 → Hermes protocol, tasks, approval and trackers
 ```
 
-Главная бизнес-ценность VoxNote для Mini-AGI: убрать потерю голосовых и аудиоисточников из рабочего контура. Встречи, голосовые заметки и длинные записи должны становиться проверяемым Markdown evidence, а не исчезать в телефоне, Telegram, локальных Downloads или случайных аудиофайлах.
+VoxNote's main business value for Mini-AGI is preventing voice and audio sources from falling out of the working loop. Meetings, voice notes and long recordings should become verifiable Markdown evidence instead of disappearing in a phone, Telegram, local Downloads or random audio files.
 
 Primary real-world use case: **real 1–3 hour meetings, calls, consultations and project discussions**. Short clips are useful as cheap technical smoke tests, but they do not validate VoxNote's product value for Mini-AGI.
 
 ## Business problem
 
-Mini-AGI не может быть надёжной операционной системой, если важный контекст остаётся в неструктурированном аудио.
+Mini-AGI cannot be a reliable operating system while important context remains trapped in unstructured audio.
 
-Проблема сейчас:
+Current problem:
 
-- голосовые мысли легко теряются;
-- длинные встречи сложно превратить в задачи и решения;
-- raw audio плохо подходит для Obsidian и Git;
-- Hermes и GBrain работают лучше с Markdown, чем с бинарными файлами;
-- downstream protocol and tasks должны быть в Hermes, а не в отдельном transcriber app;
-- long recordings требуют предсказуемого queue, cost guard и human intent.
+- voice thoughts are easy to lose;
+- long meetings are hard to turn into tasks and decisions;
+- raw audio is a poor fit for Obsidian and Git;
+- Hermes and GBrain work better with Markdown than with binary files;
+- downstream protocol and tasks should live in Hermes, not in a separate transcriber app;
+- long recordings need a predictable queue, cost guard and human intent.
 
 ## Buyer and stakeholder
 
-Primary internal stakeholder: Nurgisa как operator, product owner and Mini-AGI architect.
+Primary internal stakeholder: Nurgisa as operator, product owner and Mini-AGI architect.
 
 Primary system stakeholder: Mini-AGI.
 

@@ -24,18 +24,18 @@ source_notes:
 
 # Tasks - VoxNote V1 Mini-AGI Integration
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/PRD - VoxNote V1]]
 - [[10 Projects/VoxNote/Product Clarity/specs/voxnote-v1-mini-agi-integration/requirements]]
 - [[10 Projects/VoxNote/Product Clarity/specs/voxnote-v1-mini-agi-integration/design]]
 
-## Вердикт
+## Verdict
 
-Главная работа не в переписывании VoxNote, а в доведении существующей интеграции до управляемого Mini-AGI workflow.
+The main work is not rewriting VoxNote. It is turning the existing integration into a controlled Mini-AGI workflow.
 
-Порядок:
+Order:
 
 ```text
 spec accepted
@@ -466,7 +466,7 @@ Objective: verify Hermes accepts an audio.transcribed event before spending STT 
 Command pattern:
 
 ```bash
-hermes webhook test audio-transcribed --payload '{"event_type":"audio.transcribed","version":"1.1","source":"voxnote","routing_hint":"obsidian_inbox","audio":{"filename":"synthetic.m4a","path":null,"history_folder":null,"note_path":"C:/Users/nurgisa/Documents/Obsidian Vault/30 Meetings/Synthetic/transcript.md","source_path":"G:/Мой диск/Mini-AGI/Sources/synthetic.m4a"},"project":null,"transcript":{"raw":"Synthetic transcript for route test.","segments":[]},"analysis":{"summary":null,"tasks":[],"ideas":[],"decisions":[],"protocol":null},"meta":{"provider":"test","language":"ru","created_at":"2026-07-03T00:00:00Z"}}'
+hermes webhook test audio-transcribed --payload '{"event_type":"audio.transcribed","version":"1.1","source":"voxnote","routing_hint":"obsidian_inbox","audio":{"filename":"synthetic.m4a","path":null,"history_folder":null,"note_path":"C:/Users/nurgisa/Documents/Obsidian Vault/30 Meetings/Synthetic/transcript.md","source_path":"G:/My Drive/Mini-AGI/Sources/synthetic.m4a"},"project":null,"transcript":{"raw":"Synthetic transcript for route test.","segments":[]},"analysis":{"summary":null,"tasks":[],"ideas":[],"decisions":[],"protocol":null},"meta":{"provider":"test","language":"ru","created_at":"2026-07-03T00:00:00Z"}}'
 ```
 
 Acceptance:

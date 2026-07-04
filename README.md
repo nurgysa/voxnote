@@ -5,150 +5,157 @@
 [![License: MIT](https://img.shields.io/github/license/nurgysa/voxnote)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-0078d4)](docs/CLIENT_SETUP.md)
 
-Десктоп-приложение для Windows: транскрипция аудио + диаризация спикеров
-через managed cloud-API, с извлечением задач и генерацией протокола встречи
-через LLM. UI на CustomTkinter. **GPU не нужен** — всё распознавание идёт
-по HTTPS к облачным провайдерам.
+VoxNote is a Windows desktop app for cloud speech-to-text, speaker diarization,
+meeting transcript management, and optional LLM-based meeting follow-up. It is
+cloud-only: transcription and diarization run through managed HTTPS APIs, so no
+GPU or local ML stack is required.
 
-> **EN:** Windows desktop app for cloud speech-to-text + speaker diarization
-> (AssemblyAI / Deepgram / Gladia / Speechmatics) with LLM task extraction to
-> Linear / Trello / Glide and meeting-protocol generation. Built for
-> Kazakh + Russian + English code-switching meetings. The UI and docs are
-> currently Russian-only. Grab the ready-to-run `.exe` from
-> [Releases](https://github.com/nurgysa/voxnote/releases/latest).
+The app is built for Kazakh, Russian, and English code-switching meetings. Its
+core Mini-AGI use case is realistic 1-3 hour meetings, calls, consultations, and
+project discussions that produce durable `transcript.md` artifacts for later
+Hermes / Mini-AGI processing.
 
-> **Cloud-only с 2026-05-28.** Локальный стек (faster-whisper / pyannote /
-> CUDA / torch) удалён из кодовой базы. Если вы искали GPU-версию — она в
-> истории git до коммита рип-аута, но больше не поддерживается.
+> **Cloud-only since 2026-05-28.** The local faster-whisper / pyannote / CUDA /
+> torch stack was removed from the codebase. If you need the old GPU version,
+> inspect the git history before that rip-out; it is no longer supported.
 
-## Скачать
+## Download
 
-Готовое приложение (Windows 10/11, Python не нужен):
-**[Releases → VoxNote-vX.Y.Z.zip](https://github.com/nurgysa/voxnote/releases/latest)** (~147 МБ).
-Распакуйте в папку под вашим пользователем и запустите `VoxNote.exe` —
-первый запуск по шагам: [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
+Ready-to-run Windows app, no Python required:
 
-Остальной README — для разработки из исходников.
+**[Releases -> VoxNote-vX.Y.Z.zip](https://github.com/nurgysa/voxnote/releases/latest)**
 
-## Место в экосистеме Mini-AGI
+Unzip it into a user-writable folder, run `VoxNote.exe`, and follow the first-run
+setup guide: [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
 
-VoxNote — часть **Mini-AGI**, персональной AI-операционной системы для
-управления знаниями, задачами, проектами, документами и цифровыми агентами
-из единого рабочего контура. В этой системе VoxNote отвечает за **голосовой,
-аудио- и транскрипционный ввод** и спроектирован как Hermes-native приложение
-и сервис.
+The rest of this README is for developers and technical operators.
 
-Центральный слой — **Hermes Desktop**: оркестратор, который управляет
-инструментами, skills, memory, gateway, cron-задачами и агентными процессами.
-VoxNote подключается к нему через MCP (inbound) и webhook `audio.transcribed`
-(outbound) — детали в разделе [Hermes Agent integration](#hermes-agent-integration).
+## Place in the Mini-AGI ecosystem
 
-| Компонент | Роль в Mini-AGI |
+VoxNote is part of **Mini-AGI**, a personal AI operating system for knowledge,
+tasks, projects, documents, and digital agents. In that system VoxNote owns the
+voice/audio/transcription intake layer. It is designed as a Hermes-native app and
+service, not as the downstream reasoning orchestrator.
+
+The central layer is **Hermes Desktop**: the orchestrator for tools, skills,
+memory, gateways, cron jobs, and agent processes. VoxNote connects to Hermes in
+two directions:
+
+- inbound MCP tools for deliberate Hermes -> VoxNote calls;
+- outbound `audio.transcribed` webhook nudges after successful transcription.
+
+| Component | Role in Mini-AGI |
 |---|---|
-| **Hermes Desktop** | Оркестратор: инструменты, skills, memory, gateway, cron, агентные процессы |
-| **VoxNote** | Голосовой / аудио / транскрипционный ввод (это приложение) |
-| **Telegram** | Быстрый канал захвата идей, задач, голосовых заметок и запросов с телефона |
-| **Obsidian** | Человекочитаемая база знаний и источник правды в Markdown |
-| **GBrain** | Семантическая память, поиск, связи между заметками, синтез знаний |
-| **GitHub** | Версионность, ревью, история изменений, безопасные checkpoints |
-| **Google Drive** | Облачное хранение, синхронизация файлов, документный слой |
-| **Linear** | Human-facing доска задач |
-| **Hermes Kanban** | Внутренняя очередь для агентного исполнения |
-| **Codex** | Основной исполнительный AI-агент для coding-, файловых и Obsidian-workflows |
+| **Hermes Desktop** | Orchestrator for tools, skills, memory, gateways, cron, and agent processes |
+| **VoxNote** | Voice, audio, and transcription intake |
+| **Telegram** | Fast phone capture channel for ideas, tasks, voice notes, and requests |
+| **Obsidian** | Human-readable Markdown knowledge base and source of truth |
+| **GBrain** | Semantic memory, search, note links, and knowledge synthesis |
+| **GitHub** | Versioning, review, change history, and safe checkpoints |
+| **Google Drive** | Cloud storage, file sync, and document layer |
+| **Linear** | Human-facing task board |
+| **Hermes Kanban** | Internal queue for agentic execution |
+| **Codex** | Primary AI execution agent for coding, file, and Obsidian workflows |
 
-Mini-AGI — не закрытый набор инструментов: система пополняется новыми
-сервисами, приложениями, агентами, интеграциями и бизнес-вертикалями, а стек
-эволюционирует по мере появления новых задач и практических сценариев.
+Mini-AGI is not a fixed closed toolkit. It grows through new services, apps,
+agents, integrations, and business verticals as real workflows appear.
 
-## Возможности
+## Features
 
-- **Транскрипция (cloud):** 4 провайдера — AssemblyAI, Deepgram, Gladia,
-  Speechmatics. Переключаются в Настройках, ключ у каждого свой.
-- **Диаризация спикеров:** `Speaker A/B/...` от провайдера; имена
-  подставляются вручную или через directory-grounding.
-- **Code-switching KZ + RU + EN:** AssemblyAI Universal обрабатывает
-  переключение языков внутри одной записи нативно.
-- **Извлечение задач (LLM → таск-трекер):** через OpenRouter; отправка в
-  Linear / Trello / Glide (Protocol-based backends в `tasks/backends/`).
-- **Протокол встречи** (`protocol.md`, 5-block MoM) — генерируется LLM.
-- **Grounding документами:** прикреплённые PDF/DOCX/PPTX/XLSX → Markdown
-  (Microsoft markitdown) попадают в контекст LLM.
-- **Запись с микрофона**, встроенный **Audio Cutter** (обрезка/превью).
-- **История встреч** с поиском; раскладка по проектам на диске.
-- **Резервное копирование в Google Drive** (текст встреч, ключи
-  редактируются перед загрузкой).
-- **Headless CLI + MCP-сервер** для агентских CLI (см. [`AGENTS.md`](AGENTS.md)).
-- **Экспорт:** TXT / SRT / VTT / Markdown.
+- **Cloud transcription:** AssemblyAI, Deepgram, Gladia, and Speechmatics.
+- **Speaker diarization:** provider-level `Speaker A/B/...` labels, with manual
+  naming or directory grounding where available.
+- **Kazakh + Russian + English code-switching:** AssemblyAI Universal handles
+  language switches inside one recording.
+- **Optional LLM task extraction:** OpenRouter-backed extraction to local task
+  files or task tracker backends.
+- **Optional meeting protocol:** `protocol.md` in a 5-block meeting-minutes
+  format.
+- **Document grounding:** attached PDF/DOCX/PPTX/XLSX files can be converted to
+  Markdown with Microsoft markitdown and used as LLM context.
+- **Microphone recording** and built-in **Audio Cutter**.
+- **Meeting history** with search and project-based folders.
+- **Headless CLI + MCP server** for agentic workflows.
+- **Exports:** TXT, SRT, VTT, and Markdown.
 
-## Системные требования
+## System requirements
 
-| Компонент | Требование |
+| Component | Requirement |
 |---|---|
-| ОС | Windows 10 (64-bit) или Windows 11 |
-| Python (для разработки) | 3.12.x |
-| ffmpeg | в `PATH` (для разработки) — в `.exe`-бандле он встроен |
-| Сеть | обязательна — приложение использует cloud-API, **offline не работает** |
-| GPU | **не нужен** |
+| OS | Windows 10 64-bit or Windows 11 |
+| Python, for development only | 3.12.x |
+| ffmpeg, for development only | available in `PATH`; bundled inside the `.exe` release |
+| Network | required; cloud APIs are used and offline transcription is not supported |
+| GPU | not required |
 
-## Установка (для разработки)
+## Install for development
 
 ### 1. Python 3.12
 
-Скачайте с [python.org](https://www.python.org/downloads/). При установке —
-галочка **«Add Python to PATH»**.
+Download from [python.org](https://www.python.org/downloads/) and enable
+**Add Python to PATH** during installation.
 
 ### 2. ffmpeg
 
-Скачайте билд с [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) («release
-essentials»), распакуйте, добавьте `bin/` в `PATH`. Проверка: `ffmpeg -version`.
+Download a release build from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/),
+unpack it, and add `bin/` to `PATH`. Verify with:
 
-(В готовом `.exe` ffmpeg уже вшит в `vendor/ffmpeg/` — отдельно ставить не надо.)
+```bash
+ffmpeg -version
+```
 
-### 3. Зависимости
+In the packaged `.exe`, ffmpeg is already bundled under `vendor/ffmpeg/`.
+
+### 3. Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Версии в `requirements.txt` **зафиксированы жёстко** — пины load-bearing на
-Windows (CustomTkinter / soundfile / sounddevice / google-auth). Не обновляйте
-без smoke-теста на чистой Win10 + Win11.
+The versions in `requirements.txt` are intentionally pinned. These pins are
+load-bearing on Windows, especially around CustomTkinter, soundfile, sounddevice,
+and google-auth. Do not relax them without a clean Windows 10 and Windows 11
+smoke test.
 
-## API-ключи
+## API keys
 
-Всё распознавание и LLM-работа — через cloud. Ключи вводятся в **Настройках**
-(хранятся в `~/.voxnote/config.json`, в git не попадают):
+All transcription and LLM work is cloud-based. Keys are entered in the app's
+Settings screen and stored in `~/.voxnote/config.json`, which must not be
+committed.
 
-| Сервис | Зачем | Где взять |
+| Service | Purpose | Where to get it |
 |---|---|---|
-| **AssemblyAI** | транскрипция + диаризация (обязательно) | <https://www.assemblyai.com> |
-| **OpenRouter** | извлечение задач + протокол (обязательно) | <https://openrouter.ai/keys> |
-| Linear / Trello / Glide | отправка задач (опционально) | в Настройках каждого |
+| **AssemblyAI** | transcription + diarization | <https://www.assemblyai.com> |
+| **OpenRouter** | optional task extraction + meeting protocol | <https://openrouter.ai/keys> |
+| Linear / Trello / Glide | optional task delivery | each service's settings/API page |
 
-Шаблон без секретов — [`config.example.json`](config.example.json).
+A secret-free template is available at [`config.example.json`](config.example.json).
 
-## Cloud-провайдеры транскрипции
+## Cloud transcription providers
 
-| Провайдер | Цена (с диаризацией) | Казахский | Регистрация |
+Pricing and model behavior can change. Treat the table below as orientation only
+and verify the current terms on each provider's official pricing page.
+
+| Provider | Approximate use | Kazakh support | Signup |
 |---|---|---|---|
-| AssemblyAI | ~$0.17/час | ✅ (Universal) | <https://www.assemblyai.com> |
-| Deepgram | ~$0.43/час | ❌ (RU+EN) | <https://console.deepgram.com> |
-| Gladia | ~$0.61/час | ✅ | <https://app.gladia.io> |
-| Speechmatics | ~$1.04/час | ✅ | <https://portal.speechmatics.com> |
+| AssemblyAI | default provider for code-switching meetings | yes, Universal | <https://www.assemblyai.com> |
+| Deepgram | RU/EN transcription where supported | no Kazakh in current VoxNote assumptions | <https://console.deepgram.com> |
+| Gladia | cloud Whisper-style transcription + diarization | yes | <https://app.gladia.io> |
+| Speechmatics | premium transcription and diarization | yes | <https://portal.speechmatics.com> |
 
-Аудио загружается на сервера провайдера; **не используйте для
-конфиденциальных записей**, для которых это запрещено.
+Audio is uploaded to the selected provider. Do not use VoxNote for recordings
+that are not allowed to leave your machine or organization.
 
-Добавить провайдера — одна реализация [`providers/base.py`](providers/base.py)
-+ запись в [`providers/__init__.py`](providers/__init__.py).
+To add a provider, implement one class under [`providers/base.py`](providers/base.py)
+and register it in [`providers/__init__.py`](providers/__init__.py).
 
-## Запуск
+## Run
 
 ```bash
 python app.py
 ```
 
-## Тесты
+## Tests
 
 ```bash
 pip install -r requirements-dev.txt
@@ -156,86 +163,84 @@ pytest
 python -m ruff check .
 ```
 
-Тесты — на pure-функциях; GPU, API-ключи и сеть не нужны.
+Tests are mostly pure-function and mocked-HTTP checks. They do not require a GPU,
+API keys, or network access.
 
-## Сборка .exe
+## Build the `.exe`
 
 ```powershell
-.\scripts\build_exe.ps1                       # PyInstaller onedir в dist/
-python scripts\package_release.py --version X.Y.Z   # упаковка + проверки
+.\scripts\build_exe.ps1
+python scripts\package_release.py --version X.Y.Z
 ```
 
-`package_release.py` пакует через Python `zipfile` (forward-slash arcnames),
-проверяет отсутствие секретов/состояния в бандле, наличие markitdown и
-GPLv3-лицензии ffmpeg, целостность архива. См. [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
+`package_release.py` creates a Windows release zip with Python `zipfile`, verifies
+forward-slash archive names, checks that secrets and local state are absent,
+checks that markitdown is present, and verifies the bundled ffmpeg license file.
+See [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md) for the end-user setup flow.
 
 ## Troubleshooting
 
-| Симптом | Решение |
+| Symptom | What to try |
 |---|---|
-| `401 Unauthorized` при транскрипции | Неверный/истёкший ключ провайдера — перепроверьте в Настройках |
-| `Insufficient credits` | Закончился баланс AssemblyAI / OpenRouter — пополните |
-| `ffmpeg: command not found` (dev) | ffmpeg не в `PATH` — см. шаг 2 |
-| Пустой/сломанный транскрипт на казахском | Переключите провайдера на Gladia / Speechmatics, или уберите фоновый шум |
-| `.exe` не запускается / Defender блокирует | Добавьте папку приложения в exclusions Windows Defender |
+| `401 Unauthorized` during transcription | The provider key is missing, expired, or wrong. Re-check it in Settings. |
+| `Insufficient credits` | Top up the selected transcription provider or OpenRouter account. |
+| `ffmpeg: command not found`, development mode | ffmpeg is not in `PATH`; see the development setup section. |
+| Empty or broken Kazakh transcript | Try Gladia or Speechmatics, or retry with cleaner audio. |
+| `.exe` does not start or Windows Defender blocks it | Add the unpacked VoxNote folder to Windows Defender exclusions. |
 
-Полный гид для конечных пользователей — [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
+Full end-user setup guide: [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).
 
 ## Hermes Agent integration
 
-Приложение поддерживает **два режима** работы с [Hermes Agent](https://github.com/nurgisa/hermes):
+VoxNote supports two integration directions with Hermes Agent:
 
-| Режим | Направление | Описание |
+| Mode | Direction | Description |
 |---|---|---|
-| **MCP (inbound)** | Hermes → App | Hermes вызывает MCP-сервер: `transcribe_audio`, `extract_tasks` и др. |
-| **Webhook (outbound)** | App → Hermes | Приложение отправляет событие `audio.transcribed` в Hermes после успешной транскрипции |
+| **MCP, inbound** | Hermes -> VoxNote | Hermes calls tools such as `transcribe_audio` or `extract_tasks`. |
+| **Webhook, outbound** | VoxNote -> Hermes | VoxNote emits `audio.transcribed` after successful transcription. |
 
-### Outbound webhook (по умолчанию отключён)
+### Outbound webhook, disabled by default
 
-После завершения транскрипции приложение отправляет POST-запрос на адрес Hermes
-с JSON-пейлоадом `audio.transcribed` (текст транскрипта, провайдер, язык,
-speaker-сегменты, путь к истории встречи). Запрос подписан HMAC-SHA256
-(`X-Webhook-Signature`); Hermes валидирует подпись на своей стороне.
+After transcription, VoxNote can POST an `audio.transcribed` JSON payload to a
+Hermes endpoint. The payload can include transcript text, provider metadata,
+language, speaker segments, and meeting artifact paths such as `audio.note_path`
+and `audio.source_path`. The request is signed with HMAC-SHA256 in
+`X-Webhook-Signature`; Hermes validates the signature.
 
-Доставка — **best-effort**: если Hermes недоступен, транскрипция всё равно
-считается успешной.
+Delivery is best-effort: if Hermes is unavailable, transcription still succeeds.
 
-**Конфигурация** (`~/.voxnote/config.json` или переменные окружения):
+Configuration via `~/.voxnote/config.json` or environment variables:
 
-| Ключ config.json | Переменная окружения | По умолчанию | Описание |
+| config.json key | Environment variable | Default | Description |
 |---|---|---|---|
-| `hermes_webhook_enabled` | `VOXNOTE_HERMES_WEBHOOK_ENABLED` | `false` | Включить отправку |
-| `hermes_webhook_url` | `VOXNOTE_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | URL endpoint Hermes |
-| `hermes_webhook_secret` | `VOXNOTE_HERMES_WEBHOOK_SECRET` | `""` | Shared secret для HMAC |
-| `hermes_webhook_timeout_seconds` | `VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Таймаут запроса (сек) |
-| `hermes_webhook_routing_hint` | `VOXNOTE_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Хинт маршрутизации |
+| `hermes_webhook_enabled` | `VOXNOTE_HERMES_WEBHOOK_ENABLED` | `false` | Enable webhook delivery. |
+| `hermes_webhook_url` | `VOXNOTE_HERMES_WEBHOOK_URL` | `http://localhost:8644/webhooks/audio-transcribed` | Hermes endpoint URL. |
+| `hermes_webhook_secret` | `VOXNOTE_HERMES_WEBHOOK_SECRET` | `""` | Shared HMAC secret. |
+| `hermes_webhook_timeout_seconds` | `VOXNOTE_HERMES_WEBHOOK_TIMEOUT_SECONDS` | `10` | Request timeout in seconds. |
+| `hermes_webhook_routing_hint` | `VOXNOTE_HERMES_WEBHOOK_ROUTING_HINT` | `obsidian_inbox` | Routing hint for Hermes. |
 
-> Переменная окружения с пустым значением (`=""`) игнорируется — берётся
-> значение из config.json. Env-переменные с непустым значением перекрывают
-> config.json.
+Empty environment variable values are ignored; non-empty environment variables
+override `config.json`.
 
-Шаблон ключей — [`config.example.json`](config.example.json). Не коммитьте
-реальный секрет — используйте переменные окружения.
+Do not commit real secrets. Use `config.example.json` as the public template.
+For the Hermes-side route, see [`docs/HERMES_MINI_AGI_INTEGRATION.md`](docs/HERMES_MINI_AGI_INTEGRATION.md).
 
-Для настройки Hermes-стороны (маршрут `audio-transcribed`, HMAC-ключ,
-`hermes webhook subscribe`) — см. [`AGENTS.md`](AGENTS.md).
+## Architecture
 
-## Архитектура
+The module map, runtime model, and JSON contracts are documented in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). AI-agent invariants and repo
+conventions are documented in [`CLAUDE.md`](CLAUDE.md).
 
-Карта модулей, runtime-модель и JSON-контракты — в
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Инварианты и конвенции для
-AI-агентов — в [`CLAUDE.md`](CLAUDE.md).
+## License
 
-## Лицензия
-
-MIT — см. [LICENSE](LICENSE). Сторонние компоненты (включая GPLv3-сборку
-ffmpeg, вызываемую как отдельный процесс) — см.
+MIT. See [LICENSE](LICENSE). Third-party components, including the bundled GPLv3
+ffmpeg build invoked as a separate process, are listed in
 [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 
 ## Acknowledgments
 
-- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) — UI-toolkit (MIT)
-- [FFmpeg](https://ffmpeg.org/) — аудио-обработка (GPLv3-сборка, вызывается как процесс)
-- [markitdown](https://github.com/microsoft/markitdown) — документы → Markdown (MIT)
-- AssemblyAI / Deepgram / Gladia / Speechmatics — cloud STT API
-- [OpenRouter](https://openrouter.ai/) — LLM-роутинг для задач и протокола
+- [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - UI toolkit, MIT.
+- [FFmpeg](https://ffmpeg.org/) - audio processing, GPLv3 build invoked as a separate process.
+- [markitdown](https://github.com/microsoft/markitdown) - document-to-Markdown conversion, MIT.
+- AssemblyAI, Deepgram, Gladia, and Speechmatics - cloud STT APIs.
+- [OpenRouter](https://openrouter.ai/) - LLM routing for tasks and meeting protocols.

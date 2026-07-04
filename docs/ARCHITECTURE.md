@@ -107,7 +107,7 @@ with the message preserved, so the UI shows a humanized Russian message
    └─────────┘                            └────┬────┘             └──────┘
                                                │ backend error    (terminal —
                                                ▼                   never re-sent)
-                                          ┌────────┐  Retry        
+                                          ┌────────┐  Retry
                                           │ FAILED │ ──────────────┘
                                           └────────┘
 ```

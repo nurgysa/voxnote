@@ -1,159 +1,190 @@
-# VoxNote — установка и первый запуск
+# VoxNote - installation and first run
 
-**Версия:** v0.1.0 (cloud-only)
-**Поддержка:** [GitHub Issues](https://github.com/nurgysa/voxnote/issues)
-
----
-
-## 1. Что вам понадобится
-
-- Windows 10 (64-bit) или Windows 11
-- ~2 GB свободного места
-- Интернет (приложение использует cloud-API — **не работает offline**)
-- **AssemblyAI API ключ** — для транскрибации + диаризации (распознавания спикеров)
-- **OpenRouter API ключ** — для извлечения задач + генерации протокола встречи
-- *(Опционально)* Linear / Glide / Trello API ключи — если хотите автоматически отправлять задачи в свой таск-трекер
-
-**Не нужно:** NVIDIA GPU, HuggingFace аккаунт, Python, локальная установка моделей. Всё распознавание идёт через AssemblyAI Universal-2 (модель с поддержкой KZ+RU+EN code-switching).
+**Version:** v0.1.0, cloud-only
+**Support:** [GitHub Issues](https://github.com/nurgysa/voxnote/issues)
 
 ---
 
-## 2. Установка
+## 1. What you need
 
-1. Скачайте `VoxNote-v0.1.0.zip` со страницы [Releases](https://github.com/nurgysa/voxnote/releases/latest).
-2. Распакуйте в `C:\Apps\VoxNote\` (или любую папку **под вашим пользователем**).
-3. **НЕ распаковывайте в `C:\Program Files\`** — приложение хранит логи и настройки рядом с собой, а в Program Files обычному пользователю Windows писать нельзя. (Сами встречи по умолчанию пишутся в `Documents\VoxNote\meetings\` — туда писать можно всегда.)
-4. Двойной клик на `VoxNote.exe`.
-5. При первом запуске Windows Defender может задержать запуск на 5-10 секунд для проверки (это нормально для нового exe). Если Defender блокирует совсем — добавьте папку `C:\Apps\VoxNote\` в exclusions (Settings → Update & Security → Windows Security → Virus & threat protection → Manage settings → Exclusions).
+- Windows 10 64-bit or Windows 11.
+- About 2 GB of free disk space.
+- Internet access. VoxNote uses cloud APIs and does not work offline.
+- A transcription provider API key. AssemblyAI is the default recommended setup.
+- An OpenRouter API key if you want LLM task extraction or meeting protocols.
+- Optional Linear, Glide, or Trello API keys if you want to send tasks to a task tracker.
 
----
-
-## 3. Первый запуск
-
-При первом старте увидите **жёлтый баннер** наверху окна:
-
-> Первый запуск. Откройте Настройки → введите AssemblyAI API key + OpenRouter ключ.
-
-Нажмите кнопку «Открыть настройки →» в баннере (или ту же «Настройки» в основном окне).
-
-### 3.1 AssemblyAI (обязательно)
-
-1. Регистрация на <https://www.assemblyai.com> → Get started free.
-2. Скопируйте API key из <https://www.assemblyai.com/app/account>.
-3. Pricing (актуально на 2026-06; проверяйте на сайте провайдера): **$50 бесплатных кредитов** на старте = до ~185 часов аудио. После: Universal-2 = **$0.15/час**, диаризация = **$0.02/час**. Итого ~**$0.17/час** аудио с распознаванием спикеров.
-4. Вставьте ключ в Настройки → **Транскрибация (cloud API)** → API key (для AssemblyAI).
-5. Нажмите «Проверить» если есть такая кнопка — должно показать ✓.
-
-**Совет по казахскому:** AssemblyAI Universal-2 заявляет поддержку KZ+RU+EN с автоматическим переключением языка внутри одной записи. Качество на казахском — приличное на чистом аудио, но если в записи много фонового шума или сильного акцента — может ошибаться. Если не устраивает — в Настройках можно переключить провайдера на Gladia или Speechmatics (тоже поддерживают казахский, но дороже).
-
-### 3.2 OpenRouter (обязательно для протокола / задач)
-
-1. Регистрация на <https://openrouter.ai/>.
-2. Пополните баланс — для теста **$5 хватит на ~30-50 встреч** (зависит от длины и выбранной модели).
-3. Создайте ключ на <https://openrouter.ai/keys>.
-4. Вставьте в Настройки → OpenRouter → API ключ.
-5. Модель по умолчанию: `anthropic/claude-sonnet-4.5` (рекомендуется). Можно поменять в Настройках, если хочется дешевле/быстрее (`anthropic/claude-haiku-4.5`) или другой провайдер (`openai/gpt-4o`).
-
-### 3.3 Linear / Glide / Trello (опционально)
-
-Только если планируете автоматически отправлять задачи из протокола в свой таск-трекер:
-
-- **Linear:** Настройки → Linear → API ключ. Создаётся в Linear: Settings → API → Personal API keys.
-- **Glide:** Настройки → Glide → API ключ. Документация: <https://docs.glideapps.com/api/api-keys>.
-- **Trello:** Настройки → Trello → нужны **два** значения: **API ключ** и **токен**. Оба берутся на <https://trello.com/app-key> — ключ показан прямо на странице, токен генерируется по ссылке «Token» там же (нажмите, разрешите доступ, скопируйте). Вставьте оба в Настройки → Trello, включите галочку **«Использовать Trello»** и нажмите «Проверить» (при успехе покажет ваше имя). Задачи создаются карточками в выбранном **списке** доски — конкретные Доска → Список выбираются в диалоге «Извлечь задачи». API Trello бесплатный.
-
-Если ничего из этого не настроено — задачи просто остаются в файле `tasks.json` рядом с транскрипцией, можно открыть и скопировать руками.
+You do **not** need an NVIDIA GPU, Hugging Face account, Python, or local ML
+models. Recognition runs through managed cloud providers.
 
 ---
 
-## 4. Первый тест
+## 2. Installation
 
-1. **Загрузите аудио:** перетащите файл (mp3 / m4a / wav) в окно, или нажмите «Выбрать файл».
-   - Можно записать прямо из приложения: красная кнопка «⏺ Запись» в основном окне.
-2. Нажмите **«Транскрибировать»**.
-   - Время: ~20-30 секунд на каждую минуту аудио (зависит от скорости вашего интернета — файл загружается на AssemblyAI).
-   - Файл загружается на сервер провайдера **целиком** (потоково, чтобы запрос можно было отменить) — ограничения ~25 MB и ручной нарезки нет. Длинные записи просто грузятся дольше; узкое место — скорость интернета.
-3. **Транскрипт появится** с метками спикеров (`Speaker A:`, `Speaker B:` и т.д.). Имена можно подставить вручную в самом тексте.
-4. Нажмите **«Извлечь задачи»** — откроется отдельный диалог.
-   - Выберите модель (Sonnet 4.5 рекомендуется).
-   - Выберите backend (Linear, Glide или Trello), если хотите отправить.
-   - Галочка **«Также сгенерировать протокол встречи (protocol.md)»** включена по умолчанию — оставьте её.
-   - *(Опционально)* **«Приложить документы»** — прицепите повестку, бюджет, любой PDF / DOCX / PPTX / XLSX. Они конвертируются в текст и уходят в контекст LLM: протокол и задачи получаются точнее — имена, цифры и проектные термины берутся из ваших файлов, а не угадываются. Кнопка «Очистить» рядом сбрасывает приложенное.
-   - Нажмите «Извлечь».
-5. Через 30-60 секунд в папке встречи (по умолчанию `Documents\VoxNote\meetings\<метка времени>_<имя файла>\`) соберутся все файлы встречи:
-   - копия исходного аудио (тот же файл, что вы загрузили) — чтобы папка встречи была самодостаточной
-   - `transcript.md` — текст транскрипции (markdown — открывается в Obsidian и любом markdown-вьювере)
-   - `description.md` — метаданные встречи (дата, язык распознавания, модель, путь к исходному файлу)
-   - `tasks.json` — извлечённые задачи (с приоритетами, исполнителями, сроками)
-   - **`protocol.md`** — протокол встречи в формате 5-block MoM:
-     1. Метаданные (тип, дата, участники)
-     2. Повестка дня
-     3. Ключевые тезисы и решения
-     4. План действий
-     5. Следующая встреча и материалы
-6. **Кнопка «Встречи»** в основном окне — открывает список всех прошлых транскрипций. Двойной клик загружает её обратно в окно (можно перезапустить извлечение задач с другими параметрами). Папку хранения можно сменить в Настройках → секция «Встречи».
-7. **«Audio Cutter»** в основном окне — отдельный редактор для обрезки аудио (например, если в записи есть лишние 5 минут в начале до старта совещания). Откройте, обрежьте, экспортируйте — и потом транскрибируйте чистый файл.
+1. Download `VoxNote-v0.1.0.zip` from
+   [Releases](https://github.com/nurgysa/voxnote/releases/latest).
+2. Unzip it into `C:\Apps\VoxNote\` or any other user-writable folder.
+3. Do **not** unzip it into `C:\Program Files\`. VoxNote stores logs and local
+   app files beside the executable, and normal Windows users cannot write there.
+   Meeting files are stored under `Documents\VoxNote\meetings\` by default.
+4. Double-click `VoxNote.exe`.
+5. On first launch, Windows Defender may delay startup for a few seconds while it
+   scans the new executable. If Defender blocks it completely, add the unpacked
+   VoxNote folder to Defender exclusions.
 
 ---
 
-## 5. Встречи: где хранятся и как сменить папку
+## 3. First launch
 
-Каждый обработанный звонок сохраняется в **отдельной папке** внутри папки встреч. По умолчанию это `Documents\VoxNote\meetings\`, имя папки — `<дата>_<имя файла>` (например `2026-05-28_14-30-00_standup`).
+On first launch, VoxNote shows a setup banner asking you to open Settings and add
+required API keys.
 
-**Сменить папку хранения:** Настройки → секция **«Встречи»**.
+Open the Settings screen from the banner or main window.
 
-- **«📁 Выбрать»** — открывает обычный диалог выбора папки Windows. Удобно указать, например, папку Obsidian-vault или OneDrive, чтобы встречи синхронизировались автоматически.
-- **«↻ Default»** — вернуть путь по умолчанию (`Documents\VoxNote\meetings\`).
-- Под полем видно **«В этой папке: N встреч • X GB»** — сколько уже накоплено в текущем месте.
+### 3.1 AssemblyAI, required for the default transcription setup
 
-**Перенос существующих встреч.** Если в текущей папке уже есть встречи и вы выбираете новую, появится окно **«Перенести существующие встречи?»** с двумя кнопками:
+1. Create an account at <https://www.assemblyai.com>.
+2. Copy your API key from <https://www.assemblyai.com/app/account>.
+3. Paste it into Settings under the cloud transcription API key field.
+4. Use the built-in check button if available; it should show a successful result.
 
-- **«Перенести (N файлов, ~X GB)»** — физически перемещает все папки встреч на новое место (с прогресс-баром; можно отменить кнопкой «Отмена» — уже перенесённые останутся на новом месте). Если в новой папке окажется встреча с таким же именем, перенесённая получит суффикс `_imported_<время>` — ничего не перезатрётся.
-- **«Просто переключить»** — меняет только путь на будущее, старые встречи остаются где были (в списке «Встречи» они больше не показываются, пока не вернёте папку обратно).
+AssemblyAI Universal is the default recommendation for Kazakh + Russian + English
+code-switching meetings. Quality depends on audio clarity, background noise, and
+speaker overlap. If quality is not good enough for your recordings, try another
+provider in Settings.
 
-**При первом запуске** приложение само ищет старую папку `history/` и, если находит в ней встречи, предлагает **«Перенести»**, **«Оставить в старой папке»** или **«Спросить позже»**. Это актуально, только если вы раньше пользовались внутренней сборкой. Для свежеустановленной версии этого окна не будет — переносить нечего.
+Provider pricing changes over time. Check the official provider page before
+running long recordings.
+
+### 3.2 OpenRouter, required for protocols and task extraction
+
+1. Create an account at <https://openrouter.ai/>.
+2. Add a small balance for testing.
+3. Create a key at <https://openrouter.ai/keys>.
+4. Paste it into the OpenRouter field in Settings.
+5. Keep the default model unless you have a reason to change it.
+
+OpenRouter is only required for LLM-based follow-up, such as extracting tasks or
+generating a meeting protocol. Plain transcription can run without it.
+
+### 3.3 Linear, Glide, or Trello, optional
+
+Configure these only if you want VoxNote to send extracted tasks to an external
+task tracker.
+
+- **Linear:** create a personal API key in Linear settings.
+- **Glide:** use the Glide API key from the Glide API documentation/settings.
+- **Trello:** create an API key and token from <https://trello.com/app-key>, then
+  select the target board and list inside VoxNote.
+
+If no tracker is configured, extracted tasks remain in local files next to the
+transcript and can be copied manually.
 
 ---
 
-## 6. Если что-то пошло не так
+## 4. First test
 
-| Симптом | Что попробовать |
+1. Load audio by dragging an MP3/M4A/WAV file into the window or by using the file
+   picker. You can also record audio inside the app.
+2. Start transcription.
+   - Runtime depends on your internet upload speed and the selected provider.
+   - The full audio file is uploaded to the selected cloud provider.
+   - For a cheap smoke test, start with a short non-sensitive recording.
+3. When transcription completes, you should see a transcript with speaker labels
+   such as `Speaker A:` and `Speaker B:`.
+4. Optional: run task extraction.
+   - Choose the LLM model.
+   - Choose a backend if you want to send tasks externally.
+   - Keep meeting protocol generation enabled if you want `protocol.md`.
+   - Optionally attach documents such as agendas, budgets, PDFs, DOCX, PPTX, or
+     XLSX files. They are converted to text and used as LLM context.
+5. After the run, the meeting folder contains artifacts such as:
+   - source audio copy or source path metadata, depending on configuration;
+   - `transcript.md`;
+   - `description.md`;
+   - `tasks.json`, if task extraction ran;
+   - `protocol.md`, if meeting protocol generation ran.
+6. Use the Meetings view to open previous transcripts.
+7. Use Audio Cutter if you need to trim silence, pre-meeting chatter, or unrelated
+   audio before transcription.
+
+For Mini-AGI validation, a short clip only proves technical plumbing. Product
+value should be evaluated on realistic 60-180 minute meeting material after cost
+and sensitivity are explicitly approved.
+
+---
+
+## 5. Meeting storage
+
+Each processed recording gets its own meeting folder under the configured
+meetings directory. The default location is:
+
+```text
+Documents\VoxNote\meetings\
+```
+
+Folder names include the date/time and source file name.
+
+You can change the meetings directory in Settings. Common choices are an
+Obsidian vault folder, OneDrive, or Google Drive Desktop sync folder.
+
+If the old meetings folder already contains files and you choose a new location,
+VoxNote can either:
+
+- move existing meetings to the new location; or
+- switch only future meetings to the new location.
+
+If a target folder already contains a meeting with the same name, VoxNote avoids
+overwriting and uses an import suffix.
+
+On first launch after older internal builds, VoxNote may detect the legacy
+`history/` folder and offer migration choices. Fresh public installs do not need
+this step.
+
+---
+
+## 6. Troubleshooting
+
+| Symptom | What to try |
 |---|---|
-| App не запускается / сразу закрывается | Антивирус (Windows Defender) ложно тегает PyInstaller-бандл. Добавьте папку приложения в exclusions. Или попробуйте запустить из `cmd.exe` чтобы увидеть ошибку. |
-| «Ошибка записи» / «Permission denied» | Распаковали в `C:\Program Files\`? Перенесите в `C:\Apps\` или другую папку под вашим пользователем. |
-| Не пойму, куда сохранились встречи / `Documents` закрыт политикой компании | По умолчанию встречи в `Documents\VoxNote\meetings\`. Если на корпоративном ПК `Documents` закрыт на запись групповой политикой, приложение **не падает** — автоматически переключается на запасную папку рядом с exe. Чтобы задать своё место явно: Настройки → «Встречи» → «📁 Выбрать». |
-| Жёлтый баннер не исчезает после сохранения ключа | Закройте приложение полностью и запустите снова. Баннер проверяется при старте. |
-| «401 Unauthorized» при транскрибации | Неверный или истёкший AssemblyAI ключ. Проверьте в <https://www.assemblyai.com/app/account>, перевставьте в Настройки. |
-| «Insufficient credits» от AssemblyAI | Закончились бесплатные $50. Пополните баланс на дашборде AssemblyAI. |
-| «Insufficient credits» от OpenRouter | Закончился баланс OpenRouter. Пополните на <https://openrouter.ai/credits>. |
-| Транскрипт пустой или явно сломан на казахском | Попробуйте переключить провайдера в Настройках на Gladia или Speechmatics. Или загрузите файл с меньшим уровнем фонового шума. |
-| Протокол «(не зафиксировано в транскрипте)» во всех блоках | LLM не справилась с извлечением — попробуйте другую модель в Извлечь задачи → Модель (рекомендуем `anthropic/claude-sonnet-4.5`, если уже она — попробуйте `openai/gpt-4o`). |
-| Файл >2 ГБ | Не тестировалось. Если очень нужно — обрежьте через Audio Cutter сначала. |
-| Любой неожиданный краш | Откройте [issue](https://github.com/nurgysa/voxnote/issues) и приложите лог-архив: Настройки → Диагностика → **«Сохранить лог для отправки»** (zip с логами; API-ключи вырезаются из него автоматически). Если приложение не открывается вообще — приложите файлы из `_internal\logs\` (`app.log` + `faulthandler.log`) и `%TEMP%\voxnote-bootstrap.log` (вставьте `%TEMP%` в адресную строку Проводника). Там полный traceback. |
+| App does not start or closes immediately | Windows Defender or another antivirus may have flagged the PyInstaller bundle. Add the VoxNote folder to exclusions. You can also start it from `cmd.exe` to see errors. |
+| Write error or permission denied | Move VoxNote out of `C:\Program Files\` and into a user-writable folder such as `C:\Apps\VoxNote\`. |
+| You cannot find meeting files | By default they are under `Documents\VoxNote\meetings\`. If corporate policy blocks Documents, VoxNote falls back to a folder beside the executable. |
+| Setup banner does not disappear after saving a key | Close VoxNote completely and start it again. The banner check runs during startup. |
+| `401 Unauthorized` during transcription | The provider key is wrong or expired. Re-check it in the provider dashboard and paste it again in Settings. |
+| `Insufficient credits` from the transcription provider | Add balance or free credits on the provider dashboard. |
+| `Insufficient credits` from OpenRouter | Add OpenRouter credits at <https://openrouter.ai/credits>. |
+| Transcript is empty or clearly wrong for Kazakh | Try Gladia or Speechmatics, or retry with cleaner audio. |
+| Protocol fields all say nothing was found | Try another LLM model or attach relevant documents as context. |
+| File is larger than 2 GB | This is not a tested path. Trim the recording with Audio Cutter first. |
+| Unexpected crash | Open a GitHub issue and attach a redacted log archive from the app diagnostics screen. API keys are stripped automatically. If the app cannot open at all, attach `_internal\logs\app.log`, `_internal\logs\faulthandler.log`, and `%TEMP%\voxnote-bootstrap.log` if they exist. |
 
 ---
 
-## 7. Что внутри (для любопытных)
+## 7. What's inside
 
-- Транскрипция: **AssemblyAI Universal-2** (KZ+RU+EN code-switching, диаризация спикеров включена)
-- Извлечение задач + протокол: **OpenRouter** (любая LLM — по умолчанию Claude Sonnet 4.5)
-- Аудио-обработка: **ffmpeg** (встроен в бандл, ничего ставить не нужно)
-- UI: **CustomTkinter** (Python + Tk), 355 MB бандл целиком
-- Privacy: аудио уходит на сервер AssemblyAI для распознавания, текст уходит на OpenRouter для LLM. **Не используйте для конфиденциальных записей**, для которых эти провайдеры под запретом.
-- История транскрипций (встречи) хранится локально — по умолчанию в `Documents\VoxNote\meetings\`, путь меняется в Настройках → «Встречи». Никуда не уходит.
+- Transcription: cloud STT providers, with AssemblyAI Universal as the default
+  recommendation for KZ/RU/EN code switching.
+- Task extraction and meeting protocol: OpenRouter-backed LLM calls.
+- Audio processing: bundled ffmpeg.
+- UI: Python + CustomTkinter desktop app.
+- Privacy model: audio goes to the selected transcription provider; transcript
+  text can go to OpenRouter only when LLM follow-up is used. Do not use VoxNote
+  for content that is not allowed to be sent to those providers.
+- Meeting history is stored locally under the configured meetings directory.
 
-Альтернативные cloud-провайдеры в Настройках (если AssemblyAI не подойдёт):
-- **Deepgram** (~$0.43/час с диаризацией) — без поддержки казахского, только RU+EN
-- **Gladia** (~$0.61/час) — Whisper + диаризация в облаке, есть казахский
-- **Speechmatics** (~$1.04/час) — premium-качество диаризации
+Alternative cloud providers can be selected in Settings if the default provider
+is not appropriate for your recordings.
 
 ---
 
-## 8. Обратная связь
+## 8. Feedback
 
-Это первая публичная версия. Любой фидбэк ценен — что неудобно, что неочевидно, что вообще не работает: [GitHub Issues](https://github.com/nurgysa/voxnote/issues).
+This is an early public version. Feedback is welcome through
+[GitHub Issues](https://github.com/nurgysa/voxnote/issues), especially:
 
-Особенно интересно услышать:
-- Как качество на ВАШИХ типах встреч (1-on-1 / совещания / интервью / звонки с клиентами)
-- Качество казахского распознавания на ВАШИХ аудио
-- Что хочется добавить в протокол (5 блоков сейчас могут быть не идеальны для всех типов встреч)
+- transcription quality on your real meeting types;
+- Kazakh recognition quality on your audio;
+- protocol structure gaps;
+- task extraction false positives or missed actions;
+- setup problems on Windows 10/11.

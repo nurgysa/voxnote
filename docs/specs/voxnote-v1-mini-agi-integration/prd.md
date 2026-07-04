@@ -22,18 +22,18 @@ source_notes:
 
 # PRD - VoxNote V1
 
-Связанные заметки:
+Related notes:
 
 - [[10 Projects/VoxNote/Product Clarity/BRD - VoxNote V1]]
 - [[10 Projects/VoxNote/README]]
 - [[10 Projects/Mini-AGI/Operating Model/Product Clarity to Spec Workflow]]
 - [[10 Projects/Mini-AGI/Mini-AGI - V1 Roadmap]]
 
-## Вердикт
+## Verdict
 
-VoxNote V1 должен стать голосовым и аудио-входом Mini-AGI, а не самостоятельным оркестратором задач.
+VoxNote V1 should become the voice and audio intake layer for Mini-AGI, not an independent task orchestrator.
 
-Продуктовый контракт V1:
+V1 product contract:
 
 ```text
 record or choose audio or phone Drive inbox
@@ -45,27 +45,27 @@ record or choose audio or phone Drive inbox
 → Hermes creates protocol, tasks, approvals and tracker actions
 ```
 
-Главное требование: VoxNote должен надёжно превращать важное аудио в долговечный Markdown-артефакт, который Hermes и GBrain могут дальше использовать без ручной пересборки контекста.
+The primary requirement: VoxNote must reliably turn important audio into a durable Markdown artifact that Hermes and GBrain can use later without manual context reconstruction.
 
 ## Product objective
 
-VoxNote V1 должен закрыть один продуктовый сценарий:
+VoxNote V1 should cover one product scenario:
 
 ```text
-Любая важная запись превращается в diarized transcript.md в Obsidian, с понятной ссылкой на raw audio и безопасной границей между VoxNote и Hermes.
+Any important recording becomes a diarized transcript.md in Obsidian, with a clear raw-audio reference and a safe boundary between VoxNote and Hermes.
 ```
 
-VoxNote отвечает за capture and transcription.
+VoxNote owns capture and transcription.
 
-Hermes отвечает за interpretation and action.
+Hermes owns interpretation and action.
 
-Это разделение защищает Mini-AGI от scope creep, двойной генерации задач, лишнего LLM spend и неясных approval boundaries.
+This separation protects Mini-AGI from scope creep, duplicate task generation, unnecessary LLM spend and unclear approval boundaries.
 
 ## Users and actors
 
 Primary user:
 
-- Nurgisa как оператор Mini-AGI.
+- Nurgisa as the Mini-AGI operator.
 
 System actors:
 

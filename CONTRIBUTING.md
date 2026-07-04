@@ -1,15 +1,15 @@
 # Contributing
 
 Thanks for your interest! This is a Windows desktop app (CustomTkinter)
-for cloud audio transcription with a Russian-language UI. Contributions
-are welcome — bug reports, fixes, providers, docs.
+for cloud audio transcription and speaker diarization. Contributions are
+welcome: bug reports, fixes, providers, tests, and documentation.
 
 ## Dev setup
 
-See the «Установка (для разработки)» section of [README.md](README.md):
-Python 3.12, ffmpeg in `PATH`, `pip install -r requirements.txt`
-(+ `requirements-dev.txt` for pytest/ruff). Windows 10/11 is the target
-platform; the app runs from source on it via `python app.py`.
+See the development setup section of [README.md](README.md): Python 3.12,
+ffmpeg in `PATH`, `pip install -r requirements.txt`, plus
+`requirements-dev.txt` for pytest/ruff. Windows 10/11 is the target platform;
+the app runs from source on it via `python app.py`.
 
 ## Before you open a PR
 
@@ -45,7 +45,7 @@ GUI testing.
 
 ## Bugs & security
 
-File bugs via GitHub Issues. For crashes, attach the redacted log
-bundle: Настройки → Диагностика → «Сохранить лог для отправки»
-(API keys are stripped automatically). Please report security issues
-privately via GitHub Security Advisories instead of public issues.
+File bugs via GitHub Issues. For crashes, attach the redacted diagnostic log
+bundle from the app diagnostics screen. API keys are stripped automatically.
+Please report security issues privately via GitHub Security Advisories instead
+of public issues.
