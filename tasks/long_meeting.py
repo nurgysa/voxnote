@@ -171,3 +171,49 @@ def parse_chunk_response(raw: str) -> dict:
         if not isinstance(data[key], list):
             raise LongMeetingError(f"Chunk LLM response key must be a list: {key}")
     return data
+
+
+_REQUIRED_SYNTHESIS_KEYS = (
+    "meeting_map",
+    "decisions",
+    "tasks",
+    "open_questions",
+    "uncertainties",
+)
+
+
+def build_synthesis_messages(chunk_outputs: list[dict], *, meta: dict[str, str]) -> list[dict]:
+    system = (
+        "You consolidate structured extraction outputs from a long meeting. "
+        "Deduplicate aggressively. Do not invent owners, deadlines, or decisions. "
+        "Return strictly valid JSON, no markdown fences. Preserve uncertainty."
+    )
+    payload = json.dumps(chunk_outputs, ensure_ascii=False, indent=2)
+    user = (
+        f"Meeting metadata: date={meta.get('date') or 'unknown'}, "
+        f"language={meta.get('language') or 'unknown'}, "
+        f"provider={meta.get('provider') or 'unknown'}\n\n"
+        "Required JSON schema:\n"
+        '{"meeting_map":[{"topic":"...","summary":"..."}],'
+        '"decisions":[{"text":"...","confidence":"low|medium|high","evidence":"..."}],'
+        '"tasks":[{"title":"...","owner":null,"deadline":null,"evidence":"..."}],'
+        '"open_questions":["..."],"uncertainties":["..."]}\n\n'
+        "Chunk extraction outputs:\n"
+        f"{payload}"
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+def parse_synthesis_response(raw: str) -> dict:
+    try:
+        data = json.loads(_strip_codefence(raw))
+    except json.JSONDecodeError as exc:
+        raise LongMeetingError(f"Synthesis LLM response is not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise LongMeetingError("Synthesis LLM response must be a JSON object")
+    for key in _REQUIRED_SYNTHESIS_KEYS:
+        if key not in data:
+            raise LongMeetingError(f"Synthesis LLM response missing key: {key}")
+        if not isinstance(data[key], list):
+            raise LongMeetingError(f"Synthesis LLM response key must be a list: {key}")
+    return data
