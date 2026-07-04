@@ -297,3 +297,47 @@ def render_tasks_markdown(result: dict, *, meta: dict[str, str]) -> str:
         _bullet_items(result.get("tasks", []), key="title"),
         "",
     ])
+
+
+def process_meeting_note(
+    note_path: str | Path,
+    *,
+    model: str,
+    openrouter_client,
+    max_chars: int = 8000,
+) -> dict:
+    note = read_meeting_note(note_path)
+    chunks = chunk_transcript(note.body, max_chars=max_chars)
+
+    chunk_outputs: list[dict] = []
+    for chunk in chunks:
+        response = openrouter_client.complete(
+            model=model,
+            messages=build_chunk_messages(chunk, meta=note.meta),
+            json_mode=True,
+            temperature=0.2,
+            timeout=120,
+        )
+        chunk_outputs.append(parse_chunk_response(response.get("content", "") or ""))
+
+    synthesis_response = openrouter_client.complete(
+        model=model,
+        messages=build_synthesis_messages(chunk_outputs, meta=note.meta),
+        json_mode=True,
+        temperature=0.2,
+        timeout=120,
+    )
+    result = parse_synthesis_response(synthesis_response.get("content", "") or "")
+    protocol_md = render_protocol_markdown(result, meta=note.meta)
+    tasks_md = render_tasks_markdown(result, meta=note.meta)
+
+    return {
+        "note_path": str(note.note_path),
+        "history_folder": str(note.history_folder),
+        "model": model,
+        "chunks": len(chunks),
+        "result": result,
+        "protocol_markdown": protocol_md,
+        "tasks_markdown": tasks_md,
+        "written": [],
+    }
