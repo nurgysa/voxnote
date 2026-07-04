@@ -60,7 +60,7 @@ Important files:
 - processing/worker.py performs queue processing and Hermes nudge.
 - processing/store.py persists active queue state and derives Meetings view rows from disk.
 - processing/vault_note.py is the only VoxNote writer to Obsidian transcript.md.
-- processing/sources.py archives audio into Drive Sources.
+- processing/sources.py archives audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`.
 - processing/inbox_watcher.py polls Drive inbox with stable-size debounce.
 - processing/preflight.py handles duration, size, denoise and cost guards.
 - integrations/hermes/schema.py builds audio.transcribed payloads.
@@ -206,7 +206,7 @@ Worker responsibilities:
 5. disable denoise for long audio when needed;
 6. run cli.core.run_transcribe;
 7. build meeting folder name;
-8. archive audio to Drive Sources when configured;
+8. archive audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` when configured;
 9. render transcript.md;
 10. write transcript.md through vault_note;
 11. save local sidecars outside the vault;

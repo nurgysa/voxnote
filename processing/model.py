@@ -8,9 +8,9 @@ PR-B2: VoxNote's queue is transcribe-only. One item = one transcription job
 carried to a single ``status`` (Hermes owns protocol/tasks downstream).
 ``source`` records how the audio arrived (record/pick/inbox) and drives the
 archive move-vs-copy decision; ``source_path`` is where the audio was archived
-in Drive ``sources/``. ``has_protocol``/``has_tasks`` are disk-derived display
-badges (store.build_view fills them) showing Hermes's downstream progress —
-never queue status.
+under Drive ``Sources/Audio/VoxNote/``. ``has_protocol``/``has_tasks`` are
+disk-derived display badges (store.build_view fills them) showing Hermes's
+downstream progress — never queue status.
 """
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ class QueueItem:
     auto: bool = False
     project_id: str | None = None
     source: str = "pick"             # record | pick | inbox
-    source_path: str | None = None   # archived audio in Drive sources/
+    source_path: str | None = None   # archived audio in Drive Sources/Audio/VoxNote/
     status: StageStatus = StageStatus.PENDING
     started_at: str | None = None    # ISO timestamp, stamped on RUNNING (drives the mm:ss timer)
     nudge_delivered: bool = False

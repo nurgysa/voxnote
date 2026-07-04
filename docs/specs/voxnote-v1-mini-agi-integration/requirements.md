@@ -78,7 +78,7 @@ WHEN a stable inbox file is accepted
 THE SYSTEM SHALL enqueue it with source inbox.
 
 WHEN an inbox file completes successfully and sources_dir is configured
-THE SYSTEM SHALL move the audio into Drive Sources so the inbox drains itself.
+THE SYSTEM SHALL move the audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` so the inbox drains itself without dumping files in `Sources` root.
 
 ### R-004 Supported audio inputs
 
@@ -203,11 +203,14 @@ THE SYSTEM SHALL keep them in app data, not in the vault, unless a later approve
 
 ### R-014 Source archive
 
-WHEN sources_dir is configured and a picked file completes
-THE SYSTEM SHALL copy the original audio to Drive Sources.
+WHEN sources_dir is configured and a picked file outside Drive Sources completes
+THE SYSTEM SHALL copy the original audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`.
+
+WHEN sources_dir is configured and a picked file is already a loose file in Drive `Sources` root
+THE SYSTEM SHALL move it under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` so `Sources` root stays clean.
 
 WHEN sources_dir is configured and a recording or inbox file completes
-THE SYSTEM SHALL move the audio to Drive Sources.
+THE SYSTEM SHALL move the audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`.
 
 WHEN archiving succeeds
 THE SYSTEM SHALL record the final source_path in transcript.md and queue item state.

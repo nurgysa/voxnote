@@ -40,7 +40,7 @@ record or choose audio or phone Drive inbox
 → VoxNote queue
 → cloud transcription and diarization
 → transcript.md in Obsidian 30 Meetings
-→ audio archived to Drive Sources
+→ audio archived under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`
 → best-effort audio.transcribed nudge to Hermes
 → Hermes creates protocol, tasks, approvals and tracker actions
 ```
@@ -97,8 +97,8 @@ Acceptance:
 - VoxNote enqueues the file without blocking the UI;
 - queue status is visible;
 - successful processing creates transcript.md;
-- source audio is copied to Drive Sources when configured;
-- original picked file remains in place.
+- source audio is copied under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` when configured;
+- original picked file remains in place when it is outside the Drive Sources tree; a loose picked file already in `Sources` root is rehomed into the organized archive path.
 
 ### US-002 In-app recording intake
 
@@ -109,7 +109,7 @@ Acceptance:
 - stopped recording is enqueueable;
 - recording uses the same provider, language and diarization options;
 - successful processing creates transcript.md;
-- source audio is moved to Drive Sources when configured;
+- source audio is moved under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` when configured;
 - recording is not left as an unmanaged raw file if archive succeeds.
 
 ### US-003 Phone recording intake
@@ -122,7 +122,7 @@ Acceptance:
 - only supported audio extensions are considered;
 - file must be size-stable across two scans before enqueue;
 - inbox files default to no project unless a later triage flow assigns one;
-- after successful processing, inbox audio is moved to Drive Sources;
+- after successful processing, inbox audio is moved under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`;
 - partially synced files are not uploaded to STT providers.
 
 ### US-004 Durable meeting artifact
@@ -189,7 +189,7 @@ User chooses file
 → cost hint may be shown
 → worker preflights duration and size
 → worker transcribes and diarizes
-→ worker copies audio to Drive Sources if configured
+→ worker copies audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` if configured
 → worker writes transcript.md
 → worker sends Hermes nudge if enabled
 → item becomes done
@@ -205,7 +205,7 @@ Phone saves audio to Drive inbox
 → file size is stable across two scans
 → item enters queue with source inbox and no project
 → worker transcribes and diarizes
-→ worker moves audio to Drive Sources if configured
+→ worker moves audio under Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` if configured
 → worker writes transcript.md
 → worker sends Hermes nudge if enabled
 → inbox drains itself
@@ -328,7 +328,7 @@ routing_hint: obsidian_inbox
 transcript.raw: transcript text when safe and practical for the event payload
 transcript.segments: segments when available
 audio.note_path: preferred durable source for long meetings
-audio.source_path: Drive Sources path when available
+audio.source_path: Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/` path when available
 project: id and name when known
 meta: provider, language, created_at
 ```
