@@ -42,6 +42,8 @@ voice/audio source
 
 Главная бизнес-ценность VoxNote для Mini-AGI: убрать потерю голосовых и аудиоисточников из рабочего контура. Встречи, голосовые заметки и длинные записи должны становиться проверяемым Markdown evidence, а не исчезать в телефоне, Telegram, локальных Downloads или случайных аудиофайлах.
 
+Primary real-world use case: **real 1–3 hour meetings, calls, consultations and project discussions**. Short clips are useful as cheap technical smoke tests, but they do not validate VoxNote's product value for Mini-AGI.
+
 ## Business problem
 
 Mini-AGI не может быть надёжной операционной системой, если важный контекст остаётся в неструктурированном аудио.
@@ -113,7 +115,7 @@ V1 is successful when these conditions are true:
 Practical V1 target:
 
 ```text
-5 real recordings processed end-to-end with zero lost transcript artifacts and no raw audio committed to the vault.
+3–5 real 60–180 minute meetings processed end-to-end with zero lost transcript artifacts, no raw audio committed to the vault, and a usable Hermes downstream protocol/tasks draft.
 ```
 
 ## Scope boundaries

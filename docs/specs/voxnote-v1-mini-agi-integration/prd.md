@@ -163,6 +163,21 @@ Acceptance:
 - tracker sends are not performed by VoxNote in Hermes-native queue mode;
 - transcript content is treated as untrusted input downstream.
 
+### US-007 Long meeting intake and handoff
+
+As the Mini-AGI operator, I can process real 1–3 hour meetings, calls, consultations and project discussions into durable transcript.md artifacts that Hermes can later convert into protocol/tasks without losing context.
+
+Acceptance:
+
+- 60–180 minute audio is treated as a first-class V1 target, not an edge case;
+- long audio is preflighted before provider upload;
+- provider limits, file-size risk and cost risk are visible before expensive work;
+- no automatic retry is used for failed long jobs;
+- transcript.md remains readable for long meetings and preserves the full transcript as source of truth;
+- audio.note_path and audio.source_path are present when available;
+- Hermes downstream is expected to process long transcript through staged or chunked workflow, not one naive prompt;
+- raw audio is not stored in the vault.
+
 ## Primary workflows
 
 ### Workflow A Desktop chosen file
@@ -202,6 +217,7 @@ Phone saves audio to Drive inbox
 VoxNote transcript.md exists
 → Hermes reads note_path or scans meeting folder
 → Hermes treats transcript as untrusted meeting content
+→ for long transcripts, Hermes processes in stages instead of one naive prompt
 → Hermes creates protocol.md
 → Hermes drafts tasks.md
 → Hermes asks for human approval
@@ -309,9 +325,9 @@ event_type: audio.transcribed
 version: 1.1
 source: voxnote
 routing_hint: obsidian_inbox
-transcript.raw: full transcript text
+transcript.raw: transcript text when safe and practical for the event payload
 transcript.segments: segments when available
-audio.note_path: transcript.md path
+audio.note_path: preferred durable source for long meetings
 audio.source_path: Drive Sources path when available
 project: id and name when known
 meta: provider, language, created_at

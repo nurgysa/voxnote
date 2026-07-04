@@ -100,6 +100,18 @@ This is a two-direction integration:
 
 The default desktop queue should remain push-oriented and transcribe-only.
 
+## Long meeting design note
+
+Real 1–3 hour meetings are a primary V1 product target, not an edge case. Short recordings are acceptable for cheap technical smoke tests, but they do not validate VoxNote's Mini-AGI value.
+
+For long meetings:
+
+- VoxNote stores the complete `transcript.md` as the durable source of truth.
+- VoxNote records `audio.note_path` and `audio.source_path` so Hermes can work from files instead of only event text.
+- The webhook remains a nudge; `audio.note_path` is the preferred downstream source for long transcripts.
+- Hermes, not VoxNote, owns staged long-transcript processing: `transcript.md → chunks/sections → meeting map → decisions/tasks/protocol → approval`.
+- VoxNote must not destructively summarize long transcripts or replace the full transcript with an LLM summary.
+
 ## Component design
 
 ### UI intake layer
@@ -325,7 +337,7 @@ meta.language
 meta.created_at
 ```
 
-The analysis fields may exist for compatibility, but the Hermes-native queue should not fill protocol or tasks. Hermes fills downstream artifacts after handoff.
+The analysis fields may exist for compatibility, but the Hermes-native queue should not fill protocol or tasks. Hermes fills downstream artifacts after handoff. For long meetings, Hermes should prefer `audio.note_path` over relying on a large `transcript.raw` event field.
 
 ### Hermes webhook client
 

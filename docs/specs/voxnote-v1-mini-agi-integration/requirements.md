@@ -120,6 +120,20 @@ THE SYSTEM SHALL disable denoise even if the operator requested denoise.
 WHEN duration is known
 THE SYSTEM SHOULD calculate a rough provider cost hint.
 
+### R-007A Long-meeting first-class target
+
+WHEN an audio file duration is between 60 and 180 minutes
+THE SYSTEM SHALL treat it as a first-class V1 target, not an edge case.
+
+WHEN a long meeting is accepted for processing
+THE SYSTEM SHALL prioritize preserving the complete transcript.md artifact over producing a short summary.
+
+WHEN a long meeting fails or is interrupted
+THE SYSTEM SHALL require explicit operator retry before another paid provider upload.
+
+WHEN a long meeting is handed off to Hermes
+THE SYSTEM SHALL provide audio.note_path as the preferred durable source whenever transcript.md exists.
+
 ### R-008 Provider and key resolution
 
 WHEN a queue item starts
@@ -262,6 +276,15 @@ WHEN downstream action is needed
 THE SYSTEM SHALL leave protocol, task extraction, approval and tracker sends to Hermes.
 
 Standalone manual extract-tasks, protocol and send commands MAY remain available for non-Hermes use and deliberate MCP use.
+
+### R-018A Long transcript downstream boundary
+
+WHEN transcript.md is too long for a single downstream LLM pass
+THE SYSTEM SHALL preserve the full transcript.md as the source of truth and hand off note_path to Hermes.
+
+VoxNote SHALL NOT destructively summarize a long transcript or replace raw transcript content with a short summary.
+
+Hermes SHOULD process long transcripts through a staged workflow such as transcript.md → chunks or sections → meeting map → decisions → tasks → protocol.
 
 ### R-019 Hermes inbound MCP
 

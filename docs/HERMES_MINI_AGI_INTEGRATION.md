@@ -311,19 +311,31 @@ gbrain search "<unique transcript phrase>"
 
 A real provider transcription can cost money and may expose sensitive content to the selected STT provider.
 
-Before real audio smoke:
+Use two distinct gates:
 
-- use a short non-sensitive recording;
+```text
+Wave 3A / technical smoke:
+20–60 seconds, non-sensitive, proves runtime plumbing only.
+
+Wave 3B / long-meeting evaluation:
+60–180 minutes, real or sanitized meeting-style material, proves Mini-AGI product value.
+```
+
+Before any real audio smoke:
+
+- use approved non-sensitive or sanitized content;
 - confirm provider choice;
 - confirm estimated cost is acceptable;
 - confirm raw audio should be archived in Drive Sources;
-- confirm Hermes route side effects are draft-only unless explicitly approved.
+- confirm Hermes route side effects are draft-only unless explicitly approved;
+- for long meetings, prefer `audio.note_path` / transcript.md as Hermes' downstream source instead of relying only on a large event `transcript.raw`.
 
 ## Definition of done
 
 VoxNote is operationally integrated with Mini-AGI when:
 
 - transcript.md is created in Obsidian from desktop or inbox audio;
+- at least one 60–180 minute real or sanitized meeting has passed long-meeting evaluation;
 - raw audio is archived outside the vault;
 - GBrain can recall the transcript after import;
 - Hermes can receive or pull the transcript context;
