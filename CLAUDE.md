@@ -180,8 +180,11 @@ under `docs/superpowers/` and in git history.
 - **Queued / deferred:**
   - Processing-queue worker + UI on top of `cli.core` (the `processing/`
     foundation is merged; the auto-pipeline wiring is not).
-  - Voice-ID Phase B (local speaker identification; blocked on model
-    choice — any revival must respect invariant #2).
+  - Voice-ID Phase B PR-3/4/5 is merged: Speechmatics speaker-ID sidecar
+    → pending voices → bind/enroll UI → transcript re-render. Manual
+    desktop smoke is deferred; remaining work is real-audio quality
+    validation and UX polish. Keep invariant #2: no torch / pyannote /
+    local inference.
   - UX/UI visual polish (user feedback 2026-06-14: the current
     CustomTkinter UI "looks rough / not pretty"). Unscoped aesthetic
     pass over the desktop UI — main window (`ui/app/builder.py`) + the
