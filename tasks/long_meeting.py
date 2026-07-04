@@ -65,3 +65,54 @@ def read_meeting_note(note_path: str | Path) -> MeetingNote:
         meta=meta,
         body=body,
     )
+
+
+@dataclass(frozen=True)
+class TranscriptChunk:
+    index: int
+    total: int
+    text: str
+    char_start: int
+    char_end: int
+
+
+def _split_turns(body: str) -> list[str]:
+    turns = [part.strip() for part in body.split("\n\n") if part.strip()]
+    return turns or [body.strip()]
+
+
+def chunk_transcript(body: str, *, max_chars: int = 8000) -> list[TranscriptChunk]:
+    clean = body.strip()
+    if not clean:
+        raise ValueError("empty transcript body")
+    if max_chars < 1000:
+        max_chars = 1000
+
+    turns = _split_turns(clean)
+    raw_chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+
+    for turn in turns:
+        addition = len(turn) + (2 if current else 0)
+        if current and current_len + addition > max_chars:
+            raw_chunks.append("\n\n".join(current))
+            current = [turn]
+            current_len = len(turn)
+        else:
+            current.append(turn)
+            current_len += addition
+    if current:
+        raw_chunks.append("\n\n".join(current))
+
+    chunks: list[TranscriptChunk] = []
+    cursor = 0
+    total = len(raw_chunks)
+    for idx, text in enumerate(raw_chunks, 1):
+        start = clean.find(text, cursor)
+        if start < 0:
+            start = cursor
+        end = start + len(text)
+        chunks.append(TranscriptChunk(idx, total, text, start, end))
+        cursor = end
+    return chunks
