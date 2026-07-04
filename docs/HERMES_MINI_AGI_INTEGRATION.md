@@ -251,13 +251,41 @@ Do not call external tools unless explicitly allowed by the route.
 Ask for human approval before tracker sends or external side effects.
 ```
 
+## Wave 2 synthetic smoke
+
+Use this before any real audio, Hermes gateway, Obsidian, GBrain, Drive, or tracker side effects:
+
+```bash
+cd C:/Users/nurgisa/Dev/voxnote
+python scripts/hermes_synthetic_smoke.py
+```
+
+What it proves offline:
+
+- a representative `audio.transcribed` payload can be built from the current schema;
+- the would-be webhook body is serialized and HMAC-signed through the Hermes client primitives;
+- the shipped `audio-transcribed-route-prompt.md` template resolves against the payload;
+- the route remains draft-only: no tracker send, external message, memory/GBrain enrichment, or file write without human approval.
+
+The expected JSON summary includes:
+
+```text
+route_prompt_rendered: true
+safety_policy_present: true
+draft_only: true
+side_effects: none
+proposal.classification: meeting_intake
+proposal.draft_outputs: [protocol.md, tasks.md]
+```
+
 ## Verification commands
 
 Repo checks:
 
 ```bash
 cd C:/Users/nurgisa/Dev/voxnote
-python -m pytest -q tests/test_hermes_skill.py tests/test_cli_mcp.py tests/test_hermes_webhook_schema.py tests/test_hermes_webhook_client.py tests/test_processing_worker.py tests/test_processing_vault_note.py tests/test_inbox_watcher.py
+python -m pytest -q tests/test_hermes_synthetic_smoke.py tests/test_hermes_skill.py tests/test_cli_mcp.py tests/test_hermes_webhook_schema.py tests/test_hermes_webhook_client.py tests/test_processing_worker.py tests/test_processing_vault_note.py tests/test_inbox_watcher.py
+python scripts/hermes_synthetic_smoke.py
 python -m ruff check .
 python -m pytest -q
 ```
