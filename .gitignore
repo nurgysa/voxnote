@@ -5,6 +5,7 @@ config.json
 # Local data
 history/
 logs/
+tmp/
 *.wav
 *.mp3
 *.m4a
