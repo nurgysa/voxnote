@@ -87,6 +87,9 @@ Hermes / Mini-AGI responsibilities.
 - **Manual/legacy LLM commands:** OpenRouter-backed `extract-tasks`, `protocol`,
   `pipeline`, and `process-meeting` remain available for standalone/operator
   use, but they are not the Mini-AGI production downstream path.
+- **Long-meeting downstream drafts:** `process-meeting` turns a saved
+  `transcript.md` into review-only `protocol.md` (5-block meeting-minutes format)
+  and `tasks.md` drafts.
 - **Document attachments:** attached PDF/DOCX/PPTX/XLSX files can be converted to
   Markdown with Microsoft markitdown and used as LLM context.
 - **Microphone recording** and built-in **Audio Cutter**.
@@ -231,8 +234,9 @@ Mini-AGI production downstream is Hermes-native: Hermes reads `audio.note_path`,
 performs staged reasoning with its own model/context, owns the downstream queue,
 and writes or sends only after human approval.
 
-VoxNote's `process-meeting` command remains an optional CLI fallback/reference
-for standalone operators:
+For a saved VoxNote meeting transcript, `process-meeting` remains an optional CLI
+fallback/reference for standalone operators — it generates review-only downstream
+drafts:
 
 ```bash
 python -m cli process-meeting --note-path "path/to/transcript.md" --json
