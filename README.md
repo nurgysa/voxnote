@@ -213,6 +213,7 @@ See [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md) for the end-user setup flow.
 | `Insufficient credits` | Top up the selected transcription provider or OpenRouter account. |
 | `ffmpeg: command not found`, development mode | ffmpeg is not in `PATH`; see the development setup section. |
 | Empty or broken Kazakh transcript | Try Gladia or Speechmatics, or retry with cleaner audio. |
+| Gladia rejects a recording over 135 minutes | Split the audio into chunks or choose another provider; normal Gladia pre-recorded jobs are capped at about 135 minutes. |
 | `.exe` does not start or Windows Defender blocks it | Add the unpacked VoxNote folder to Windows Defender exclusions. |
 
 Full end-user setup guide: [`docs/CLIENT_SETUP.md`](docs/CLIENT_SETUP.md).

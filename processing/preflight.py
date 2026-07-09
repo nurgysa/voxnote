@@ -26,6 +26,10 @@ _SIZE_CAP_BYTES = 2 * 1024**3
 # Denoise forces ensure_wav → a huge temp WAV + hours of ffmpeg on long audio.
 _DENOISE_MAX_S = 45 * 60
 
+# Gladia's normal pre-recorded jobs are capped at 135 minutes. Longer VoxNote
+# meetings need explicit chunking/enterprise handling instead of a doomed upload.
+_GLADIA_MAX_S = 135 * 60
+
 # Rough $/hour WITH speaker diarization, from each provider module's header
 # comment (providers/{assemblyai,deepgram,gladia,speechmatics}.py). Estimate
 # only — for an at-enqueue cost hint, not billing.
@@ -110,14 +114,21 @@ def provider_limit_ok(
 ) -> tuple[bool, str]:
     """``(ok, reason)``. False with a Russian message when the file exceeds the
     provider's upload cap. An unreadable file (``size_bytes == 0``) passes —
-    we can't reject what we couldn't measure. ``duration_s`` is reserved for
-    future per-provider duration caps; the live gate is size."""
+    we can't reject what we couldn't measure. Unknown duration passes duration
+    gates; known Gladia recordings over 135 minutes require chunking."""
     if size_bytes and size_bytes > _SIZE_CAP_BYTES:
         gb = size_bytes / 1024**3
         return (
             False,
             f"Файл {gb:.1f} ГБ превышает лимит провайдера {provider} (~2 ГБ). "
             f"Сократи запись или сожми аудио и попробуй снова.",
+        )
+    if provider == "Gladia" and duration_s is not None and duration_s > _GLADIA_MAX_S:
+        minutes = duration_s / 60.0
+        return (
+            False,
+            f"Запись {minutes:.0f} мин превышает обычный лимит Gladia 135 мин. "
+            "Нарежь запись на части/chunks или выбери другого провайдера.",
         )
     return True, ""
 

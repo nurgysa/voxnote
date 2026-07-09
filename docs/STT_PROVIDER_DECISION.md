@@ -338,7 +338,8 @@ chunking, diarization, or ops burden.
 2. Add AssemblyAI model routing metadata and verify exact SDK/API params.
 3. Add transcript provenance metadata schema.
 4. Add preflight cost/duration checks.
-5. Add Gladia duration guard and chunking requirement for >135 minutes.
+5. [Done 2026-07-09] Add Gladia duration guard and chunking requirement for
+   >135 minutes.
 6. Add a provider A/B test fixture plan with sanitized real recordings.
 7. [Done 2026-07-09] Add Groq `whisper-large-v3-turbo` ASR-only provider;
    keep Together/OpenAI/Fireworks in the evaluation matrix without changing the

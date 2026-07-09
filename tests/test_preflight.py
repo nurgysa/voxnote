@@ -69,6 +69,32 @@ def test_provider_limit_ok_unknown_size_passes():
     assert ok is True
 
 
+def test_provider_limit_ok_allows_gladia_at_135_minutes():
+    ok, reason = preflight.provider_limit_ok("Gladia", 135 * 60.0, 50 * 1024**2)
+    assert ok is True
+    assert reason == ""
+
+
+def test_provider_limit_ok_rejects_gladia_over_135_minutes_with_chunking_message():
+    ok, reason = preflight.provider_limit_ok("Gladia", 136 * 60.0, 50 * 1024**2)
+    assert ok is False
+    assert "Gladia" in reason
+    assert "135" in reason
+    assert "нареж" in reason.lower() or "chunk" in reason.lower()
+
+
+def test_provider_limit_ok_does_not_apply_gladia_duration_cap_to_other_providers():
+    ok, reason = preflight.provider_limit_ok("AssemblyAI", 180 * 60.0, 50 * 1024**2)
+    assert ok is True
+    assert reason == ""
+
+
+def test_provider_limit_ok_does_not_block_gladia_when_duration_unknown():
+    ok, reason = preflight.provider_limit_ok("Gladia", None, 50 * 1024**2)
+    assert ok is True
+    assert reason == ""
+
+
 # ── should_denoise ──
 
 def test_should_denoise_true_for_short_requested():
