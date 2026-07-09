@@ -78,7 +78,7 @@ preserves the rationale if anyone needs it.)
 Before any commit:
 
 ```bash
-pytest                       # must show green; baseline ≈ 939 tests (regenerate: pytest --collect-only -q)
+pytest                       # must show green; baseline ≈ 1161 tests (regenerate: pytest --collect-only -q)
 python -m ruff check .       # must be clean
 ```
 
@@ -105,8 +105,8 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Concern | Module |
 |---|---|
 | Entry point + faulthandler bootstrap | `app.py` |
-| Main window + transcription run loop | `ui/app/` package — `__init__.py` (App-class shell, ~130 LOC) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `transcription_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py` — split via F4-PR-2 series, PRs #12/#14–#18 |
-| All dialogs | `ui/dialogs/` — `extract_tasks/` package (`__init__.py` dialog-class shell + `builder.py` free-function widget tree + `constants.py`) + `settings.py` (class shell) + `settings_builder.py` (free-function sections) + `history.py` + `terms.py`. Both dialog god-objects were tree-split into builder modules in improvement-audit Variant 2 (PRs #134–#136), mirroring `ui/app/builder.py`. `voices.py` and `system_monitor.py` removed in the 2026-05-28 rip-out (latter was CUDA-era GPU/CPU/RAM diagnostics; useless in cloud-only mode) |
+| Main window + queue-first intake | `ui/app/` package — `__init__.py` (App-class shell; builds and starts the `ProcessingQueue` + inbox poll) + 5 mixins (`recorder_mixin`, `save_mixin`, `settings_mixin`, `dialogs_mixin`, `queue_mixin`) + `builder.py` (widget tree as a `build_ui(app)` free function) + `constants.py` + `main_entry.py`. `queue_mixin` replaced the old synchronous `transcription_mixin` in queue PR-C1: record-stop and file-pick now enqueue onto the serial queue. |
+| All dialogs | `ui/dialogs/` — `extract_tasks/` package (dialog-class shell + `builder.py` widget tree + `constants.py`/`pricing.py`/`task_row.py`/`cache_helpers.py`) + `settings.py` (class shell) + `settings_builder.py` (free-function sections) + `settings_helpers.py` + `meetings.py`/`meetings_view.py` (meetings history, Hermes protocol/tasks badges, pending-voices bind button) + `voice_bind.py` + `directory.py` + `migration.py` + `terms.py`. Both dialog god-objects were tree-split into builder modules (PRs #134–#136), mirroring `ui/app/builder.py`. |
 | Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~240 LOC). Providers upload files whole — `cloud_chunker` was deleted as unreachable in #103, and the old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules died in the 2026-05-28 rip-out. |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
@@ -119,7 +119,9 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Persistent settings | dev: repo-root `config.json`; frozen: `~/.voxnote/config.json` (survives app updates — PR #92). Template: `config.example.json`. Helpers: `utils.load_config` (corrupt-JSON quarantine) + `utils.save_config` (atomic write; owner-only ACL on the secret-store dir when frozen) |
 | Shared audio I/O (ffmpeg) | `audio_io.py` (`ensure_wav`, `load_mono_float32`, `ffmpeg_trim`, `get_duration_s` — torch-free ffmpeg helpers shared by `transcriber`, `recorder`, `audio_cutter`) |
 | Headless CLI + MCP server | `cli/` (`core` — pipeline glue reused by both surfaces; `app` — argparse CLI; `mcp_server` — MCP stdio server for agent CLIs, see `AGENTS.md`) |
-| Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout`, `worker` — meetings organized by project on disk + the serial auto-pipeline worker over `cli.core`; UI wiring lands in PR-2b) |
+| Meetings-by-project + processing queue | `processing/` (`model`, `store`, `layout`, `worker`, `preflight`, `sources`, `vault_note`, `inbox_watcher`, `voiceid`) — meetings organized by project on disk + the serial transcribe-only queue worker over `cli.core`. Fully wired into the UI via `ui/app/queue_mixin.py` (queue PR-C1/C2/C3: enqueue-first intake, Meetings view, 10 s Drive-inbox poll with stable-size debounce). Preflight guards: 2 GB size cap, Gladia 135-min gate, denoise auto-off >45 min, at-enqueue cost hint. |
+| Long-meeting downstream processor | `tasks/long_meeting.py` (chunk → per-chunk fact extraction → synthesis → protocol/tasks drafts via OpenRouter; approval-safe, never mutates `transcript.md`) + CLI `python -m cli process-meeting` (dry-run by default, `--write` for local drafts). Headless Hermes/operator surface — deliberately NOT called by the desktop UI or the queue. |
+| Hermes outbound integration | `integrations/hermes/` (`schema.py` — `audio.transcribed` v1.1 payload builder; `client.py` — HMAC-SHA256-signed best-effort POST, never raises; `synthetic_smoke.py`) + bundled skill `integrations/hermes/skills/voxnote/`. Fired by `processing/worker.py` after transcript write when enabled; Settings holds URL + secret. |
 | Diagnostics log bundle | `support_bundle.py` (`build_log_bundle` — zips `logs/` + key-redacted config; wired to the Settings diagnostics log-bundle action) |
 | Build + release packaging | `scripts/build_exe.ps1` (PyInstaller onedir + size guard) → `scripts/package_release.py` (zips via Python `zipfile` with forward-slash arcnames; guards abort on: secrets/state in bundle, missing markitdown, missing ffmpeg GPL license, scipy / pandas-tests bloat, backslash entries) |
 
@@ -140,14 +142,21 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 
 ## Current status & queued work
 
-Snapshot as of 2026-06-13. This section is deliberately a snapshot, not a
+Snapshot as of 2026-07-10. This section is deliberately a snapshot, not a
 chronicle — the phase-by-phase history lives in the dated specs/plans
 under `docs/superpowers/` and in git history.
 
-- **v0.1.0 released publicly** (2026-06-10): repo is open source (MIT),
-  the bundle ships as a GitHub Release asset, support is GitHub Issues.
-  Release flow: `scripts/build_exe.ps1` → `scripts/package_release.py`
-  (see the packaging row above for the guards it enforces).
+- **v0.2.0 is the latest public release** (2026-06-14 — the VoxNote
+  rebrand commit, PR #150): repo is open source
+  (MIT), the bundle ships as a GitHub Release asset, support is GitHub
+  Issues. Release flow: `scripts/build_exe.ps1` →
+  `scripts/package_release.py` (see the packaging row above for the
+  guards it enforces). Main carries ~32 unreleased commits since v0.2.0
+  (queue UI, Voice-ID Phase B, Hermes wiring, long-meeting processor,
+  ASR-only/Groq) — a v0.3.0 is due once the Wave 5 evaluation verdict
+  lands. Git-history note: the mid-June work (PRs ~#148–#166) landed
+  bundled inside the #167 squash (2026-06-23), so `git log --since`
+  shows a gap there; tags need `git fetch --tags`.
 - **Audit remediation complete** (2026-06-04 → 06-09, PRs #100–#122):
   secret redaction in Drive backups, docs truth pass, dead-code removal
   (incl. `cloud_chunker`), CI safety net (py3.12 + ffmpeg + coverage +
@@ -176,23 +185,54 @@ under `docs/superpowers/` and in git history.
   `mixed` sentinel while steering auto-detect with a KZ/RU/EN prompt. Deepgram
   opts out via the class attribute `supports_mixed = False` (nova-3 lacks
   Kazakh); `Transcriber.transcribe()` raises a provider error for any
-  provider with that flag false.
+  provider with that flag false. AssemblyAI sends the plural
+  `speech_models: ["universal-2"]` field (singular `speech_model` is
+  deprecated upstream).
 - **Google Drive removed** (2026-06-23): the `gdrive/` package (auth,
   client, backup) was deleted; backup/restore now lives in Hermes Desktop.
+- **Transcription queue shipped end-to-end** (queue PR-A/B/C series,
+  landed via the #167 squash on 2026-06-23): queue-first intake replaced
+  the synchronous run loop, Meetings view with Hermes badges, Google
+  Drive phone-inbox watcher, preflight guards, source archiving to Drive
+  `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`, atomic `transcript.md`
+  vault writer. Design: `docs/superpowers/specs/2026-06-14-voxnote-transcription-queue-design.md`.
+- **Voice-ID Phase B merged** (PR-3/4/5, 2026-06-23 → 07-03, #167/#169/#170):
+  Speechmatics speaker-ID sidecar → pending voices → bind/enroll UI
+  (`ui/dialogs/voice_bind.py`) → transcript re-render. Remaining:
+  real-audio quality validation + UX polish. Keep invariant #2: no
+  torch / pyannote / local inference.
+- **Mini-AGI V1 spec suite + long-meeting processor v0** (2026-07-02 →
+  07-09): BRD/PRD/requirements/design/tasks under
+  `docs/specs/voxnote-v1-mini-agi-integration/` (VoxNote = intake +
+  transcription; Hermes owns protocol/tasks/approval downstream);
+  headless `tasks/long_meeting.py` + `process-meeting` CLI;
+  `docs/HERMES_MINI_AGI_INTEGRATION.md` activation guide. The decisive
+  gate — the Wave 5 long-meeting evaluation on real 60–180 min audio —
+  has NOT been run yet; those docs prescribe no new feature work until
+  its verdict is recorded.
+- **STT provider decision recorded** (2026-07-09,
+  `docs/STT_PROVIDER_DECISION.md`): AssemblyAI default (Universal-2
+  fallback for Kazakh), Gladia KZ-capable fallback (chunking >135 min),
+  Deepgram/Speechmatics non-primary. Landed the same day:
+  provider-specific API keys, ASR-only `transcription_mode` + Groq
+  provider, Gladia duration guard, transcript provenance metadata.
 - **Queued / deferred:**
-  - Processing-queue worker + UI on top of `cli.core` (the `processing/`
-    foundation is merged; the auto-pipeline wiring is not).
-  - Voice-ID Phase B PR-3/4/5 is merged: Speechmatics speaker-ID sidecar
-    → pending voices → bind/enroll UI → transcript re-render. Manual
-    desktop smoke is deferred; remaining work is real-audio quality
-    validation and UX polish. Keep invariant #2: no torch / pyannote /
-    local inference.
+  - **Wave 2–5 validation track**
+    (`docs/specs/voxnote-v1-mini-agi-integration/tasks.md`): activate
+    VoxNote in the live Hermes profile (skill + MCP + webhook +
+    draft-only route), synthetic smoke, short real-audio smoke, then the
+    60–180 min long-meeting evaluation with a recorded
+    pass/partial/fail verdict. This gates new feature work.
+  - STT track leftovers (`docs/STT_PROVIDER_DECISION.md` §Next
+    implementation tasks): #2 AssemblyAI model routing
+    (Universal-3.5-Pro routing / Settings opt-in not built), #6 A/B
+    fixture plan (needs real sanitized recordings), #8 operator docs.
+  - v0.3.0 release packaging (needs explicit approval).
   - UX/UI visual polish (user feedback 2026-06-14: the current
-    CustomTkinter UI "looks rough / not pretty"). Unscoped aesthetic
-    pass over the desktop UI — main window (`ui/app/builder.py`) + the
-    dialog builders (`ui/dialogs/`); wants a design pass on spacing,
-    hierarchy, color/typography, and consistent widget styling before
-    any code.
+    CustomTkinter UI "looks rough / not pretty"). The Dev-OS spec's
+    proposed pilot feature "Intake Cockpit — Main Screen First Slice"
+    (`docs/superpowers/specs/2026-07-02-voxnote-mini-agi-development-os.md`)
+    is the likely vehicle; schedule after the Wave 5 verdict.
 
 ## Don't
 

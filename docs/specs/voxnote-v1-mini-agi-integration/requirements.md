@@ -229,9 +229,15 @@ The event SHALL include source voxnote.
 
 The event SHALL include routing_hint.
 
-The event SHALL include transcript.raw.
+The event SHOULD include transcript.raw when the payload size is practical
+for the receiving gateway; for long meetings audio.note_path is the durable
+handoff and Hermes SHALL NOT depend on transcript.raw alone (see R-018A).
 
 The event SHALL include transcript.segments when available.
+
+The event MAY carry analysis fields for schema compatibility only;
+THE SYSTEM SHALL NOT populate analysis.protocol or analysis.tasks in the
+Hermes-native queue (see R-018).
 
 The event SHALL include audio.note_path when transcript.md exists.
 
