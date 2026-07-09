@@ -68,10 +68,15 @@ VoxNote owns the **transcription queue** only:
 audio file / recording / inbox
 → VoxNote queue
 → provider preflight
-→ cloud STT + diarization
+→ cloud STT (+ optional diarization)
 → transcript.md + segments/speakers/source_path
 → audio.transcribed nudge
 ```
+
+Use **meeting mode** when speaker labels are required. Turn diarization off for
+**ASR-only mode** (`transcription_mode: asr_only`): VoxNote still produces the
+same durable `transcript.md` artifact, but it does not request speaker labels,
+speaker-count hints, or Voice-ID enrollment.
 
 The queue ends at `transcript.md`. It does not own protocol generation, task
 creation, tracker sends, GBrain enrichment, or long-meeting reasoning. Those are

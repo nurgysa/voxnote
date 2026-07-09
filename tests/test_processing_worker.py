@@ -265,6 +265,52 @@ def test_process_item_denoise_kept_for_short_audio(tmp_path, monkeypatch):
     assert cap["denoise"] is True
 
 
+def test_process_item_asr_only_disables_diarization_speaker_hints_and_voiceid(
+    tmp_path, monkeypatch
+):
+    cap = {}
+    _patch_happy(monkeypatch, capture=cap)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    resolved_known = []
+
+    def _resolve_known():
+        resolved_known.append(True)
+        return [("Айбек", ["voice-1"])]
+
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"Speechmatics": "k"},
+            "voiceid_enabled": True,
+        },
+        resolve_known_speakers=_resolve_known,
+    )
+    q.enqueue(
+        audio,
+        {
+            "provider": "Speechmatics",
+            "transcription_mode": "asr_only",
+            "diarize": True,
+            "num_speakers": 2,
+            "min_speakers": 2,
+            "max_speakers": 4,
+        },
+    )
+
+    q._process_item(q._items[0])
+
+    assert q.snapshot()[0].status == StageStatus.DONE
+    assert cap["diarize"] is False
+    assert cap["num_speakers"] is None
+    assert cap["min_speakers"] is None
+    assert cap["max_speakers"] is None
+    assert cap["enroll_speakers"] is False
+    assert cap["known_speakers"] is None
+    assert resolved_known == []
+
+
 def test_process_item_transcribe_error_halts_and_leaves_audio(tmp_path, monkeypatch):
     _sandbox_home(tmp_path, monkeypatch)
     monkeypatch.setattr(

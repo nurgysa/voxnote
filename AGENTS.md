@@ -14,15 +14,16 @@ code-switching. OpenRouter-backed task/protocol commands are manual/legacy
 operator tools, not the Mini-AGI production downstream path.
 
 > **Desktop queue (Mini-AGI / Hermes-native flow):** VoxNote's own processing
-> queue runs **transcribe-only** — it writes a diarized `transcript.md` into the
-> Obsidian vault, archives the audio under Google Drive
-> `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`, and fires a
-> best-effort `audio.transcribed` nudge (§4). **Hermes** then owns the
-> downstream queue: transcript interpretation, protocol/tasks drafts, approval,
-> tracker sends, and GBrain enrichment. The `extract-tasks` / `protocol` /
-> `send` / `process-meeting` commands below remain available for manual or
-> agent-driven standalone use — they are not what the desktop auto-pipeline runs
-> and not the preferred Mini-AGI production path.
+> queue writes a `transcript.md` into the Obsidian vault, archives the audio
+> under Google Drive `Sources/Audio/VoxNote/Meetings/YYYY-MM-DD/`, and fires a
+> best-effort `audio.transcribed` nudge (§4). Default meeting mode requests
+> diarization; ASR-only mode (`transcription_mode: asr_only`, diarization off)
+> deliberately skips speaker labels, speaker-count hints, and Voice-ID.
+> **Hermes** then owns the downstream queue: transcript interpretation,
+> protocol/tasks drafts, approval, tracker sends, and GBrain enrichment. The
+> `extract-tasks` / `protocol` / `send` / `process-meeting` commands below
+> remain available for manual or agent-driven standalone use — they are not what
+> the desktop auto-pipeline runs and not the preferred Mini-AGI production path.
 
 For repo *development* conventions (invariants, test/lint contract, module map)
 see **`CLAUDE.md`** — this file is only about *consuming the tool*.

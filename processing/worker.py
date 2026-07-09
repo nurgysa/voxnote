@@ -262,8 +262,15 @@ class ProcessingQueue:
             if not ok:
                 raise ValueError(reason)
             denoise = preflight.should_denoise(duration_s, bool(opts.get("denoise")))
+            asr_only = opts.get("transcription_mode") == "asr_only"
+            diarize = bool(opts.get("diarize")) and not asr_only
 
-            voiceid_on = bool(cfg.get("voiceid_enabled")) and provider == "Speechmatics"
+            voiceid_on = (
+                bool(cfg.get("voiceid_enabled"))
+                and provider == "Speechmatics"
+                and diarize
+                and not asr_only
+            )
             known_speakers = [
                 {"label": name, "identifiers": ids}
                 for name, ids in (self._resolve_known_speakers() if voiceid_on else [])
@@ -274,12 +281,12 @@ class ProcessingQueue:
                 provider=provider,
                 api_key=api_key,
                 language=language,
-                diarize=bool(opts.get("diarize")),
+                diarize=diarize,
                 hotwords=opts.get("hotwords") or None,
                 denoise=denoise,
-                num_speakers=opts.get("num_speakers"),
-                min_speakers=opts.get("min_speakers"),
-                max_speakers=opts.get("max_speakers"),
+                num_speakers=None if asr_only else opts.get("num_speakers"),
+                min_speakers=None if asr_only else opts.get("min_speakers"),
+                max_speakers=None if asr_only else opts.get("max_speakers"),
                 enroll_speakers=voiceid_on,
                 known_speakers=known_speakers or None,
             )

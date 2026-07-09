@@ -2,14 +2,14 @@
 
 Replaces the old synchronous transcription run-loop (transcription_mixin,
 removed in PR-C1). Record-stop and «Выбрать файл» now ENQUEUE onto the serial
-ProcessingQueue (processing/worker.py): the worker transcribes + diarizes,
-writes transcript.md into the Obsidian vault, archives audio to Drive sources,
-and fires a best-effort Hermes nudge. The App reacts to queue changes via the
-injected on_change callback (marshalled to the Tk thread with after(0, ...)) and
-shows an aggregate indicator strip. Per-meeting status + history land in the
-«Встречи» dialog (PR-C2). The main-bar project selector is wired here (PR-C1b):
-_refresh_project_selector rebuilds the label→id map from _dir_store and
-_build_options reads the chosen project_id.
+ProcessingQueue (processing/worker.py): the worker transcribes, optionally
+requests diarization, writes transcript.md into the Obsidian vault, archives
+audio to Drive sources, and fires a best-effort Hermes nudge. The App reacts to
+queue changes via the injected on_change callback (marshalled to the Tk thread
+with after(0, ...)) and shows an aggregate indicator strip. Per-meeting status +
+history land in the «Встречи» dialog (PR-C2). The main-bar project selector is
+wired here (PR-C1b): _refresh_project_selector rebuilds the label→id map from
+_dir_store and _build_options reads the chosen project_id.
 
 Mixin contract: relies on App providing the option Vars (_cloud_provider_var,
 _lang_var, _diar_var, _spk_count_var, _denoise_var, _project_var), _cloud_api_keys,
@@ -45,13 +45,18 @@ class QueueMixin:
         dict the worker consumes. project_id comes from the main-bar project
         selector (Без проекта → None)."""
         saved_terms = self._config.get("hotwords", [])
+        diarize = bool(self._diar_var.get())
+        transcription_mode = "meeting" if diarize else "asr_only"
         num_speakers, min_speakers, max_speakers = SPEAKER_COUNTS.get(
             self._spk_count_var.get(), (None, None, None),
         )
+        if transcription_mode == "asr_only":
+            num_speakers = min_speakers = max_speakers = None
         return {
             "provider": self._cloud_provider_var.get(),
             "language": LANGUAGES.get(self._lang_var.get()),
-            "diarize": bool(self._diar_var.get()),
+            "transcription_mode": transcription_mode,
+            "diarize": diarize,
             "hotwords": ", ".join(saved_terms) if saved_terms else None,
             "num_speakers": num_speakers,
             "min_speakers": min_speakers,

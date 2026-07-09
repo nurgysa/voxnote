@@ -88,6 +88,33 @@ single Universal-3.5-only path.
 | Deepgram | Yes | Not publicly listed | Yes | Good for supported languages | Yes | Good | Medium | Not primary for VoxNote. |
 | Speechmatics | Yes | Not publicly listed | Yes | Good for supported languages | Yes | Good | Strong | Cheap EN/RU-only future option. |
 
+## ASR-only / no-speaker-label mode
+
+VoxNote now distinguishes two queue modes:
+
+```yaml
+transcription_mode: meeting    # request diarization / speaker labels
+transcription_mode: asr_only   # no speaker labels, no speaker-count hints, no Voice-ID
+```
+
+Use `asr_only` for fast notes, lectures, cheap previews, and KZ-heavy ASR
+benchmarks where speaker turns are not required. This mode keeps the same durable
+`transcript.md` output contract but deliberately avoids diarization-specific API
+features and downstream speaker sidecars.
+
+Recommended no-diarization evaluation order:
+
+1. Groq `whisper-large-v3-turbo` — cheapest/fastest ASR-only baseline.
+2. Together `openai/whisper-large-v3` — strongest hosted-Whisper long-form
+   candidate; first serious Whisper-family A/B target.
+3. Groq `whisper-large-v3` — quality-oriented Whisper benchmark if turbo is weak.
+4. OpenAI `gpt-4o-mini-transcribe` / `gpt-4o-transcribe` — OpenAI text-only
+   baselines for shorter files or external chunking experiments.
+5. Fireworks Whisper v3 — optional cheap hosted-Whisper benchmark.
+
+Do not let this mode dilute the production meeting decision: when speaker labels
+matter, AssemblyAI default + Gladia fallback remain the primary route.
+
 ## AssemblyAI decision notes
 
 Why default:
