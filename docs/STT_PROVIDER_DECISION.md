@@ -228,28 +228,16 @@ Each `transcript.md` should persist enough provenance to debug quality, cost, an
 fallback behavior:
 
 ```yaml
-provider: assemblyai
-model_primary: universal-3-5-pro
-model_fallback: universal-2
-fallback_used: false
-language_mode: mixed
-languages_expected: [ru, kk, en]
-diarization: true
-duration_sec: 0
-submitted_at: null
-completed_at: null
-provider_job_id: null
+provider: AssemblyAI
+model: universal-2
+language: mixed
+diarized: true
+duration_sec: 0.0
+cost_estimate_usd: null
 source_path: null
 source_sha256: null
-cost_estimate_usd: null
-confidence_summary: null
-speakers_detected: null
-chunked: false
-provider_raw_response_path: null
-provider_request_payload_path: null
-poll_attempts: 0
-fallback_from: null
-fallback_reason: null
+voxnote_id: null
+nudged: false
 ```
 
 For Gladia chunking, also persist:
@@ -336,7 +324,7 @@ chunking, diarization, or ops burden.
 1. [Done 2026-07-09] Add provider-specific API key resolution while keeping `VOXNOTE_API_KEY` as
    legacy fallback.
 2. Add AssemblyAI model routing metadata and verify exact SDK/API params.
-3. Add transcript provenance metadata schema.
+3. [Done 2026-07-09] Add transcript provenance metadata schema.
 4. Add preflight cost/duration checks.
 5. [Done 2026-07-09] Add Gladia duration guard and chunking requirement for
    >135 minutes.

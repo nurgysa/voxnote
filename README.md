@@ -173,6 +173,10 @@ and verify the current terms on each provider's official pricing page.
 Audio is uploaded to the selected provider. Do not use VoxNote for recordings
 that are not allowed to leave your machine or organization.
 
+Each queue-produced `transcript.md` includes provenance frontmatter for downstream
+Hermes/A-B review: provider, model, language, diarized flag, duration, estimated
+STT cost, source path, and source SHA-256 when readable.
+
 To add a provider, implement one class under [`providers/base.py`](providers/base.py)
 and register it in [`providers/__init__.py`](providers/__init__.py).
 

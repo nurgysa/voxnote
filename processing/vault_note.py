@@ -60,12 +60,25 @@ def render_transcript_note(
     voxnote_id: str,
     source_path: str | None,
     nudged: bool,
+    model: str | None = None,
+    diarized: bool | None = None,
+    duration_s: float | None = None,
+    cost_estimate_usd: float | None = None,
+    source_sha256: str | None = None,
     speaker_map: dict[str, str] | None = None,
 ) -> str:
     """Render transcript.md = YAML frontmatter + diarized body. Pure, no I/O.
     ``title`` is accepted for symmetry/future use; the body is the diarized
     transcript and the meeting identity lives in the folder name."""
     sp_line = f"source_path: {_yaml_str(source_path)}" if source_path else 'source_path: ""'
+    duration_line = (
+        f"duration_sec: {duration_s:.1f}" if duration_s is not None
+        else "duration_sec: null"
+    )
+    cost_line = (
+        f"cost_estimate_usd: {cost_estimate_usd:.6f}"
+        if cost_estimate_usd is not None else "cost_estimate_usd: null"
+    )
     frontmatter = [
         "---",
         "type: meeting",
@@ -75,7 +88,12 @@ def render_transcript_note(
         f"project: {project_name or ''}",
         f"participants: [{', '.join(_yaml_str(p) for p in participants)}]",
         f"provider: {provider}",
+        f"model: {model or ''}",
         f"language: {language or ''}",
+        f"diarized: {'true' if diarized else 'false'}",
+        duration_line,
+        cost_line,
+        f"source_sha256: {source_sha256 or ''}",
         f"voxnote_id: {voxnote_id}",
         sp_line,
         f"nudged: {'true' if nudged else 'false'}",

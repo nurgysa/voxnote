@@ -20,12 +20,25 @@ def _queue(tmp_path, **over):
 
 
 class _Out:
-    def __init__(self, text="hello", language="ru", segments=None):
+    def __init__(
+        self,
+        text="hello",
+        language="ru",
+        segments=None,
+        model="universal-2",
+        diarized=None,
+    ):
         self.text = text
         self.language = language
         self.segments = segments if segments is not None else [
             {"speaker": "A", "text": "hi"}
         ]
+        self.model = model
+        self.diarized = (
+            any(s.get("speaker") for s in self.segments)
+            if diarized is None else diarized
+        )
+        self.speaker_identifiers = None
 
 
 def _patch_happy(monkeypatch, *, duration_s=60.0, size_bytes=1000, capture=None):
@@ -155,6 +168,12 @@ def test_process_item_writes_note_and_copies_for_pick(tmp_path, monkeypatch):
     with open(note, encoding="utf-8") as f:
         body = f.read()
     assert "hi" in body
+    assert "provider: AssemblyAI" in body
+    assert "model: universal-2" in body
+    assert "diarized: true" in body
+    assert "duration_sec: 60.0" in body
+    assert "cost_estimate_usd: 0.002833" in body
+    assert "source_sha256:" in body
     assert os.path.isfile(os.path.join(live.meeting_folder, "speakers.json"))
     assert os.path.isfile(audio)
     assert live.source_path and os.path.isfile(live.source_path)

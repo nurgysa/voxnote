@@ -13,6 +13,7 @@ and decoupled from the directory store.
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 import re
@@ -42,6 +43,20 @@ def _slug(text: str) -> str:
     base = os.path.splitext(text)[0].strip().lower()
     base = _SLUG_ILLEGAL.sub("-", base).strip("-_")
     return base or "meeting"
+
+
+def _sha256_file(path: str | None) -> str | None:
+    """SHA-256 for provenance. None when the source is missing/unreadable."""
+    if not path:
+        return None
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as f:
+            for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
 
 
 def _parse_created(created_at: str) -> tuple[str, str, str]:
@@ -341,6 +356,10 @@ class ProcessingQueue:
                         self._persist_locked()
 
             hermes_cfg = get_hermes_webhook_config(cfg)
+            final_source_path = source_path or audio_path
+            output_diarized = getattr(
+                out, "diarized", any(s.get("speaker") for s in out.segments)
+            )
             content = vault_note.render_transcript_note(
                 segments=out.segments,
                 title=item.title,
@@ -351,8 +370,13 @@ class ProcessingQueue:
                 provider=provider,
                 language=out.language,
                 voxnote_id=item.id,
-                source_path=source_path or audio_path,
+                source_path=final_source_path,
                 nudged=hermes_cfg.enabled,
+                model=out.model,
+                diarized=output_diarized,
+                duration_s=duration_s,
+                cost_estimate_usd=preflight.estimate_cost(provider, duration_s),
+                source_sha256=_sha256_file(final_source_path),
             )
             note_path = vault_note.write_transcript_note(
                 self._meetings_dir, project, base, content
