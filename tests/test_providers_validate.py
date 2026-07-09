@@ -1,4 +1,4 @@
-"""validate_key() — cheap server-side auth check on all 4 cloud providers.
+"""validate_key() — cheap server-side auth check on cloud STT providers.
 
 Contract: returns a dict on success; raises ProviderError with a Russian,
 user-actionable message on a rejected key (401/403) or network failure.
@@ -14,6 +14,7 @@ from providers.assemblyai import AssemblyAIProvider
 from providers.base import TranscriptionProvider
 from providers.deepgram import DeepgramProvider
 from providers.gladia import GladiaProvider
+from providers.groq import GroqProvider
 from providers.speechmatics import SpeechmaticsProvider
 
 
@@ -48,6 +49,7 @@ def test_base_default_refuses_with_provider_error():
         (AssemblyAIProvider, "providers._common", "/transcript"),
         (DeepgramProvider, "providers._common", "auth/token"),
         (GladiaProvider, "providers._common", "/pre-recorded"),
+        (GroqProvider, "providers._common", "/models"),
         (SpeechmaticsProvider, "providers._common", "/jobs"),
     ],
 )
@@ -68,6 +70,7 @@ def test_validate_ok_hits_cheap_endpoint(cls, module, url_part):
         (AssemblyAIProvider, "providers._common"),
         (DeepgramProvider, "providers._common"),
         (GladiaProvider, "providers._common"),
+        (GroqProvider, "providers._common"),
         (SpeechmaticsProvider, "providers._common"),
     ],
 )
@@ -84,6 +87,7 @@ def test_validate_rejected_key_raises_russian_provider_error(cls, module):
         (AssemblyAIProvider, "providers._common"),
         (DeepgramProvider, "providers._common"),
         (GladiaProvider, "providers._common"),
+        (GroqProvider, "providers._common"),
         (SpeechmaticsProvider, "providers._common"),
     ],
 )

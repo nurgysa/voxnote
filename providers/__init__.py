@@ -16,6 +16,7 @@ from .base import (
 )
 from .deepgram import DeepgramProvider
 from .gladia import GladiaProvider
+from .groq import GroqProvider
 from .speechmatics import SpeechmaticsProvider
 
 # Display name shown in the dropdown → provider class.
@@ -23,19 +24,21 @@ from .speechmatics import SpeechmaticsProvider
 # default selection on a fresh install. Existing users keep whatever is
 # already in their config.json under "cloud_provider".
 #
-# Order rationale (post-2026-05-28 cloud-only rip-out — Groq + OpenAI
-# Whisper removed because they lacked native diarization and depended on
-# the now-deleted hybrid-with-local-pyannote path):
+# Order rationale (post-2026-05-28 cloud-only rip-out, updated after ASR-only
+# mode was added):
 #   1. AssemblyAI    — MVP default (Universal model, KZ+RU+EN code-
 #                      switching + built-in diarization, ~$0.17/h).
 #   2. Deepgram      — cheapest with diarization (~$0.43/h); no Kazakh.
 #   3. Gladia        — Whisper + cloud pyannote, structurally identical
 #                      to the original local pipeline (~$0.61/h).
-#   4. Speechmatics  — premium diarization (~$1.04/h).
+#   4. Groq          — ASR-only Whisper backend (no speaker labels); useful
+#                      for cheap/fast transcribe-only mode and benchmarks.
+#   5. Speechmatics  — premium diarization (~$1.04/h).
 PROVIDERS: dict[str, type[TranscriptionProvider]] = {
     "AssemblyAI": AssemblyAIProvider,
     "Deepgram": DeepgramProvider,
     "Gladia": GladiaProvider,
+    "Groq": GroqProvider,
     "Speechmatics": SpeechmaticsProvider,
 }
 

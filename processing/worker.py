@@ -262,7 +262,20 @@ class ProcessingQueue:
             if not ok:
                 raise ValueError(reason)
             denoise = preflight.should_denoise(duration_s, bool(opts.get("denoise")))
-            asr_only = opts.get("transcription_mode") == "asr_only"
+            provider_supports_diarization = True
+            try:
+                from providers import PROVIDERS
+                provider_cls = PROVIDERS.get(provider)
+                if provider_cls is not None:
+                    provider_supports_diarization = provider_cls.supports_diarization
+            except (ImportError, AttributeError):
+                # Provider construction still enforces its own capabilities; this
+                # branch keeps stale queue normalization best-effort only.
+                pass
+            asr_only = (
+                opts.get("transcription_mode") == "asr_only"
+                or not provider_supports_diarization
+            )
             diarize = bool(opts.get("diarize")) and not asr_only
 
             voiceid_on = (

@@ -311,6 +311,35 @@ def test_process_item_asr_only_disables_diarization_speaker_hints_and_voiceid(
     assert resolved_known == []
 
 
+def test_process_item_forces_asr_only_for_provider_without_diarization(
+    tmp_path, monkeypatch
+):
+    cap = {}
+    _patch_happy(monkeypatch, capture=cap)
+    _sandbox_home(tmp_path, monkeypatch)
+    audio = _audio(tmp_path)
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {"cloud_api_keys": {"Groq": "k"}},
+    )
+    q.enqueue(
+        audio,
+        {
+            "provider": "Groq",
+            "transcription_mode": "meeting",
+            "diarize": True,
+            "num_speakers": 2,
+        },
+    )
+
+    q._process_item(q._items[0])
+
+    assert q.snapshot()[0].status == StageStatus.DONE
+    assert cap["diarize"] is False
+    assert cap["num_speakers"] is None
+
+
 def test_process_item_transcribe_error_halts_and_leaves_audio(tmp_path, monkeypatch):
     _sandbox_home(tmp_path, monkeypatch)
     monkeypatch.setattr(

@@ -104,7 +104,8 @@ features and downstream speaker sidecars.
 
 Recommended no-diarization evaluation order:
 
-1. Groq `whisper-large-v3-turbo` — cheapest/fastest ASR-only baseline.
+1. [Implemented 2026-07-09] Groq `whisper-large-v3-turbo` — cheapest/fastest
+   ASR-only baseline in VoxNote (`providers/groq.py`, no speaker labels).
 2. Together `openai/whisper-large-v3` — strongest hosted-Whisper long-form
    candidate; first serious Whisper-family A/B target.
 3. Groq `whisper-large-v3` — quality-oriented Whisper benchmark if turbo is weak.
@@ -213,6 +214,7 @@ VOXNOTE_PROVIDER=AssemblyAI
 VOXNOTE_ASSEMBLYAI_API_KEY=...
 VOXNOTE_GLADIA_API_KEY=...
 VOXNOTE_DEEPGRAM_API_KEY=...
+VOXNOTE_GROQ_API_KEY=...
 VOXNOTE_SPEECHMATICS_API_KEY=...
 ```
 
@@ -338,8 +340,8 @@ chunking, diarization, or ops burden.
 4. Add preflight cost/duration checks.
 5. Add Gladia duration guard and chunking requirement for >135 minutes.
 6. Add a provider A/B test fixture plan with sanitized real recordings.
-7. Include Together `openai/whisper-large-v3`, Groq turbo, and OpenAI
-   `gpt-4o-transcribe-diarize` in the evaluation matrix without changing the
+7. [Done 2026-07-09] Add Groq `whisper-large-v3-turbo` ASR-only provider;
+   keep Together/OpenAI/Fireworks in the evaluation matrix without changing the
    AssemblyAI/Gladia production default.
 8. Update user/operator docs: AssemblyAI default, Gladia fallback, Deepgram and
    Speechmatics non-primary because of Kazakh coverage.

@@ -9,9 +9,10 @@ This repo ships a **headless transcription pipeline** you can drive two ways:
 
 Pipeline (full chain, available to CLI/MCP callers): **transcribe → extract
 tasks → generate protocol → send to a task backend** (Linear / Glide / Trello).
-Cloud STT (AssemblyAI / Deepgram / Gladia / Speechmatics); KZ+RU+EN
-code-switching. OpenRouter-backed task/protocol commands are manual/legacy
-operator tools, not the Mini-AGI production downstream path.
+Cloud STT (AssemblyAI / Deepgram / Gladia / Speechmatics with diarization;
+Groq ASR-only without speaker labels); KZ+RU+EN code-switching. OpenRouter-
+backed task/protocol commands are manual/legacy operator tools, not the Mini-AGI
+production downstream path.
 
 > **Desktop queue (Mini-AGI / Hermes-native flow):** VoxNote's own processing
 > queue writes a `transcript.md` into the Obsidian vault, archives the audio
@@ -156,7 +157,7 @@ The agent host often has no `config.json`, so pass secrets via env:
 
 | Env var | Used for |
 |---|---|
-| `VOXNOTE_ASSEMBLYAI_API_KEY` / `_GLADIA_API_KEY` / `_DEEPGRAM_API_KEY` / `_SPEECHMATICS_API_KEY` | Preferred STT provider-specific keys |
+| `VOXNOTE_ASSEMBLYAI_API_KEY` / `_GLADIA_API_KEY` / `_DEEPGRAM_API_KEY` / `_GROQ_API_KEY` / `_SPEECHMATICS_API_KEY` | Preferred STT provider-specific keys |
 | `VOXNOTE_API_KEY` | Legacy fallback STT key for the active provider |
 | `VOXNOTE_PROVIDER` | Default STT provider (else `AssemblyAI`) |
 | `VOXNOTE_OPENROUTER_API_KEY` | OpenRouter (tasks + protocol) |

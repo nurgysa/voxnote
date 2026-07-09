@@ -7,9 +7,10 @@ for the latter see `README.md`.
 ## What this project is
 
 Windows desktop GUI for cloud-API audio transcription + speaker diarization.
-Stack: CustomTkinter (UI) + 4 cloud STT providers (AssemblyAI, Deepgram,
-Gladia, Speechmatics — see `providers/base.py` ABC for the extension point)
-+ OpenRouter for task extraction and protocol generation.
+Stack: CustomTkinter (UI) + cloud STT providers (AssemblyAI, Deepgram,
+Gladia, Speechmatics with diarization; Groq ASR-only — see `providers/base.py`
+ABC for the extension point) + OpenRouter for task extraction and protocol
+generation.
 
 Cloud-only since the 2026-05-28 rip-out. The local CUDA / Whisper / pyannote
 code is gone — both from the codebase and from `requirements.txt`. No GPU
@@ -109,7 +110,7 @@ ruff config (line-length=100, target=py310 lint-floor, rules E/W/F/I/B/UP).
 | Cloud transcription dispatcher | `transcriber/` package — `__init__.py` (cloud-only `Transcriber` class + `TranscriptionCancelled` + `_check_cancelled`; ~240 LOC). Providers upload files whole — `cloud_chunker` was deleted as unreachable in #103, and the old `cuda_utils` / `prompt` / `progress` / `segmenter` / `speaker_aligner` submodules died in the 2026-05-28 rip-out. |
 | Audio recording | `recorder.py` |
 | Cloud provider ABC + registry | `providers/base.py` + `providers/__init__.py` |
-| Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,speechmatics}.py` — Groq + OpenAI Whisper deleted in the 2026-05-28 rip-out (no native diarization, depended on the now-gone hybrid-with-local-pyannote path). Shared transport plumbing (HTTP error idiom, PollSpec poll loop, file streaming, validate/cancel helpers) lives in providers/_common.py — tests patch HTTP at providers._common.requests (one canonical target); tests/test_provider_transport_guard.py blocks regrowth. |
+| Cloud transcription providers | `providers/{assemblyai,deepgram,gladia,groq,speechmatics}.py` — Groq is ASR-only (no native speaker-label contract) and must stay out of diarized meeting mode; OpenAI Whisper remains deleted from the 2026-05-28 rip-out because it depended on the now-gone hybrid-with-local-pyannote path. Shared transport plumbing (HTTP error idiom, PollSpec poll loop, file streaming, validate/cancel helpers) lives in providers/_common.py — tests patch HTTP at providers._common.requests (one canonical target); tests/test_provider_transport_guard.py blocks regrowth. |
 | Task extraction (LLM → Linear/Trello/Glide) | `tasks/` (`extractor`, `sender`, `schema`, `persistence`, `linear_client`, `trello_client`, `glide_client`, `openrouter_client`, `dedup`, `protocol_generator`, `errors`) + `tasks/backends/` (Protocol-based dispatch — `base.py`, `linear.py`, `trello.py`, `glide.py`) |
 | People/projects directory (Phase A) | `directory/` (`schema`, `store` — atomic JSON at `~/.voxnote/directory.json`, `context` — prompt-context renderer). Grounds protocol + task prompts with real names/roles/project descriptions. Per-run speaker timestamps persisted via `utils.save_segments` → `<meeting>/segments.json`. |
 | Reference-document grounding (markitdown) | `tasks/doc_context.py` (`convert_documents` + `combine_context`) — converts user-attached PDF/DOCX/PPTX/XLSX to Markdown via Microsoft markitdown (document extras ONLY; never `[audio-transcription]` — invariant #2) and folds them into the same `context=` slot the directory grounding feeds. Wired into the Extract dialog's `_run_extraction`; `MarkItDown` is sentinel-lazy-loaded for testability. |
@@ -171,9 +172,10 @@ under `docs/superpowers/` and in git history.
   mixed-language option maps to the `"mixed"` language sentinel and
   cloud providers branch on `options.language == "mixed"` — Gladia
   `code_switching: true`, AssemblyAI `speech_model: universal`,
-  Speechmatics `language_identification_config`. Deepgram opts out via
-  the class attribute `supports_mixed = False` (nova-3 lacks Kazakh);
-  `Transcriber.transcribe()` raises a provider error for any
+  Speechmatics `language_identification_config`, and Groq omits the literal
+  `mixed` sentinel while steering auto-detect with a KZ/RU/EN prompt. Deepgram
+  opts out via the class attribute `supports_mixed = False` (nova-3 lacks
+  Kazakh); `Transcriber.transcribe()` raises a provider error for any
   provider with that flag false.
 - **Google Drive removed** (2026-06-23): the `gdrive/` package (auth,
   client, backup) was deleted; backup/restore now lives in Hermes Desktop.

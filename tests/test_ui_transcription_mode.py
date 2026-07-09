@@ -10,9 +10,9 @@ class _Var:
 
 
 class _App(QueueMixin):
-    def __init__(self, *, diarize, speaker_count="2"):
+    def __init__(self, *, diarize, speaker_count="2", provider="AssemblyAI"):
         self._config = {"hotwords": ["VoxNote"]}
-        self._cloud_provider_var = _Var("AssemblyAI")
+        self._cloud_provider_var = _Var(provider)
         self._lang_var = _Var("Русский")
         self._diar_var = _Var(diarize)
         self._spk_count_var = _Var(speaker_count)
@@ -37,3 +37,11 @@ def test_build_options_marks_meeting_mode_when_diarization_is_on():
     assert opts["transcription_mode"] == "meeting"
     assert opts["diarize"] is True
     assert opts["num_speakers"] == 2
+
+
+def test_build_options_forces_asr_only_for_provider_without_diarization():
+    opts = _App(diarize=True, speaker_count="2", provider="Groq")._build_options("pick")
+
+    assert opts["transcription_mode"] == "asr_only"
+    assert opts["diarize"] is False
+    assert opts["num_speakers"] is None

@@ -136,19 +136,21 @@ def test_ui_has_no_noop_normalize_toggle():
     )
 
 
-def test_provider_registry_drops_local_dependent():
+def test_provider_registry_keeps_removed_local_dependent_whisper_out():
     import re
 
     src = Path("providers/__init__.py").read_text(encoding="utf-8")
-    # Groq + OpenAI Whisper lacked diarization and depended on the
-    # (now-deleted) hybrid path. Both provider files are gone. Check the
-    # import section (top of file) rather than the whole text — the docstring/
-    # comment may legitimately mention them as historical context.
+    # OpenAI Whisper still belongs to the removed hybrid-with-local-pyannote
+    # path. Groq is allowed again only as providers.groq.GroqProvider: an
+    # ASR-only cloud backend with supports_diarization=False.
     head = src.split("PROVIDERS")[0]   # everything BEFORE the dict literal
-    assert not re.search(r"\bGroqProvider\b", head), (
-        "Groq provider must not be imported"
-    )
     assert not re.search(r"\bOpenAIWhisperProvider\b", head), (
         "OpenAI Whisper provider must not be imported"
     )
+
+    from providers import PROVIDERS
+    from providers.groq import GroqProvider
+
+    assert PROVIDERS.get("Groq") is GroqProvider
+    assert GroqProvider.supports_diarization is False
 

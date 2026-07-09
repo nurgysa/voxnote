@@ -45,7 +45,19 @@ class QueueMixin:
         dict the worker consumes. project_id comes from the main-bar project
         selector (Без проекта → None)."""
         saved_terms = self._config.get("hotwords", [])
+        provider_name = self._cloud_provider_var.get()
         diarize = bool(self._diar_var.get())
+        try:
+            from providers import PROVIDERS
+            provider_cls = PROVIDERS.get(provider_name)
+            if provider_cls is not None and not provider_cls.supports_diarization:
+                diarize = False
+        except (ImportError, AttributeError):
+            # UI option building must never fail because provider imports are
+            # unavailable/incomplete in a partial dev environment. The
+            # worker/provider still enforce ASR-only rules before network calls.
+            pass
+
         transcription_mode = "meeting" if diarize else "asr_only"
         num_speakers, min_speakers, max_speakers = SPEAKER_COUNTS.get(
             self._spk_count_var.get(), (None, None, None),
@@ -53,7 +65,7 @@ class QueueMixin:
         if transcription_mode == "asr_only":
             num_speakers = min_speakers = max_speakers = None
         return {
-            "provider": self._cloud_provider_var.get(),
+            "provider": provider_name,
             "language": LANGUAGES.get(self._lang_var.get()),
             "transcription_mode": transcription_mode,
             "diarize": diarize,

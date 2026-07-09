@@ -4,10 +4,11 @@ Wraps the providers/ ABC for the UI layer. Local CUDA / Whisper / pyannote
 code was removed in the 2026-05-28 rip-out — see
 ``docs/superpowers/plans/2026-05-28-cloud-only-mvp-v5.md`` Task 2. The
 TranscriptionCancelled exception (cancel-button → worker thread) lives in
-this module because the 4 surviving cloud providers import it as
-``from transcriber import TranscriptionCancelled`` (see
-providers/assemblyai.py:315 and 3 siblings — Groq + OpenAI Whisper were
-deleted alongside the hybrid-with-local-pyannote path they depended on).
+this module because surviving cloud providers import it as
+``from transcriber import TranscriptionCancelled``. Groq was restored in
+2026-07 as an ASR-only cloud provider after `transcription_mode=asr_only` made
+no-speaker-label transcription a first-class mode; OpenAI Whisper remains out
+with the deleted hybrid-with-local-pyannote path.
 """
 from __future__ import annotations
 

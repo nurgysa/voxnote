@@ -84,9 +84,10 @@ Hermes / Mini-AGI responsibilities.
 
 ## Features
 
-- **Cloud transcription:** AssemblyAI, Deepgram, Gladia, and Speechmatics.
+- **Cloud transcription:** AssemblyAI, Deepgram, Gladia, Speechmatics, and Groq.
 - **Speaker diarization:** provider-level `Speaker A/B/...` labels, with manual
-  naming or directory grounding where available.
+  naming or directory grounding where available. Groq is ASR-only: no speaker
+  labels / diarization.
 - **Kazakh + Russian + English code-switching:** AssemblyAI Universal handles
   language switches inside one recording.
 - **Manual/legacy LLM commands:** OpenRouter-backed `extract-tasks`, `protocol`,
@@ -150,6 +151,7 @@ committed.
 | Service | Purpose | Where to get it |
 |---|---|---|
 | **AssemblyAI** | transcription + diarization | <https://www.assemblyai.com> |
+| **Groq** | ASR-only transcription, no speaker labels | <https://console.groq.com> |
 | **OpenRouter** | optional manual/legacy LLM commands, not required for Mini-AGI Hermes-native downstream | <https://openrouter.ai/keys> |
 | Linear / Trello / Glide | optional task delivery | each service's settings/API page |
 
@@ -165,6 +167,7 @@ and verify the current terms on each provider's official pricing page.
 | AssemblyAI | default provider for code-switching meetings | yes, Universal | <https://www.assemblyai.com> |
 | Deepgram | RU/EN transcription where supported | no Kazakh in current VoxNote assumptions | <https://console.deepgram.com> |
 | Gladia | cloud Whisper-style transcription + diarization | yes | <https://app.gladia.io> |
+| Groq | cheap/fast ASR-only Whisper, no diarization | auto-detect / ASR benchmark | <https://console.groq.com> |
 | Speechmatics | premium transcription and diarization | yes | <https://portal.speechmatics.com> |
 
 Audio is uploaded to the selected provider. Do not use VoxNote for recordings
@@ -284,5 +287,5 @@ ffmpeg build invoked as a separate process, are listed in
 - [CustomTkinter](https://github.com/TomSchimansky/CustomTkinter) - UI toolkit, MIT.
 - [FFmpeg](https://ffmpeg.org/) - audio processing, GPLv3 build invoked as a separate process.
 - [markitdown](https://github.com/microsoft/markitdown) - document-to-Markdown conversion, MIT.
-- AssemblyAI, Deepgram, Gladia, and Speechmatics - cloud STT APIs.
+- AssemblyAI, Deepgram, Gladia, Groq, and Speechmatics - cloud STT APIs.
 - [OpenRouter](https://openrouter.ai/) - LLM routing for optional manual/legacy commands.
