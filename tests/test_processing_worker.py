@@ -498,6 +498,41 @@ def test_process_item_moves_audio_for_inbox(tmp_path, monkeypatch):
     assert live.source_path and os.path.isfile(live.source_path)
 
 
+def test_process_item_preserves_dated_audio_filename_in_archive(tmp_path, monkeypatch):
+    _patch_happy(monkeypatch)
+    _sandbox_home(tmp_path, monkeypatch)
+    sources_dir = tmp_path / "sources"
+    audio = _audio(tmp_path, "2026-07-04_1009_запись-автосохранение.m4a")
+    q = _queue(
+        tmp_path,
+        meetings_dir=str(tmp_path / "meetings"),
+        config_loader=lambda: {
+            "cloud_api_keys": {"AssemblyAI": "k"}, "sources_dir": str(sources_dir),
+        },
+    )
+    q.enqueue(audio, {"provider": "AssemblyAI", "source": "inbox"})
+    q._items[0].created_at = "2026-07-04T14:29:13"
+    q._process_item(q._items[0])
+
+    live = q.snapshot()[0]
+    expected = os.path.join(
+        str(sources_dir),
+        "Audio",
+        "VoxNote",
+        "Meetings",
+        "2026-07-04",
+        "2026-07-04_1009_запись-автосохранение.m4a",
+    )
+    assert live.status == StageStatus.DONE
+    assert live.source_path == expected
+    assert os.path.isfile(expected)
+    assert not os.path.exists(audio)
+    assert os.path.basename(live.meeting_folder) == "2026-07-04_1009_запись-автосохранение"
+    with open(os.path.join(live.meeting_folder, "transcript.md"), encoding="utf-8") as f:
+        body = f.read()
+    assert 'time: "10:09"' in body
+
+
 def test_process_item_archive_failure_is_nonfatal(tmp_path, monkeypatch):
     _patch_happy(monkeypatch)
     _sandbox_home(tmp_path, monkeypatch)

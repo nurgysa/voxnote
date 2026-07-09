@@ -29,6 +29,16 @@ def _meeting_archive_dir(sources_dir: str, base_name: str) -> str:
     return os.path.join(sources_dir, "Audio", "VoxNote", "Meetings", date_dir)
 
 
+def _same_or_under(path: str, directory: str) -> bool:
+    """True when ``path`` is ``directory`` or a descendant of it."""
+    try:
+        path_abs = os.path.normcase(os.path.abspath(path))
+        dir_abs = os.path.normcase(os.path.abspath(directory))
+        return os.path.commonpath([path_abs, dir_abs]) == dir_abs
+    except (OSError, ValueError):
+        return False
+
+
 def _is_loose_sources_root_file(audio_path: str, sources_dir: str) -> bool:
     """True when ``audio_path`` is a direct file child of ``sources_dir`` root."""
     try:
@@ -37,14 +47,25 @@ def _is_loose_sources_root_file(audio_path: str, sources_dir: str) -> bool:
         return False
 
 
+def _is_already_in_meeting_archive(audio_path: str, sources_dir: str) -> bool:
+    """True when ``audio_path`` already lives in the organized VoxNote archive."""
+    archive_root = os.path.join(sources_dir, "Audio", "VoxNote", "Meetings")
+    return _same_or_under(audio_path, archive_root)
+
+
 def archive_audio(
     audio_path: str, sources_dir: str, base_name: str, *, move: bool
 ) -> str:
     """Place ``audio_path`` under ``Sources/Audio/VoxNote/Meetings/<date>/``.
 
     The filename remains ``<base_name><ext>`` and collisions are safe
-    (``-2``, ``-3`` … never overwrites). Returns the archived path.
+    (``-2``, ``-3`` … never overwrites). Returns the archived path. If the file
+    already lives in the organized archive, return it unchanged rather than
+    duplicating or renaming it.
     """
+    if _is_already_in_meeting_archive(audio_path, sources_dir):
+        return audio_path
+
     dest_dir = _meeting_archive_dir(sources_dir, base_name)
     os.makedirs(dest_dir, exist_ok=True)
     ext = os.path.splitext(audio_path)[1]

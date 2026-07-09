@@ -28,6 +28,12 @@ logger = logging.getLogger(__name__)
 
 _IDLE_WAIT_S = 1.0
 _SLUG_ILLEGAL = re.compile(r"[^\w]+", re.UNICODE)
+_TITLE_TIMESTAMP_PREFIX = re.compile(
+    r"^(?P<date>\d{4}-\d{2}-\d{2})[_\s-]+"
+    r"(?P<hour>\d{2})[:\-]?(?P<minute>\d{2})"
+    r"(?:[:\-]?\d{2})?(?:[_\s-]+(?P<rest>.*))?$",
+    re.UNICODE,
+)
 
 
 def _slug(text: str) -> str:
@@ -48,7 +54,33 @@ def _parse_created(created_at: str) -> tuple[str, str, str]:
     return dt.strftime("%Y-%m-%d"), dt.strftime("%H:%M"), dt.strftime("%H%M")
 
 
+def _parse_title_timestamp(title: str) -> tuple[str, str, str] | None:
+    """Return (date, time, base) when the filename already starts with a timestamp."""
+    stem = os.path.splitext(title)[0].strip()
+    match = _TITLE_TIMESTAMP_PREFIX.match(stem)
+    if not match:
+        return None
+    date = match.group("date")
+    hour = match.group("hour")
+    minute = match.group("minute")
+    rest = _slug(match.group("rest") or "") or "meeting"
+    return date, f"{hour}:{minute}", f"{date}_{hour}{minute}_{rest}"
+
+
+def _meeting_identity(title: str, created_at: str) -> tuple[str, str, str]:
+    """Return note date, note time and collision-safe base filename/folder."""
+    from_title = _parse_title_timestamp(title)
+    if from_title is not None:
+        date, time_str, base = from_title
+        return date, time_str, base[:120]
+
+    date, time_str, hhmm = _parse_created(created_at)
+    base = "_".join(p for p in (date, hhmm, _slug(title)) if p) or title
+    return date, time_str, base[:120] or "meeting"
+
+
 class ProcessingQueue:
+
     def __init__(
         self,
         *,
@@ -261,9 +293,7 @@ class ProcessingQueue:
                     out.segments, out.speaker_identifiers or {}, known_names,
                 )
 
-            date, time_str, hhmm = _parse_created(item.created_at)
-            base = "_".join(p for p in (date, hhmm, _slug(item.title)) if p) or item.id
-            base = base[:120]  # guard pathologically long titles → folder/file names
+            date, time_str, base = _meeting_identity(item.title, item.created_at)
             project = self._resolve_project(opts.get("project_id"))
 
             # Archive only AFTER a successful transcribe, so a failure never

@@ -78,3 +78,22 @@ def test_archive_rehomes_file_already_in_sources_root(tmp_path):
     )
     assert os.path.isfile(out)
     assert not src.exists()
+
+
+def test_archive_reuses_audio_already_in_organized_archive(tmp_path):
+    dest = tmp_path / "sources"
+    organized = dest / "Audio" / "VoxNote" / "Meetings" / "2026-07-04"
+    organized.mkdir(parents=True)
+    src = organized / "2026-07-04_1009_запись-автосохранение.m4a"
+    src.write_bytes(b"audio")
+
+    out = sources.archive_audio(
+        str(src),
+        str(dest),
+        "2026-07-04_1429_2026-07-04_1009_запись-автосохранение",
+        move=False,
+    )
+
+    assert out == str(src)
+    assert src.read_bytes() == b"audio"
+    assert sorted(p.name for p in organized.iterdir()) == [src.name]
