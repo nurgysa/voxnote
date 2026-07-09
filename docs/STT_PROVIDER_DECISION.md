@@ -273,9 +273,28 @@ Compare:
 - provider failure/retry rate;
 - cost per usable transcript.
 
+### Whisper-family / OpenAI evaluation candidate
+
+Do not promote raw Whisper large-v3 to primary provider by default. It is a strong
+ASR baseline and includes Kazakh (`kk`) in the official Hugging Face language
+list, but it does not provide robust native meeting diarization by itself.
+
+Evaluate it as a benchmark/fallback candidate only:
+
+- `openai/whisper-large-v3` or hosted Whisper large-v3: transcript-quality
+  baseline for RU/KZ/EN, especially KZ-heavy samples.
+- Groq Whisper large-v3 / large-v3-turbo: possible fast transcribe-only backend;
+  verify provider limits, pricing, and timestamps before implementation.
+- OpenAI `gpt-4o-transcribe-diarize`: separate candidate for cloud diarization;
+  verify file-size/duration limits, chunking behavior, RU/KZ/EN quality, and cost.
+
+Acceptance bar: it must beat or materially complement AssemblyAI/Gladia on real
+VoxNote meeting audio without adding unacceptable chunking, diarization, or ops
+burden.
+
 ## Next implementation tasks
 
-1. Add provider-specific API key resolution while keeping `VOXNOTE_API_KEY` as
+1. [Done 2026-07-09] Add provider-specific API key resolution while keeping `VOXNOTE_API_KEY` as
    legacy fallback.
 2. Add AssemblyAI model routing metadata and verify exact SDK/API params.
 3. Add transcript provenance metadata schema.
@@ -296,6 +315,10 @@ Compare:
 - Gladia pre-recorded quickstart: https://docs.gladia.io/chapters/pre-recorded-stt/quickstart
 - Deepgram language docs: https://developers.deepgram.com/docs/language
 - Speechmatics language docs: https://docs.speechmatics.com/speech-to-text/languages
+- OpenAI Whisper large-v3 model card: https://huggingface.co/openai/whisper-large-v3
+- OpenAI speech-to-text docs: https://developers.openai.com/api/docs/guides/speech-to-text
+- Groq speech-to-text docs: https://console.groq.com/docs/speech-to-text
+- Groq Whisper large-v3 docs: https://console.groq.com/docs/model/whisper-large-v3
 
 ## Final decision
 

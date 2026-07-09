@@ -87,7 +87,7 @@ use the Python interpreter that has `requirements-mcp.txt` installed.
       "command": "python",
       "args": ["-m", "cli.mcp_server"],
       "cwd": "/path/to/voxnote",
-      "env": { "VOXNOTE_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
+      "env": { "VOXNOTE_ASSEMBLYAI_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
     }
   }
 }
@@ -100,7 +100,7 @@ use the Python interpreter that has `requirements-mcp.txt` installed.
 command = "python"
 args = ["-m", "cli.mcp_server"]
 cwd = "/path/to/voxnote"
-env = { VOXNOTE_API_KEY = "…", VOXNOTE_OPENROUTER_API_KEY = "…" }
+env = { VOXNOTE_ASSEMBLYAI_API_KEY = "…", VOXNOTE_OPENROUTER_API_KEY = "…" }
 ```
 
 **Hermes Agent** — `~/.hermes/config.yaml`:
@@ -112,7 +112,7 @@ mcp_servers:
     args: ["-m", "cli.mcp_server"]
     cwd: /path/to/voxnote
     env:
-      VOXNOTE_API_KEY: "…"
+      VOXNOTE_ASSEMBLYAI_API_KEY: "…"
       VOXNOTE_OPENROUTER_API_KEY: "…"
 ```
 
@@ -125,7 +125,7 @@ mcp_servers:
       "command": "python",
       "args": ["-m", "cli.mcp_server"],
       "cwd": "/path/to/voxnote",
-      "env": { "VOXNOTE_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
+      "env": { "VOXNOTE_ASSEMBLYAI_API_KEY": "…", "VOXNOTE_OPENROUTER_API_KEY": "…" }
     }
   }
 }
@@ -150,12 +150,13 @@ declares its required env vars so Hermes prompts for them on first use.
 
 ## 3. Secrets & config
 
-Resolution precedence (both CLI and MCP): **flag (CLI only) > env > `config.json`**.
+Resolution precedence for STT keys (CLI and MCP): **flag (CLI only) > provider-specific env > legacy env > `config.json`**.
 The agent host often has no `config.json`, so pass secrets via env:
 
 | Env var | Used for |
 |---|---|
-| `VOXNOTE_API_KEY` | STT provider key (for the active `--provider`) |
+| `VOXNOTE_ASSEMBLYAI_API_KEY` / `_GLADIA_API_KEY` / `_DEEPGRAM_API_KEY` / `_SPEECHMATICS_API_KEY` | Preferred STT provider-specific keys |
+| `VOXNOTE_API_KEY` | Legacy fallback STT key for the active provider |
 | `VOXNOTE_PROVIDER` | Default STT provider (else `AssemblyAI`) |
 | `VOXNOTE_OPENROUTER_API_KEY` | OpenRouter (tasks + protocol) |
 | `VOXNOTE_LINEAR_API_KEY` / `_TRELLO_API_KEY` / `_TRELLO_TOKEN` / `_GLIDE_API_KEY` | Task backends |

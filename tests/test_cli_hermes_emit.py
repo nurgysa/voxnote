@@ -42,12 +42,12 @@ class _FakeResult:
         }
 
 
-def _make_args(*, json_flag=True, save=False, quiet=True):
+def _make_args(*, json_flag=True, save=False, quiet=True, api_key="test-key"):
     """Build a minimal args namespace for _cmd_transcribe."""
     args = types.SimpleNamespace()
     args.audio = "test.m4a"
     args.provider = "AssemblyAI"
-    args.api_key = "test-key"
+    args.api_key = api_key
     args.language = "ru"
     args.diarize = False
     args.hotwords = None
@@ -56,6 +56,29 @@ def _make_args(*, json_flag=True, save=False, quiet=True):
     args.json = json_flag
     args.quiet = quiet
     return args
+
+
+# ── CLI provider-specific env key resolution ──────────────────────────
+
+def test_cmd_transcribe_uses_provider_specific_env_key(monkeypatch, capsys):
+    monkeypatch.setenv("VOXNOTE_API_KEY", "legacy-key")
+    monkeypatch.setenv("VOXNOTE_ASSEMBLYAI_API_KEY", "assemblyai-key")
+    monkeypatch.delenv("VOXNOTE_HERMES_WEBHOOK_ENABLED", raising=False)
+
+    captured = {}
+
+    def _fake_run_transcribe(audio, **kwargs):
+        captured["audio"] = audio
+        captured["kwargs"] = kwargs
+        return _FakeResult()
+
+    with patch("cli.core.run_transcribe", side_effect=_fake_run_transcribe), \
+         patch("cli.config.base_config", return_value={}):
+        code = _cmd_transcribe(_make_args(api_key=None))
+
+    assert code == EXIT_OK
+    assert captured["kwargs"]["provider"] == "AssemblyAI"
+    assert captured["kwargs"]["api_key"] == "assemblyai-key"
 
 
 # ── (a) Disabled config → post never called ───────────────────────────

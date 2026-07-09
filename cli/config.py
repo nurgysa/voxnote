@@ -71,3 +71,33 @@ def resolve(flag, env_suffix, config_value, default=None):
     if config_value:
         return config_value
     return default
+
+
+def provider_env_suffix(provider: str) -> str:
+    """Return provider-specific API-key env suffix for ``provider``.
+
+    Examples:
+        AssemblyAI → ASSEMBLYAI_API_KEY
+        Speechmatics → SPEECHMATICS_API_KEY
+    """
+    return "".join(ch for ch in provider.upper() if ch.isalnum()) + "_API_KEY"
+
+
+def resolve_provider_api_key(provider: str, cfg: dict, flag: str | None = None) -> str | None:
+    """Resolve STT provider credentials.
+
+    Precedence:
+    1. explicit CLI flag;
+    2. provider-specific env var, e.g. ``VOXNOTE_ASSEMBLYAI_API_KEY``;
+    3. legacy generic env var ``VOXNOTE_API_KEY``;
+    4. ``config.json`` ``cloud_api_keys[provider]``.
+    """
+    if flag:
+        return flag
+    provider_key = os.environ.get(ENV_PREFIX + provider_env_suffix(provider))
+    if provider_key:
+        return provider_key
+    legacy_key = os.environ.get(ENV_PREFIX + "API_KEY")
+    if legacy_key:
+        return legacy_key
+    return (cfg.get("cloud_api_keys") or {}).get(provider)

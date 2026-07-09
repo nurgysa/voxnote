@@ -300,7 +300,7 @@ Objective: let Hermes call VoxNote MCP tools deliberately.
 Command pattern:
 
 ```bash
-hermes mcp add voxnote --command python --args -m cli.mcp_server --env VOXNOTE_PROVIDER=AssemblyAI --env VOXNOTE_API_KEY=REDACTED --env VOXNOTE_OPENROUTER_API_KEY=REDACTED
+hermes mcp add voxnote --command python --args -m cli.mcp_server --env VOXNOTE_PROVIDER=AssemblyAI --env VOXNOTE_ASSEMBLYAI_API_KEY=REDACTED --env VOXNOTE_OPENROUTER_API_KEY=REDACTED
 ```
 
 Important:

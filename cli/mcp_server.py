@@ -34,11 +34,12 @@ def _provider_and_key(provider: str | None, cfg: dict) -> tuple[str, str]:
     resolved = config.resolve(
         provider, "PROVIDER", cfg.get("cloud_provider"), default="AssemblyAI",
     )
-    key = config.resolve(None, "API_KEY", (cfg.get("cloud_api_keys") or {}).get(resolved))
+    key = config.resolve_provider_api_key(resolved, cfg)
     if not key:
         raise ValueError(
             f"Нет API-ключа для провайдера {resolved!r} "
-            "(config.json cloud_api_keys или VOXNOTE_API_KEY)."
+            "(provider-specific env, config.json cloud_api_keys или legacy "
+            "VOXNOTE_API_KEY)."
         )
     return resolved, key
 

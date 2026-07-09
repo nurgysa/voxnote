@@ -82,6 +82,28 @@ def test_transcribe_tool_resolves_secrets_and_delegates(monkeypatch):
     assert captured["kwargs"]["on_status"] is None
 
 
+def test_provider_specific_env_key_wins_over_legacy_key(monkeypatch):
+    monkeypatch.setenv("VOXNOTE_API_KEY", "legacy-key")
+    monkeypatch.setenv("VOXNOTE_GLADIA_API_KEY", "gladia-key")
+
+    provider, key = srv._provider_and_key("Gladia", {})
+
+    assert provider == "Gladia"
+    assert key == "gladia-key"
+
+
+def test_provider_key_falls_back_to_config_cloud_api_keys(monkeypatch):
+    monkeypatch.delenv("VOXNOTE_API_KEY", raising=False)
+    monkeypatch.delenv("VOXNOTE_ASSEMBLYAI_API_KEY", raising=False)
+
+    provider, key = srv._provider_and_key(
+        "AssemblyAI", {"cloud_api_keys": {"AssemblyAI": "config-key"}}
+    )
+
+    assert provider == "AssemblyAI"
+    assert key == "config-key"
+
+
 def test_missing_openrouter_key_raises(monkeypatch):
     monkeypatch.delenv("VOXNOTE_OPENROUTER_API_KEY", raising=False)
     with pytest.raises(ValueError):

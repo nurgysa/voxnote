@@ -162,13 +162,12 @@ def _cmd_transcribe(args) -> int:
     provider = config.resolve(
         args.provider, "PROVIDER", cfg.get("cloud_provider"), default="AssemblyAI",
     )
-    api_key = config.resolve(
-        args.api_key, "API_KEY", (cfg.get("cloud_api_keys") or {}).get(provider),
-    )
+    api_key = config.resolve_provider_api_key(provider, cfg, args.api_key)
     if not api_key:
         raise ValueError(
             f"Нет API-ключа для провайдера {provider!r}. "
-            "Передай --api-key или VOXNOTE_API_KEY."
+            "Передай --api-key, provider-specific env (например "
+            "VOXNOTE_ASSEMBLYAI_API_KEY) или legacy VOXNOTE_API_KEY."
         )
     out = core.run_transcribe(
         args.audio,
@@ -338,9 +337,7 @@ def _cmd_pipeline(args) -> int:
     provider = config.resolve(
         args.provider, "PROVIDER", cfg.get("cloud_provider"), default="AssemblyAI",
     )
-    api_key = config.resolve(
-        args.api_key, "API_KEY", (cfg.get("cloud_api_keys") or {}).get(provider),
-    )
+    api_key = config.resolve_provider_api_key(provider, cfg, args.api_key)
     openrouter_key = config.resolve(
         args.openrouter_key, "OPENROUTER_API_KEY", cfg.get("openrouter_api_key"),
     )
