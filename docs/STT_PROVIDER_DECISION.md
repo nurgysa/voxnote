@@ -281,16 +281,26 @@ list, but it does not provide robust native meeting diarization by itself.
 
 Evaluate it as a benchmark/fallback candidate only:
 
-- `openai/whisper-large-v3` or hosted Whisper large-v3: transcript-quality
-  baseline for RU/KZ/EN, especially KZ-heavy samples.
-- Groq Whisper large-v3 / large-v3-turbo: possible fast transcribe-only backend;
-  verify provider limits, pricing, and timestamps before implementation.
-- OpenAI `gpt-4o-transcribe-diarize`: separate candidate for cloud diarization;
-  verify file-size/duration limits, chunking behavior, RU/KZ/EN quality, and cost.
+- Together `openai/whisper-large-v3`: strongest hosted-Whisper candidate found
+  in the second Deep Research pass. Official/public pages describe a real cloud
+  STT API around Whisper large-v3, long-file handling, word timestamps, and
+  diarization-related features. Treat it as the first Whisper-family A/B
+  candidate, but do not promote it without real VoxNote RU/KZ/EN meeting tests.
+- Groq Whisper large-v3 / large-v3-turbo: cheap and fast transcribe-only
+  benchmark. Groq turbo is especially attractive for low-cost ASR, but it lacks
+  a documented native speaker-label contract, so it is not meeting-primary.
+- OpenAI `gpt-4o-transcribe-diarize`: separate evaluation-only diarization
+  benchmark. It is interesting for speaker-aware output, but file-size/chunking
+  constraints make it an orchestration project for 60-180 minute meetings.
+- Fireworks Whisper v3: cheap hosted Whisper benchmark/transcribe-only candidate;
+  verify native diarization and long-file behavior before any implementation.
+- Replicate / Hugging Face Endpoints / self-hosted Whisper: experiments only.
+  They add too much deployment or diarization/merging burden for VoxNote's
+  production cloud-only path.
 
-Acceptance bar: it must beat or materially complement AssemblyAI/Gladia on real
-VoxNote meeting audio without adding unacceptable chunking, diarization, or ops
-burden.
+Acceptance bar: any Whisper-family route must beat or materially complement
+AssemblyAI/Gladia on real VoxNote meeting audio without adding unacceptable
+chunking, diarization, or ops burden.
 
 ## Next implementation tasks
 
@@ -301,7 +311,10 @@ burden.
 4. Add preflight cost/duration checks.
 5. Add Gladia duration guard and chunking requirement for >135 minutes.
 6. Add a provider A/B test fixture plan with sanitized real recordings.
-7. Update user/operator docs: AssemblyAI default, Gladia fallback, Deepgram and
+7. Include Together `openai/whisper-large-v3`, Groq turbo, and OpenAI
+   `gpt-4o-transcribe-diarize` in the evaluation matrix without changing the
+   AssemblyAI/Gladia production default.
+8. Update user/operator docs: AssemblyAI default, Gladia fallback, Deepgram and
    Speechmatics non-primary because of Kazakh coverage.
 
 ## Official sources checked
@@ -319,6 +332,11 @@ burden.
 - OpenAI speech-to-text docs: https://developers.openai.com/api/docs/guides/speech-to-text
 - Groq speech-to-text docs: https://console.groq.com/docs/speech-to-text
 - Groq Whisper large-v3 docs: https://console.groq.com/docs/model/whisper-large-v3
+- Groq Whisper large-v3 Turbo docs: https://console.groq.com/docs/model/whisper-large-v3-turbo
+- Together speech-to-text docs: https://docs.together.ai/docs/speech-to-text
+- Together Whisper large-v3 model page: https://www.together.ai/models/openai-whisper-large-v3
+- Together pricing: https://www.together.ai/pricing
+- Fireworks Whisper v3 model page: https://app.fireworks.ai/models/fireworks/whisper-v3
 
 ## Final decision
 
