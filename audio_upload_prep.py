@@ -32,6 +32,16 @@ _MIN_BITRATE_BPS = 24_000
 _MAX_BITRATE_BPS = 64_000
 _SAMPLE_RATE_HZ = 16_000
 
+# EBU R128 single-pass loudness normalization, tuned for ASR rather than
+# human listening. Extremely quiet source audio (around -50 dB mean volume)
+# can leave speech recognition VAD with no usable speech segments. -16 LUFS
+# integrated / 11 LU loudness range / -1.5 dBTP true-peak ceiling brings quiet
+# speech up to an ASR-usable level without clipping. Single-pass (not the
+# two-pass measure-then-normalize variant) is deliberately used: it's a
+# temporary preprocessing derivative, not a mastering step, and single-pass
+# avoids a second ffmpeg invocation.
+_LOUDNORM_FILTER = "loudnorm=I=-16:LRA=11:TP=-1.5"
+
 # Target below the hard cap, not at it: CBR mp3 size is close to
 # bitrate*duration/8 but container/frame overhead adds a small, hard-to-
 # predict slack. 8% headroom comfortably absorbs that without meaningfully
@@ -104,6 +114,7 @@ def compress_for_size_cap(
     cmd = [
         ffmpeg, "-v", "error", "-y", "-i", audio_path,
         "-ar", str(_SAMPLE_RATE_HZ), "-ac", "1",
+        "-af", _LOUDNORM_FILTER,
         "-c:a", "libmp3lame", "-b:a", f"{bitrate // 1000}k",
         tmp.name,
     ]
@@ -158,6 +169,7 @@ def split_for_size_cap(
             ffmpeg, "-v", "error", "-y", "-i", audio_path,
             "-ss", f"{start:.3f}", "-to", f"{end:.3f}",
             "-ar", str(_SAMPLE_RATE_HZ), "-ac", "1",
+            "-af", _LOUDNORM_FILTER,
             "-c:a", "libmp3lame", "-b:a", f"{_MIN_BITRATE_BPS // 1000}k",
             tmp.name,
         ]

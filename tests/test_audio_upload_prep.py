@@ -79,6 +79,7 @@ def test_compress_for_size_cap_invokes_ffmpeg_with_computed_bitrate(monkeypatch)
     assert "-ar" in cmd and cmd[cmd.index("-ar") + 1] == "16000"
     assert "-b:a" in cmd and cmd[cmd.index("-b:a") + 1] == "51k"
     assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "libmp3lame"
+    assert "-af" in cmd and cmd[cmd.index("-af") + 1] == prep._LOUDNORM_FILTER
 
 
 def test_compress_for_size_cap_returns_none_without_calling_ffmpeg_when_below_floor(monkeypatch):
@@ -122,7 +123,13 @@ def test_compress_for_size_cap_raises_and_cleans_temp_on_ffmpeg_failure(monkeypa
 
 def test_split_for_size_cap_produces_sequential_non_overlapping_chunks(monkeypatch):
     monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
-    monkeypatch.setattr(prep.subprocess, "run", _fake_run_writes_output)
+    captured_cmds = []
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured_cmds.append(cmd)
+        return _fake_run_writes_output(cmd, capture_output, check)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
 
     # min bitrate 24000 bps, target_bytes=24000 -> 8s per chunk.
     chunks = prep.split_for_size_cap("in.wav", 20.0, target_bytes=24_000)
@@ -133,6 +140,9 @@ def test_split_for_size_cap_produces_sequential_non_overlapping_chunks(monkeypat
     for path, _s, _e in chunks:
         assert os.path.isfile(path)
     prep.cleanup_paths(p for p, _s, _e in chunks)
+
+    for cmd in captured_cmds:
+        assert "-af" in cmd and cmd[cmd.index("-af") + 1] == prep._LOUDNORM_FILTER
 
 
 def test_split_for_size_cap_cleans_up_all_chunks_on_mid_loop_failure(monkeypatch):
