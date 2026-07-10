@@ -555,6 +555,7 @@ Before declaring VoxNote V1 integrated with Mini-AGI:
 3. Should the default route deliver a Telegram notification, local log, or create an Obsidian inbox item?
 4. Should source_path use local Drive path only, or also store a future shareable Drive link?
 5. Which cloud STT provider should be the recommended default for long RU and mixed KZ-RU-EN recordings?
+   - Resolved 2026-07-09: AssemblyAI default (Universal-2 fallback for Kazakh), Gladia as the KZ-capable fallback with mandatory chunking over 135 minutes; Deepgram/Speechmatics non-primary. See `docs/STT_PROVIDER_DECISION.md`.
 6. Should transcript.md include a compact summary field, or should all summarization stay strictly Hermes-owned?
 7. Should failed long jobs produce a lightweight failure note in the meeting folder, or stay only in queue history?
 

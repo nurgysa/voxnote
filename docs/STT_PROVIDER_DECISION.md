@@ -324,8 +324,15 @@ chunking, diarization, or ops burden.
 1. [Done 2026-07-09] Add provider-specific API key resolution while keeping `VOXNOTE_API_KEY` as
    legacy fallback.
 2. Add AssemblyAI model routing metadata and verify exact SDK/API params.
+   [In progress — `providers/assemblyai.py` already sends the plural
+   `speech_models: ["universal-2"]` field (singular `speech_model` is
+   deprecated upstream); Universal-3.5-Pro routing / Settings opt-in and
+   routed-model provenance are not built yet.]
 3. [Done 2026-07-09] Add transcript provenance metadata schema.
-4. Add preflight cost/duration checks.
+4. [Done pre-decision — `processing/preflight.py`, wired into
+   `processing/worker.py`: duration/size probe, 2 GB size cap, Gladia
+   135-min gate, denoise auto-off, at-enqueue cost hint. Model-route
+   confirmation folds into task 2.] Add preflight cost/duration checks.
 5. [Done 2026-07-09] Add Gladia duration guard and chunking requirement for
    >135 minutes.
 6. Add a provider A/B test fixture plan with sanitized real recordings.
