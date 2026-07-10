@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "ru-clean-001",
+      "gold_text": "Это пример чистой русской речи для ручной проверки.",
+      "languages": ["ru"],
+      "tags": ["ru-clean"],
+      "key_terms": ["ручной проверки"]
+    },
+    {
+      "id": "ru-quiet-001",
+      "gold_text": "Это пример тихой русской речи после loudness rescue.",
+      "languages": ["ru"],
+      "tags": ["ru-quiet-after-loudnorm"],
+      "key_terms": ["loudness rescue"]
+    },
+    {
+      "id": "kk-001",
+      "gold_text": "Бұл қазақ тіліндегі қысқа тексеру үлгісі.",
+      "languages": ["kk"],
+      "tags": ["kk"],
+      "key_terms": ["тексеру"]
+    },
+    {
+      "id": "en-001",
+      "gold_text": "This is a short English evaluation sample.",
+      "languages": ["en"],
+      "tags": ["en"],
+      "key_terms": ["evaluation sample"]
+    },
+    {
+      "id": "kk-ru-001",
+      "gold_text": "Бүгінгі встречу ертеңге ауыстырайық.",
+      "languages": ["kk", "ru"],
+      "tags": ["kk-ru-code-switch"],
+      "key_terms": ["встречу"]
+    },
+    {
+      "id": "noisy-far-field-001",
+      "gold_text": "Это пример речи в шумной комнате с дальним микрофоном.",
+      "languages": ["ru"],
+      "tags": ["noisy", "far-field"],
+      "key_terms": ["дальним микрофоном"]
+    }
+  ]
+}

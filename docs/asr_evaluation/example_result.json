@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "provider": "example-provider",
+  "model": "example-model",
+  "items": [
+    {
+      "id": "clean-001",
+      "text": "Please send me the quarterly report by Friday afternoon.",
+      "wall_clock_s": 1.2,
+      "cost_usd": 0.0012,
+      "segments": [
+        {"start": 0.0, "end": 3.4, "text": "Please send me the quarterly report by Friday afternoon."}
+      ]
+    },
+    {
+      "id": "noisy-001",
+      "text": "Can you hear me okay there's some background noise on my end",
+      "wall_clock_s": 1.5,
+      "cost_usd": 0.0015,
+      "segments": [
+        {"start": 0.0, "end": 4.1, "text": "Can you hear me okay there's some background noise on my end"}
+      ]
+    },
+    {
+      "id": "accented-001",
+      "text": "We need to align on the budget before the next meeting",
+      "wall_clock_s": 1.1,
+      "cost_usd": 0.0011,
+      "segments": [
+        {"start": 0.0, "end": 3.2, "text": "We need to align on the budget before the next meeting"}
+      ]
+    },
+    {
+      "id": "overlapping-speech-001",
+      "text": "Sorry go ahead no you first I did not mean to interrupt",
+      "wall_clock_s": 1.3,
+      "cost_usd": 0.0013,
+      "segments": []
+    },
+    {
+      "id": "mixed-language-001",
+      "text": "Давайте перенесем дедлайн на следующую неделю okay",
+      "wall_clock_s": 1.4,
+      "cost_usd": 0.0014,
+      "segments": []
+    },
+    {
+      "id": "domain-terms-001",
+      "text": "The API rate limit was exceeded during the webhook retry back off",
+      "wall_clock_s": 1.6,
+      "cost_usd": 0.0016,
+      "segments": [
+        {"start": 0.0, "end": 3.9, "text": "The API rate limit was exceeded during the webhook retry back off"}
+      ]
+    }
+  ]
+}

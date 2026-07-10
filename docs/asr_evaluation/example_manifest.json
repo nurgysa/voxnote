@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "id": "clean-001",
+      "gold_text": "Please send me the quarterly report by Friday afternoon.",
+      "languages": ["en"],
+      "tags": ["clean"],
+      "key_terms": ["quarterly report"]
+    },
+    {
+      "id": "noisy-001",
+      "gold_text": "Can you hear me okay, there is some background noise on my end.",
+      "languages": ["en"],
+      "tags": ["noisy"],
+      "key_terms": []
+    },
+    {
+      "id": "accented-001",
+      "gold_text": "We need to align on the budget before the next meeting.",
+      "languages": ["en"],
+      "tags": ["accented"],
+      "key_terms": ["budget"]
+    },
+    {
+      "id": "overlapping-speech-001",
+      "gold_text": "Sorry, go ahead, no you first, I did not mean to interrupt.",
+      "languages": ["en"],
+      "tags": ["overlapping-speech"],
+      "key_terms": []
+    },
+    {
+      "id": "mixed-language-001",
+      "gold_text": "Давайте перенесем deadline на следующую неделю, okay?",
+      "languages": ["ru", "en"],
+      "tags": ["mixed-language"],
+      "key_terms": ["deadline"]
+    },
+    {
+      "id": "domain-terms-001",
+      "gold_text": "The API rate limit was exceeded during the webhook retry backoff.",
+      "languages": ["en"],
+      "tags": ["domain-terms"],
+      "key_terms": ["API rate limit", "webhook", "backoff"]
+    }
+  ]
+}
