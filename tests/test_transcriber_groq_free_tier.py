@@ -67,6 +67,9 @@ def test_under_cap_file_skips_prep_entirely(tmp_path, monkeypatch):
         raise AssertionError("compress_for_size_cap must not run under cap")
 
     monkeypatch.setattr(audio_upload_prep, "compress_for_size_cap", _boom)
+    # Loud enough that the quiet-audio gate (tests/test_transcriber_quiet_audio_gate.py)
+    # leaves this file untouched too.
+    monkeypatch.setattr(audio_upload_prep, "measure_volume_stats", lambda p: (-10.0, -3.0))
 
     Transcriber().transcribe(
         str(audio), cloud_provider="CappedFake", cloud_api_key="k",

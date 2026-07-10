@@ -282,34 +282,57 @@ class Transcriber:
         :class:`providers.base.TranscriptionResult`.
 
         Lifecycle: optional pre-denoise to a temp WAV (when
-        ``denoise_audio=True``), then — if the provider declares
-        ``max_upload_bytes`` and the resulting file exceeds it — a
-        compress/chunk preparation pass (see ``_transcribe_within_upload_cap``),
-        then upload via ``provider.transcribe``. Every temp file this method
-        or the preparation pass creates is cleaned in a finally block on
-        every exit path (success, cancel, or error).
+        ``denoise_audio=True``), then — unless the file already exceeds
+        the provider's ``max_upload_bytes`` cap — a quiet-audio loudness
+        gate (see ``_prepare_quiet_upload``) that swaps in a normalized
+        temp derivative for clearly-too-quiet source audio, then — if the
+        (possibly quiet-derivative) file still exceeds ``max_upload_bytes``
+        — a compress/chunk preparation pass (see
+        ``_transcribe_within_upload_cap``), then upload via
+        ``provider.transcribe``. Every temp file this method or a
+        preparation pass creates is cleaned in a finally block on every
+        exit path (success, cancel, or error).
         """
         # Optional pre-denoise: when the user opted in via Settings, run
         # the source through RNNoise (via ensure_wav's denoise flag) BEFORE
         # handing audio to the provider. Cleaned WAV is a temp
         # file we own — cleanup in the finally below.
         #
-        # normalize=False here on purpose: cloud providers expect the
-        # original loudness profile (their gateways apply their own gain
-        # normalization). Only the denoising stage runs.
+        # normalize=False here on purpose: for ordinary-loudness audio,
+        # cloud providers expect the original loudness profile (their
+        # gateways apply their own gain normalization). Only the
+        # denoising stage runs here — the separate quiet-audio gate below
+        # (_prepare_quiet_upload) is what applies gain normalization, and
+        # only for source audio too quiet for cloud ASR to work with.
         upload_path = audio_path
-        upload_is_temp = False
+        denoise_temp_path: str | None = None
         if denoise_audio:
             if on_status:
                 on_status("Подготовка аудио (подавление шума)...")
             upload_path, upload_is_temp = ensure_wav(
                 audio_path, normalize=False, denoise=True,
             )
+            if upload_is_temp:
+                denoise_temp_path = upload_path
 
+        quiet_temp_path: str | None = None
         cap_temp_paths: list[str] = []
         try:
             max_bytes = getattr(provider, "max_upload_bytes", None)
-            if max_bytes is not None and os.path.getsize(upload_path) > max_bytes:
+            over_cap = max_bytes is not None and os.path.getsize(upload_path) > max_bytes
+
+            if not over_cap:
+                quiet_temp_path = self._prepare_quiet_upload(
+                    upload_path, on_status=on_status,
+                )
+                if quiet_temp_path is not None:
+                    upload_path = quiet_temp_path
+                    over_cap = (
+                        max_bytes is not None
+                        and os.path.getsize(upload_path) > max_bytes
+                    )
+
+            if over_cap:
                 return self._transcribe_within_upload_cap(
                     upload_path, provider, opts, max_bytes,
                     on_status=on_status, on_progress=on_progress,
@@ -326,9 +349,15 @@ class Transcriber:
         finally:
             # Always clean the denoised tempfile — success, cancel, error,
             # or any provider failure.
-            if upload_is_temp:
+            if denoise_temp_path is not None:
                 try:
-                    os.unlink(upload_path)
+                    os.unlink(denoise_temp_path)
+                except OSError:
+                    pass
+            # Same for the quiet-audio derivative, if one was created.
+            if quiet_temp_path is not None:
+                try:
+                    os.unlink(quiet_temp_path)
                 except OSError:
                     pass
             # Same for every compress/chunk derivative the cap-prep path
@@ -338,6 +367,33 @@ class Transcriber:
                     os.unlink(p)
                 except OSError:
                     pass
+
+    def _prepare_quiet_upload(self, upload_path: str, *, on_status) -> str | None:
+        """Best-effort adaptive quiet-audio rescue before ordinary cloud upload.
+
+        The provider-neutral decision uses both ffmpeg ``mean_volume`` and
+        ``max_volume``. It preserves normal audio unchanged, skips pure
+        digital silence, and creates a temporary FLAC loudness-rescue
+        derivative only when the source is clearly too quiet. A failed probe
+        returns None so provider-specific validation/errors stay visible.
+        """
+        import audio_upload_prep
+        from providers import ProviderError
+
+        try:
+            mean_db, max_db = audio_upload_prep.measure_volume_stats(upload_path)
+        except audio_upload_prep.AudioPrepError:
+            return None
+
+        if not audio_upload_prep.should_rescue_quiet_audio(mean_db, max_db):
+            return None
+
+        if on_status:
+            on_status("Аудио слишком тихое — нормализую громкость перед отправкой...")
+        try:
+            return audio_upload_prep.prepare_quiet_audio_derivative(upload_path)
+        except audio_upload_prep.AudioPrepError as e:
+            raise ProviderError(str(e)) from e
 
     def _transcribe_within_upload_cap(
         self, upload_path, provider, opts, max_bytes, *,

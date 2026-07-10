@@ -191,3 +191,227 @@ def test_require_ffmpeg_raises_actionable_message_when_missing(monkeypatch):
     monkeypatch.setattr(prep, "get_ffmpeg_path", lambda: None)
     with pytest.raises(prep.AudioPrepError, match="ffmpeg"):
         prep._require_ffmpeg()
+
+
+# ── measure_mean_volume_db ───────────────────────────────────────────
+
+def test_measure_mean_volume_db_parses_volumedetect_output(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = (
+            b"[Parsed_volumedetect_0 @ 0x0] mean_volume: -52.3 dB\n"
+            b"[Parsed_volumedetect_0 @ 0x0] max_volume: -20.1 dB\n"
+        )
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    assert prep.measure_mean_volume_db("in.wav") == -52.3
+
+
+def test_measure_mean_volume_db_treats_inf_as_extremely_quiet(monkeypatch):
+    # Some ffmpeg builds report "mean_volume: -inf dB" for true digital
+    # silence (rather than a finite noise-floor value like -91.0 dB) —
+    # must resolve to a real, comparable float, not an opaque parse error.
+    # Real ffmpeg volumedetect always emits both lines together.
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = (
+            b"[Parsed_volumedetect_0 @ 0x0] mean_volume: -inf dB\n"
+            b"[Parsed_volumedetect_0 @ 0x0] max_volume: -inf dB\n"
+        )
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    result = prep.measure_mean_volume_db("in.wav")
+    assert result == float("-inf")
+    assert result < prep.QUIET_MEAN_VOLUME_DB_THRESHOLD
+
+
+def test_measure_mean_volume_db_raises_when_output_unparseable(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        return MagicMock(returncode=0, stderr=b"no useful info here\n")
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    with pytest.raises(prep.AudioPrepError, match="громкость"):
+        prep.measure_mean_volume_db("in.wav")
+
+
+def test_measure_mean_volume_db_raises_when_ffmpeg_missing(monkeypatch):
+    monkeypatch.setattr(prep, "get_ffmpeg_path", lambda: None)
+    with pytest.raises(prep.AudioPrepError, match="ffmpeg"):
+        prep.measure_mean_volume_db("in.wav")
+
+
+# ── measure_volume_stats ─────────────────────────────────────────────
+
+def test_measure_volume_stats_parses_mean_and_max(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = (
+            b"[Parsed_volumedetect_0 @ 0x0] mean_volume: -52.3 dB\n"
+            b"[Parsed_volumedetect_0 @ 0x0] max_volume: -20.1 dB\n"
+        )
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    mean_db, max_db = prep.measure_volume_stats("in.wav")
+    assert mean_db == -52.3
+    assert max_db == -20.1
+
+
+def test_measure_volume_stats_treats_inf_as_extremely_quiet(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = (
+            b"[Parsed_volumedetect_0 @ 0x0] mean_volume: -inf dB\n"
+            b"[Parsed_volumedetect_0 @ 0x0] max_volume: -inf dB\n"
+        )
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    mean_db, max_db = prep.measure_volume_stats("in.wav")
+    assert mean_db == float("-inf")
+    assert max_db == float("-inf")
+
+
+def test_measure_volume_stats_raises_when_mean_missing(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = b"[Parsed_volumedetect_0 @ 0x0] max_volume: -20.1 dB\n"
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    with pytest.raises(prep.AudioPrepError, match="громкость"):
+        prep.measure_volume_stats("in.wav")
+
+
+def test_measure_volume_stats_raises_when_max_missing(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+
+    def fake_run(cmd, capture_output=True, check=True):
+        stderr = b"[Parsed_volumedetect_0 @ 0x0] mean_volume: -52.3 dB\n"
+        return MagicMock(returncode=0, stderr=stderr)
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    with pytest.raises(prep.AudioPrepError, match="громкость"):
+        prep.measure_volume_stats("in.wav")
+
+
+def test_measure_volume_stats_raises_when_ffmpeg_missing(monkeypatch):
+    monkeypatch.setattr(prep, "get_ffmpeg_path", lambda: None)
+    with pytest.raises(prep.AudioPrepError, match="ffmpeg"):
+        prep.measure_volume_stats("in.wav")
+
+
+# ── should_rescue_quiet_audio ─────────────────────────────────────────
+
+def test_should_rescue_quiet_audio_true_deep_below_mean_floor():
+    assert prep.should_rescue_quiet_audio(-50.0, -30.0) is True
+
+
+def test_should_rescue_quiet_audio_true_at_mean_floor_boundary():
+    assert prep.should_rescue_quiet_audio(-45.0, -30.0) is True
+
+
+def test_should_rescue_quiet_audio_transition_band_rescues_with_low_max():
+    assert prep.should_rescue_quiet_audio(-44.9, -6.0) is True
+
+
+def test_should_rescue_quiet_audio_transition_band_skips_with_loud_max():
+    assert prep.should_rescue_quiet_audio(-44.9, -5.9) is False
+
+
+def test_should_rescue_quiet_audio_at_upper_mean_boundary_with_low_max():
+    assert prep.should_rescue_quiet_audio(-40.0, -6.0) is True
+
+
+def test_should_rescue_quiet_audio_at_upper_mean_boundary_with_loud_max():
+    assert prep.should_rescue_quiet_audio(-40.0, -5.9) is False
+
+
+def test_should_rescue_quiet_audio_false_above_upper_mean_threshold():
+    assert prep.should_rescue_quiet_audio(-39.9, -100.0) is False
+
+
+def test_should_rescue_quiet_audio_false_for_pure_digital_silence():
+    # Explicit invariant: no automatic upload gain on pure digital
+    # silence — an -inf/-inf probe must never be opaque-parse-errored
+    # into a rescue, and must not silently boost noise-floor artifacts.
+    assert prep.should_rescue_quiet_audio(float("-inf"), float("-inf")) is False
+
+
+def test_should_rescue_quiet_audio_false_when_only_mean_is_inf():
+    assert prep.should_rescue_quiet_audio(float("-inf"), -20.0) is False
+
+
+# ── prepare_quiet_audio_derivative ───────────────────────────────────
+
+def test_prepare_quiet_audio_derivative_invokes_ffmpeg_with_conservative_loudnorm(monkeypatch):
+    captured = {}
+
+    def fake_run(cmd, capture_output=True, check=True):
+        captured["cmd"] = cmd
+        return _fake_run_writes_output(cmd, capture_output, check)
+
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(prep, "_source_sample_rate_hz", lambda _path: 48_000, raising=False)
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    out_path = prep.prepare_quiet_audio_derivative("quiet.wav")
+
+    assert os.path.isfile(out_path)
+    assert out_path.endswith(".flac")
+    os.unlink(out_path)
+
+    cmd = captured["cmd"]
+    assert cmd[0] == "ffmpeg"
+    assert "-i" in cmd and cmd[cmd.index("-i") + 1] == "quiet.wav"
+    assert "-c:a" in cmd and cmd[cmd.index("-c:a") + 1] == "flac"
+    # ffmpeg loudnorm dynamically up-samples to 192 kHz unless the output
+    # rate is explicitly restored. Preserve the source rate after filtering;
+    # omit -ac so channel count stays native.
+    assert "-ar" in cmd and cmd[cmd.index("-ar") + 1] == "48000"
+    assert "-ac" not in cmd
+    af = cmd[cmd.index("-af") + 1]
+    assert "highpass" not in af
+    assert af == "loudnorm=I=-18:LRA=11:TP=-1.5"
+
+
+def test_prepare_quiet_audio_derivative_raises_and_cleans_temp_on_ffmpeg_failure(monkeypatch):
+    monkeypatch.setattr(prep, "_require_ffmpeg", lambda: "ffmpeg")
+    monkeypatch.setattr(prep, "_source_sample_rate_hz", lambda _path: 16_000)
+
+    def fake_run(cmd, capture_output=True, check=True):
+        raise subprocess.CalledProcessError(1, cmd, stderr=b"boom")
+
+    monkeypatch.setattr(prep.subprocess, "run", fake_run)
+
+    seen_paths = []
+    real_tempfile_ctor = prep.tempfile.NamedTemporaryFile
+
+    def spying_ctor(*a, **k):
+        tmp = real_tempfile_ctor(*a, **k)
+        seen_paths.append(tmp.name)
+        return tmp
+
+    monkeypatch.setattr(prep.tempfile, "NamedTemporaryFile", spying_ctor)
+
+    with pytest.raises(prep.AudioPrepError, match="тих"):
+        prep.prepare_quiet_audio_derivative("quiet.wav")
+
+    assert seen_paths, "expected a temp file to have been created"
+    assert not os.path.exists(seen_paths[0]), "failed temp output must be cleaned up"
