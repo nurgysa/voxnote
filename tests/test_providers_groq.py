@@ -18,6 +18,10 @@ def test_constructor_rejects_empty_api_key():
         GroqProvider("")
 
 
+def test_max_upload_bytes_is_25_mib_free_tier_cap():
+    assert GroqProvider.max_upload_bytes == 25 * 1024 * 1024
+
+
 def test_provider_is_asr_only_and_supports_mixed_auto_detection():
     assert GroqProvider.supports_diarization is False
     assert GroqProvider.supports_mixed is True

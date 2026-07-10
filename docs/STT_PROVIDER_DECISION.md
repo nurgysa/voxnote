@@ -341,6 +341,12 @@ chunking, diarization, or ops burden.
    AssemblyAI/Gladia production default.
 8. Update user/operator docs: AssemblyAI default, Gladia fallback, Deepgram and
    Speechmatics non-primary because of Kazakh coverage.
+9. [Done 2026-07-10] Groq free-tier upload cap (25 MiB): `transcriber/__init__.py`
+   + `audio_upload_prep.py` automatically compress or chunk-and-merge long
+   meetings so they transcribe on Groq's free tier without a manual
+   pre-processing step or a 413 failure. The original audio and its
+   archival/SHA-256 provenance are untouched — only a temporary derivative
+   is uploaded.
 
 ## Official sources checked
 

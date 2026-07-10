@@ -109,6 +109,16 @@ class TranscriptionProvider(ABC):
     #: Default False; providers opt in. Mirrors supports_diarization.
     supports_speaker_id: bool = False
 
+    #: Hard per-request upload-size ceiling in bytes, or None when the
+    #: provider has no VoxNote-enforced cap (its own server-side limit, if
+    #: any, applies uncontrolled). Set this on a provider subclass when a
+    #: free/default tier enforces a documented cap — e.g. Groq's 25 MiB
+    #: free-tier limit. ``Transcriber._run_cloud_stt`` checks this BEFORE
+    #: any HTTP call and, if the post-denoise upload file exceeds it,
+    #: routes through ``audio_upload_prep`` to compress/chunk a temporary
+    #: derivative — the original file is never touched.
+    max_upload_bytes: int | None = None
+
     @abstractmethod
     def transcribe(
         self,

@@ -50,6 +50,11 @@ class GroqProvider(TranscriptionProvider):
     # ASR-only mixed mode: do not send literal language="mixed"; let Whisper
     # auto-detect and add a prompt that names the expected KZ/RU/EN languages.
     supports_mixed = True
+    # Groq's free-tier hard cap (official docs, checked 2026-07-09): 25 MiB
+    # per multipart upload. VoxNote enforces this proactively via
+    # transcriber._run_cloud_stt + audio_upload_prep so long meetings don't
+    # simply fail with a 413 — see docs/STT_PROVIDER_DECISION.md.
+    max_upload_bytes = 25 * 1024 * 1024
 
     def __init__(self, api_key: str, model: str | None = None):
         self._api_key = require_key(api_key, "Groq")

@@ -37,6 +37,33 @@ def _check_cancelled(cancel_event) -> None:
         raise TranscriptionCancelled()
 
 
+def _merge_chunk_results(results):
+    """Combine per-chunk provider results into one, shifting each chunk's
+    segment timestamps by its start offset in the original timeline — so
+    the merged transcript reads as if it came from a single request.
+
+    ``results`` is ``[(TranscriptionResult, start_offset_s), ...]`` in
+    original-timeline order. Language/model are taken from the first chunk
+    that reports them (all chunks share one provider/model, so they should
+    agree; the first non-empty value is a defensive fallback, not a
+    disagreement-resolution policy).
+    """
+    from providers.base import TranscriptionResult
+
+    segments: list[dict] = []
+    language = None
+    model = None
+    for result, offset in results:
+        language = language or result.language
+        model = model or result.model
+        for seg in result.segments:
+            shifted = dict(seg)
+            shifted["start"] = seg.get("start", 0.0) + offset
+            shifted["end"] = seg.get("end", seg.get("start", 0.0)) + offset
+            segments.append(shifted)
+    return TranscriptionResult(segments=segments, language=language, model=model)
+
+
 __all__ = [
     "Transcriber",
     "TranscriptionCancelled",
@@ -255,9 +282,12 @@ class Transcriber:
         :class:`providers.base.TranscriptionResult`.
 
         Lifecycle: optional pre-denoise to a temp WAV (when
-        ``denoise_audio=True``), then upload via ``provider.transcribe``.
-        The denoised tempfile is cleaned in a finally block on every exit
-        path.
+        ``denoise_audio=True``), then — if the provider declares
+        ``max_upload_bytes`` and the resulting file exceeds it — a
+        compress/chunk preparation pass (see ``_transcribe_within_upload_cap``),
+        then upload via ``provider.transcribe``. Every temp file this method
+        or the preparation pass creates is cleaned in a finally block on
+        every exit path (success, cancel, or error).
         """
         # Optional pre-denoise: when the user opted in via Settings, run
         # the source through RNNoise (via ensure_wav's denoise flag) BEFORE
@@ -276,7 +306,16 @@ class Transcriber:
                 audio_path, normalize=False, denoise=True,
             )
 
+        cap_temp_paths: list[str] = []
         try:
+            max_bytes = getattr(provider, "max_upload_bytes", None)
+            if max_bytes is not None and os.path.getsize(upload_path) > max_bytes:
+                return self._transcribe_within_upload_cap(
+                    upload_path, provider, opts, max_bytes,
+                    on_status=on_status, on_progress=on_progress,
+                    cancel_event=cancel_event,
+                    cleanup=cap_temp_paths,
+                )
             return provider.transcribe(
                 upload_path,
                 opts,
@@ -292,3 +331,86 @@ class Transcriber:
                     os.unlink(upload_path)
                 except OSError:
                     pass
+            # Same for every compress/chunk derivative the cap-prep path
+            # created, regardless of which step (if any) failed.
+            for p in cap_temp_paths:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+    def _transcribe_within_upload_cap(
+        self, upload_path, provider, opts, max_bytes, *,
+        on_status, on_progress, cancel_event, cleanup,
+    ):
+        """Compress/chunk ``upload_path`` so no single request exceeds
+        ``max_bytes``, then transcribe (one call, or one call per chunk
+        merged back with correct cumulative time offsets).
+
+        ``cleanup`` is a caller-owned list; every temp path created here is
+        appended to it so ``_run_cloud_stt``'s finally block removes it on
+        every exit path — this method itself never deletes anything.
+        """
+        import audio_upload_prep
+        from processing.preflight import probe
+        from providers import ProviderError
+
+        _check_cancelled(cancel_event)
+        duration_s = probe(upload_path).get("duration_s")
+        if duration_s is None:
+            raise ProviderError(
+                "Не удалось определить длительность аудио, чтобы "
+                "подготовить его для лимита загрузки Groq (25 МиБ). "
+                "Попробуй другой провайдер или сконвертируй файл в "
+                "WAV/FLAC вручную."
+            )
+
+        target_bytes = audio_upload_prep.target_bytes_for_cap(max_bytes)
+
+        if on_status:
+            on_status("Сжатие аудио для лимита загрузки Groq (25 МиБ)...")
+        try:
+            compressed = audio_upload_prep.compress_for_size_cap(
+                upload_path, duration_s, target_bytes,
+            )
+        except audio_upload_prep.AudioPrepError as e:
+            raise ProviderError(str(e)) from e
+
+        if compressed is not None:
+            path, _is_temp = compressed
+            cleanup.append(path)
+            if os.path.getsize(path) <= max_bytes:
+                return provider.transcribe(
+                    path, opts, on_status=on_status, on_progress=on_progress,
+                    cancel_event=cancel_event,
+                )
+            # Rare: the safety-margin headroom wasn't enough (unusually
+            # dense container overhead) — fall through to chunking instead
+            # of ever uploading an oversized file.
+
+        _check_cancelled(cancel_event)
+        if on_status:
+            on_status("Нарезка длинной записи на части для Groq...")
+        try:
+            chunks = audio_upload_prep.split_for_size_cap(
+                upload_path, duration_s, target_bytes,
+            )
+        except audio_upload_prep.AudioPrepError as e:
+            raise ProviderError(str(e)) from e
+        cleanup.extend(path for path, _s, _e in chunks)
+
+        results = []
+        for path, start, _end in chunks:
+            _check_cancelled(cancel_event)
+            if os.path.getsize(path) > max_bytes:
+                raise ProviderError(
+                    "Не удалось разбить запись на части для Groq: один "
+                    "из фрагментов всё ещё превышает лимит загрузки 25 "
+                    "МиБ. Сократи запись или выбери другого провайдера."
+                )
+            result = provider.transcribe(
+                path, opts, on_status=on_status, on_progress=on_progress,
+                cancel_event=cancel_event,
+            )
+            results.append((result, start))
+        return _merge_chunk_results(results)
